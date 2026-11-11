@@ -687,6 +687,25 @@ export const es: Record<string, string> = {
   "Couldn't confirm the account switch": "No se pudo confirmar el cambio de cuenta",
   "The connection dropped before agetor answered — the switch may have gone through.": "La conexión se cortó antes de que agetor respondiera: puede que el cambio se haya aplicado.",
   "Couldn't switch account": "No se pudo cambiar de cuenta",
+  // ── Modos y esfuerzos de AGENT_OPTIONS (se traducen solo al mostrarlos; los id no cambian)
+  "Accept edits": "Aceptar ediciones",
+  "Ask before changes": "Preguntar antes de cambiar",
+  "Ask": "Preguntar",
+  "Auto (force)": "Auto (forzado)",
+  "Auto (workspace-write)": "Auto (escritura en el espacio de trabajo)",
+  "Auto (yolo)": "Auto (yolo)",
+  "Bypass": "Omitir permisos",
+  "Full access": "Acceso total",
+  "Plan only": "Solo plan",
+  "Read-only": "Solo lectura",
+  "Read-only-ish": "Casi solo lectura",
+  "Ultra": "Ultra",
+  "Max thinking": "Máximo razonamiento",
+  "Extra high": "Muy alto",
+  "High": "Alto",
+  "Medium": "Medio",
+  "Low": "Bajo",
+  "Minimal": "Mínimo",
 };
 
 /** Nombres de las columnas del tablero (`COLUMNS` en shared/types.ts). Aparte porque "Review" también es un verbo en otros sitios. */

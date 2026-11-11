@@ -17,3 +17,20 @@ describe("i18n", () => {
     }
   });
 });
+
+describe("i18n con idioma español guardado", () => {
+  test("t() y tColumn() traducen y las claves sin traducción quedan en inglés", async () => {
+    const store: Record<string, string> = { "agetor:locale": "es" };
+    (globalThis as any).localStorage = { getItem: (k: string) => store[k] ?? null, setItem: () => {} };
+    try {
+      // Query distinta para evaluar el módulo de nuevo con el idioma ya guardado.
+      const m = await import("./index.ts?es");
+      expect(m.getLocale()).toBe("es");
+      expect(m.t("Settings")).toBe("Ajustes");
+      expect(m.t("Not translated yet")).toBe("Not translated yet");
+      expect(m.tColumn("Review")).toBe("En revisión");
+    } finally {
+      delete (globalThis as any).localStorage;
+    }
+  });
+});

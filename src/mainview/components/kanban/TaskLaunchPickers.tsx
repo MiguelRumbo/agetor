@@ -924,7 +924,7 @@ export function TaskLaunchPickers({
                 <label className="text-muted-foreground">{t("Mode")}</label>
                 <Select value={mode} onChange={(e) => setMode(e.target.value)} className="h-8">
                   {modes.map((m) => (
-                    <option key={m.id} value={m.id}>{m.label}</option>
+                    <option key={m.id} value={m.id}>{t(m.label)}</option>
                   ))}
                 </Select>
               </div>
@@ -934,7 +934,7 @@ export function TaskLaunchPickers({
                   <label className="text-muted-foreground">{t("Model")}</label>
                   <Select value={model} onChange={(e) => setModel(e.target.value)} className="h-8">
                     {models.map((m) => (
-                      <option key={m.id} value={m.id}>{m.label}</option>
+                      <option key={m.id} value={m.id}>{t(m.label)}</option>
                     ))}
                   </Select>
                 </div>
@@ -950,7 +950,7 @@ export function TaskLaunchPickers({
                       <option value="">n/a</option>
                     ) : (
                       efforts.map((m) => (
-                        <option key={m.id} value={m.id}>{m.label}</option>
+                        <option key={m.id} value={m.id}>{t(m.label)}</option>
                       ))
                     )}
                   </Select>

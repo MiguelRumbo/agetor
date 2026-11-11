@@ -43,6 +43,20 @@ Cuando supere ~2000 líneas, archivar en `bitacora/<año>-Q<n>.md` y dejar aquí
 - [ ] Reproducir como usuario no root los 6 tests deterministas que siguen fallando (ver `docs/linux-port.md`).
 - [ ] Ventana nativa con Electrobun en Linux.
 - [ ] Windows con WSL2.
-- [ ] Traducción de textos según `docs/traduccion-inventario.md`.
+- [~] Traducción de textos según `docs/traduccion-inventario.md`: UI del webview hecha con selector en Ajustes (ver `docs/i18n.md`); faltan core (`src/bun`), CLI/TUI y documentación.
 
 **Siguiente paso sugerido:** usar `scripts/linux.sh start` con un harness real y anotar aquí lo que falle.
+
+## 2026-11-11 — Traducción de la UI al español
+
+**Decisiones:**
+- [Claude] Sistema propio mínimo `t("texto inglés")` con diccionario en `src/mainview/lib/i18n/es.ts`, en vez de una librería (i18next, etc.): no añade dependencias y mantiene el inglés como idioma por defecto.
+- [Claude] La clave es el texto inglés: los tests y e2e existentes (≈1150 búsquedas por texto) siguen pasando sin tocarlos.
+- [Claude] El idioma vive en `localStorage` y cambiarlo recarga la página (se evalúa también en constantes de módulo).
+- [Claude] Glosario del inventario respetado (Pendientes/Lista/En ejecución/Bloqueada/En revisión/Hecha; Harness, Worktree, Pipeline, Prompt sin traducir).
+
+**Hecho:** rama `feat/traduccion-es`; selector en Ajustes → General; ≈650 cadenas de `src/mainview` (cabecera, nueva tarea, tarjetas, filtros, ajustes, pipelines, worktrees, GitHub, onboarding, menús, modos/esfuerzos).
+
+**Verificado:** `bun run typecheck`, `bun test src/mainview src/shared` (único fallo: `StackBadge`, depende de la fecha del día, anterior a este cambio) y `vite build`. No se comprobó visualmente en el navegador.
+
+**Pendientes:** core (`src/bun`), CLI/TUI, `README.md`; revisar visualmente cada pantalla y cadenas con ternarias/plantillas que quedaron en inglés.

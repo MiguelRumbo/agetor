@@ -1019,7 +1019,7 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
                   <SearchSelect
                     value={mode}
                     onChange={setMode}
-                    items={modes.map((m) => ({ value: m.id, label: m.label, hint: m.hint }))}
+                    items={modes.map((m) => ({ value: m.id, label: t(m.label), hint: m.hint }))}
                     searchable={false}
                     wrapHints
                     placement="bottom"
@@ -1088,7 +1088,7 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
                       <option value="">n/a</option>
                     ) : (
                       efforts.map((m) => (
-                        <option key={m.id} value={m.id}>{m.label}</option>
+                        <option key={m.id} value={m.id}>{t(m.label)}</option>
                       ))
                     )}
                   </Select>
