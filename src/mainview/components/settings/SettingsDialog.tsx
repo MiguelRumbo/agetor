@@ -1270,7 +1270,10 @@ function GeneralSection({
               key={l.id}
               size="sm"
               variant={getLocale() === l.id ? "default" : "outline"}
-              onClick={() => setLocale(l.id as Locale)}
+              onClick={() => {
+                // Se guarda también en el core (preferencia `locale`) para que sus mensajes y el CLI usen el mismo idioma.
+                void api.setPreference("locale", l.id).catch(() => {}).finally(() => setLocale(l.id as Locale));
+              }}
               className="justify-start"
               data-testid={`language-${l.id}`}
             >

@@ -324,6 +324,7 @@ import { expandAtReferencesDetailedAsync } from "./project-files.ts";
 import { resolveAtPathsInTaskDir } from "./task-dir-fs.ts";
 import { composeLaunchPrompt, snapshotFromProfile } from "../shared/agent-profile.ts";
 import { isSpeed } from "../shared/speed.ts";
+import { ct } from "./i18n.ts";
 
 type Listener = (e: RunEvent) => void;
 const listeners = new Set<Listener>();
@@ -514,7 +515,10 @@ function saveAndEmit(args: {
   lineUuid?: string | null;
   subagentId?: string | null;
 }): AppendedEvent | null {
-  const { runId, taskId, stream, data, lineUuid, subagentId } = args;
+  const { runId, taskId, stream, lineUuid, subagentId } = args;
+  // Las líneas de estado se traducen al escribirlas (el evento se guarda ya en el
+  // idioma activo); los centinelas con prefijo no están en el diccionario.
+  const data = stream === "status" ? ct(args.data) : args.data;
   const row = runs.appendEvent(runId, stream, data, lineUuid, subagentId);
   if (!row) return null;
   emit({

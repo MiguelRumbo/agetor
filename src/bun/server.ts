@@ -318,6 +318,7 @@ import { duplicateAgentName } from "../shared/duplicate-name.ts";
 import { resolveSpeedInput } from "../shared/speed.ts";
 import { parseOpencodeServerInput } from "../shared/opencode.ts";
 import { duplicateAgentProfile } from "./duplicate-agent-profile.ts";
+import { ct } from "./i18n.ts";
 
 // Re-export so existing call sites (index.ts → webview URL) keep working.
 // `API_PORT` is a module-load snapshot for index.ts's BrowserWindow URL.
@@ -343,8 +344,19 @@ export function attachedClientCount(): number {
   return attachedClients;
 }
 
+// Los `{ error }` que llegan a una persona se traducen aquí, en el único punto
+// por el que pasan (idioma = preferencia `locale`, ver `i18n.ts`). Un mensaje sin
+// entrada en el diccionario sale tal cual, en inglés.
+function translateErrorBody(data: unknown): unknown {
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const err = (data as { error?: unknown }).error;
+    if (typeof err === "string") return { ...(data as object), error: ct(err) };
+  }
+  return data;
+}
+
 const json = (data: unknown, init?: ResponseInit) =>
-  new Response(JSON.stringify(data), {
+  new Response(JSON.stringify(translateErrorBody(data)), {
     headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
     status: init?.status,
   });

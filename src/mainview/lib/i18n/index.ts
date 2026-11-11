@@ -40,16 +40,22 @@ export function getLocale(): Locale {
   return current;
 }
 
-/** Guarda el idioma y recarga para que toda la UI se vuelva a renderizar. */
+/**
+ * Guarda el idioma y recarga para que toda la UI se vuelva a renderizar.
+ * Sin `localStorage` no se puede persistir: no se recarga (evita un bucle de
+ * recargas al sincronizar con el core) y el cambio vale hasta la próxima carga.
+ */
 export function setLocale(next: Locale): void {
   if (next === current) return;
+  let persisted = false;
   try {
     globalThis.localStorage?.setItem(STORAGE_KEY, next);
+    persisted = globalThis.localStorage?.getItem(STORAGE_KEY) === next;
   } catch {
-    // Sin storage no se puede persistir; el cambio solo vale hasta recargar.
+    // El acceso a storage lanza con algunos ajustes de privacidad.
   }
   current = next;
-  globalThis.location?.reload();
+  if (persisted) globalThis.location?.reload();
 }
 
 /**

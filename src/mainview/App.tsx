@@ -89,7 +89,7 @@ import { parseStickyUserMessagesPreference, STICKY_USER_MESSAGES_PREF } from "@/
 import { FX_AUTO_RESUME_DELAY_PREF, FX_AUTO_RESUME_PREF } from "@/lib/fx-auto-resume-prefs";
 import { parseFxAutoResumePrefs } from "../shared/fx-recovery.ts";
 import iconUrl from "../assets/agetor.iconset/icon_32x32@2x.png";
-import { t as tr, tColumn } from "@/lib/i18n";
+import { t as tr, tColumn, getLocale, setLocale } from "@/lib/i18n";
 
 /** The `pipelineParentId` a `GlobalEvent` carries when it concerns a hidden
  *  pipeline STEP task — the orchestrator stamps it on the `run-status`/
@@ -714,6 +714,8 @@ function AppInner() {
   // read racing the user's own change should never win.
   useEffect(() => {
     api.listPreferences().then((prefs) => {
+      // Idioma compartido con el core y el CLI: si otro cliente lo cambió, se alinea (recarga una vez).
+      if ((prefs.locale === "en" || prefs.locale === "es") && prefs.locale !== getLocale()) setLocale(prefs.locale);
       const dbTheme = parseThemePreference(prefs.theme);
       if (dbTheme !== themePreference) setThemePreference(dbTheme);
       if (!fontSizeUserAdjustedRef.current) {

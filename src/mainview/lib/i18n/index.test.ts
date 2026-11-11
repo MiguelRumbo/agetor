@@ -24,6 +24,7 @@ describe("i18n con idioma español guardado", () => {
     (globalThis as any).localStorage = { getItem: (k: string) => store[k] ?? null, setItem: () => {} };
     try {
       // Query distinta para evaluar el módulo de nuevo con el idioma ya guardado.
+      // @ts-expect-error la query solo sirve para forzar una evaluación nueva del módulo
       const m = await import("./index.ts?es");
       expect(m.getLocale()).toBe("es");
       expect(m.t("Settings")).toBe("Ajustes");
