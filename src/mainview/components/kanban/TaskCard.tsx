@@ -20,6 +20,7 @@ import { AgentIcon } from "./AgentIcon";
 import { PipelineBadge } from "@/components/pipelines";
 import { StackBadge } from "./StackBadge";
 import { stackBadgeStateFor } from "@/lib/stack-badge";
+import { t } from "@/lib/i18n";
 
 interface Props {
   task: Task;
@@ -89,9 +90,9 @@ function TaskCardImpl({ task, homeDir, stacks = [], limitStates = [], onStart, o
       return;
     }
     void confirm({
-      title: "Stop this pipeline?",
-      description: "Live steps will be cancelled and the pending review dismissed. History is kept.",
-      confirmLabel: "Stop",
+      title: t("Stop this pipeline?"),
+      description: t("Live steps will be cancelled and the pending review dismissed. History is kept."),
+      confirmLabel: t("Stop"),
       variant: "destructive",
     }).then((ok) => {
       if (ok) onCancel(task);
@@ -206,9 +207,9 @@ function TaskCardImpl({ task, homeDir, stacks = [], limitStates = [], onStart, o
           // -1.5 offsets keep the dot's background halo clear of the
           // awaiting state's ring-offset outline instead of notching it.
           className="absolute -top-1.5 -right-1.5 size-2.5 rounded-full bg-info ring-2 ring-background"
-          title="New messages"
+          title={t("New messages")}
           role="img"
-          aria-label="New messages"
+          aria-label={t("New messages")}
         />
       )}
       <CardHeader className="pb-2 space-y-1">
@@ -372,14 +373,14 @@ function TaskCardImpl({ task, homeDir, stacks = [], limitStates = [], onStart, o
             // grill round-1 "Open + Review", round-2 "Review primary, danger
             // Stop secondary"). No icon Stop here — one Stop is enough.
             <>
-              <Button size="sm" variant="secondary" onClick={() => onOpen(task)} title="Open the pipeline run">
+              <Button size="sm" variant="secondary" onClick={() => onOpen(task)} title={t("Open the pipeline run")}>
                 <FolderOpen className="size-3" /> Open
               </Button>
               <Button
                 size="sm"
                 data-testid="task-card-pipeline-review"
                 onClick={() => onReviewPipeline(task)}
-                title="Open the human review gate"
+                title={t("Open the human review gate")}
               >
                 <UserCheck className="mr-1 size-3" /> Review
               </Button>
@@ -389,7 +390,7 @@ function TaskCardImpl({ task, homeDir, stacks = [], limitStates = [], onStart, o
                 data-testid="task-card-pipeline-stop"
                 className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
                 onClick={stopTask}
-                title="Stop"
+                title={t("Stop")}
               >
                 <Square className="size-3" /> Stop
               </Button>
@@ -419,13 +420,13 @@ function TaskCardImpl({ task, homeDir, stacks = [], limitStates = [], onStart, o
             </Button>
           )}
           {!archived && awaiting && !gatePending && stoppable && (
-            <Button size="icon" variant="ghost" onClick={stopTask} title="Stop">
+            <Button size="icon" variant="ghost" onClick={stopTask} title={t("Stop")}>
               <Square className="size-3" />
             </Button>
           )}
           {!archived && task.column === "review" && !gatePending
             && !(task.pipelineId && task.pipelineRun?.status !== "done") && (
-            <Button size="sm" variant="outline" onClick={() => onMarkDone(task)} title="Mark this task as done">
+            <Button size="sm" variant="outline" onClick={() => onMarkDone(task)} title={t("Mark this task as done")}>
               <CheckCircle2 className="mr-1 size-3" /> Done
             </Button>
           )}
@@ -440,14 +441,14 @@ function TaskCardImpl({ task, homeDir, stacks = [], limitStates = [], onStart, o
             </Button>
           )}
           {archived && (
-            <Button size="icon" variant="ghost" onClick={() => onUnarchive(task)} title="Unarchive task">
+            <Button size="icon" variant="ghost" onClick={() => onUnarchive(task)} title={t("Unarchive task")}>
               <ArchiveRestore className="size-3" />
             </Button>
           )}
-          <Button size="icon" variant="ghost" onClick={() => onDiff(task)} title="View changes (git diff)">
+          <Button size="icon" variant="ghost" onClick={() => onDiff(task)} title={t("View changes (git diff)")}>
             <GitCompare className="size-3" />
           </Button>
-          <Button size="icon" variant="ghost" onClick={() => onDelete(task)} title="Delete task">
+          <Button size="icon" variant="ghost" onClick={() => onDelete(task)} title={t("Delete task")}>
             <Trash2 className="size-3" />
           </Button>
         </div>

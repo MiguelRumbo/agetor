@@ -89,6 +89,7 @@ import { parseStickyUserMessagesPreference, STICKY_USER_MESSAGES_PREF } from "@/
 import { FX_AUTO_RESUME_DELAY_PREF, FX_AUTO_RESUME_PREF } from "@/lib/fx-auto-resume-prefs";
 import { parseFxAutoResumePrefs } from "../shared/fx-recovery.ts";
 import iconUrl from "../assets/agetor.iconset/icon_32x32@2x.png";
+import { t as tr, tColumn } from "@/lib/i18n";
 
 /** The `pipelineParentId` a `GlobalEvent` carries when it concerns a hidden
  *  pipeline STEP task — the orchestrator stamps it on the `run-status`/
@@ -157,7 +158,7 @@ function ErrorToast({ error, onDismiss }: { error: string | null; onDismiss: () 
       <button
         type="button"
         onClick={onDismiss}
-        aria-label="Dismiss error"
+        aria-label={tr("Dismiss error")}
         className="shrink-0 rounded-md p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
       >
         <X className="size-3.5" />
@@ -427,8 +428,8 @@ function AppInner() {
     const current = viewRef.current;
     if (current.kind === "pipelines" && current.editing && pipelineEditorDirtyRef.current) {
       void confirm({
-        title: "Discard unsaved pipeline changes?",
-        confirmLabel: "Discard",
+        title: tr("Discard unsaved pipeline changes?"),
+        confirmLabel: tr("Discard"),
         cancelLabel: "Keep editing",
         variant: "destructive",
       }).then((ok) => {
@@ -463,7 +464,7 @@ function AppInner() {
       void confirm({
         title: guard.title,
         description: guard.description,
-        confirmLabel: "Discard",
+        confirmLabel: tr("Discard"),
         variant: "destructive",
       }).then((ok) => {
         if (!ok) return;
@@ -1213,7 +1214,7 @@ function AppInner() {
     toastPending({
       taskId: parentId,
       title: parent?.title || `Pipeline ${parentId.slice(0, 7)}`,
-      subtitle: "Pipeline needs you",
+      subtitle: tr("Pipeline needs you"),
       isSelected:
         parentId === selectedIdRef.current
         || (viewRef.current.kind === "pipeline-run" && viewRef.current.taskId === parentId),
@@ -1386,7 +1387,7 @@ function AppInner() {
         if (text) {
           toast(text, {
             action: {
-              label: "Settings",
+              label: tr("Settings"),
               onClick: () => {
                 setSettingsInitialSection("harnesses");
                 setSettingsInitialAgentId(null);
@@ -1816,7 +1817,7 @@ function AppInner() {
         // `review` column event stays silent, as every plain success →
         // review transition does.
         if (ev.status === "done" && prevStatus !== "done") {
-          toastSuccess({ taskId: ev.taskId, title, subtitle: "Pipeline finished", isSelected, isFocused, onOpen, kind: "pipeline-finished" });
+          toastSuccess({ taskId: ev.taskId, title, subtitle: tr("Pipeline finished"), isSelected, isFocused, onOpen, kind: "pipeline-finished" });
         }
         refetchPipelineParent(ev.taskId);
         return;
@@ -2034,7 +2035,7 @@ function AppInner() {
   const onOpenOnboardingTerminal = useCallback((harnessId: string) => {
     void api.openHarnessTerminal(harnessId).catch((e: unknown) => {
       const message = e instanceof Error ? e.message : String(e);
-      toast.error("Couldn't open terminal", { description: message });
+      toast.error(tr("Couldn't open terminal"), { description: message });
     });
   }, []);
 
@@ -2167,7 +2168,7 @@ function AppInner() {
         title: `Archive "${t.title}"?`,
         description:
           "An agent is still working on this task. Archiving will stop it.",
-        confirmLabel: "Stop & archive",
+        confirmLabel: tr("Stop & archive"),
         variant: "destructive",
       });
       if (!ok) return;
@@ -2245,7 +2246,7 @@ function AppInner() {
           )}
         </>
       ),
-      confirmLabel: "Delete",
+      confirmLabel: tr("Delete"),
       variant: "destructive",
     });
     if (!ok) return;
@@ -2419,13 +2420,13 @@ const runTaskMenuAction = useCallback((action: TaskMenuAction, snapshot: Task) =
       case "resume-recovery":
         void api.resumeFxRecovery(t.id).catch((e: unknown) => {
           const message = e instanceof Error ? e.message : String(e);
-          toast.error("Couldn't resume", { description: message });
+          toast.error(tr("Couldn't resume"), { description: message });
         });
         break;
       case "cancel-auto-resume":
         void api.cancelFxAutoResume(t.id).catch((e: unknown) => {
           const message = e instanceof Error ? e.message : String(e);
-          toast.error("Couldn't cancel auto-resume", { description: message });
+          toast.error(tr("Couldn't cancel auto-resume"), { description: message });
         });
         break;
       case "mark-done":
@@ -2622,7 +2623,7 @@ const runTaskMenuAction = useCallback((action: TaskMenuAction, snapshot: Task) =
             size="icon"
             onClick={() => setGithubOpen(true)}
             aria-label="Git"
-            title="Git pull requests and issues (GitHub, GitLab, Bitbucket)"
+            title={tr("Git pull requests and issues (GitHub, GitLab, Bitbucket)")}
           >
             <GitPullRequest className="size-4" />
           </Button>
@@ -2630,8 +2631,8 @@ const runTaskMenuAction = useCallback((action: TaskMenuAction, snapshot: Task) =
             variant="ghost"
             size="icon"
             onClick={() => setImportSessionsOpen(true)}
-            aria-label="Import Claude Code sessions and OpenCode sessions"
-            title="Import Claude Code sessions and OpenCode sessions"
+            aria-label={tr("Import Claude Code sessions and OpenCode sessions")}
+            title={tr("Import Claude Code sessions and OpenCode sessions")}
             data-testid="import-claude-sessions-open"
           >
             <Import className="size-4" />
@@ -2640,8 +2641,8 @@ const runTaskMenuAction = useCallback((action: TaskMenuAction, snapshot: Task) =
             variant="ghost"
             size="icon"
             onClick={() => setWorktreesOpen(true)}
-            aria-label="Worktrees"
-            title="Worktrees"
+            aria-label={tr("Worktrees")}
+            title={tr("Worktrees")}
           >
             <FolderGit2 className="size-4" />
           </Button>
@@ -2650,8 +2651,8 @@ const runTaskMenuAction = useCallback((action: TaskMenuAction, snapshot: Task) =
             size="icon"
             data-testid="pipelines-button"
             onClick={openPipelinesPage}
-            aria-label="Pipelines"
-            title="Pipelines"
+            aria-label={tr("Pipelines")}
+            title={tr("Pipelines")}
           >
             <Workflow className="size-4" />
           </Button>
@@ -2659,8 +2660,8 @@ const runTaskMenuAction = useCallback((action: TaskMenuAction, snapshot: Task) =
             variant="ghost"
             size="icon"
             onClick={() => setSettingsOpen(true)}
-            aria-label="Settings"
-            title="Settings"
+            aria-label={tr("Settings")}
+            title={tr("Settings")}
           >
             <Settings className="size-4" />
           </Button>
@@ -2793,7 +2794,7 @@ const runTaskMenuAction = useCallback((action: TaskMenuAction, snapshot: Task) =
                           <Column
                             key={c.id}
                             id={c.id}
-                            label={c.label}
+                            label={tColumn(c.label)}
                             tasks={visibleTasks.filter((t) => t.column === c.id)}
                             homeDir={homeDir}
                             stacks={harnessStacks}
@@ -2974,7 +2975,7 @@ const runTaskMenuAction = useCallback((action: TaskMenuAction, snapshot: Task) =
         y={taskMenu?.y ?? 0}
         items={taskMenuItems}
         onClose={closeTaskMenu}
-        label="Task actions"
+        label={tr("Task actions")}
         testId="task-context-menu"
       />
       <GitHubDialog

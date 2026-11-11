@@ -22,6 +22,7 @@ import {
 } from "../../../shared/types.ts";
 import { buildDeleteConfirmCopy, triageDeleteOutcome } from "./worktree-delete-intent.ts";
 import { driftOf, driftTitle } from "@/lib/branch-drift";
+import { t, tColumn } from "@/lib/i18n";
 
 interface Props {
   open: boolean;
@@ -87,7 +88,7 @@ function statusValue(w: WorktreeInfo): string {
 
 function statusLabel(w: WorktreeInfo): string {
   if (w.column == null) return "";
-  return COLUMNS.find((c) => c.id === w.column)?.label ?? w.column;
+  return COLUMNS.find((c) => c.id === w.column)?.label ? tColumn(COLUMNS.find((c) => c.id === w.column)!.label) : w.column;
 }
 
 type SortField = "updated" | "project" | "status" | "branch";
@@ -212,7 +213,7 @@ export function WorktreesDialog({ open, onClose, tasks, projects, onOpenTask, ho
   }, [worktrees, projectValue, projectLabel]);
 
   const statusItems = useMemo(
-    () => [...COLUMNS.map((c) => ({ value: c.id as string, label: c.label })), { value: "archived", label: "Archived" }],
+    () => [...COLUMNS.map((c) => ({ value: c.id as string, label: tColumn(c.label) })), { value: "archived", label: t("Archived") }],
     [],
   );
 

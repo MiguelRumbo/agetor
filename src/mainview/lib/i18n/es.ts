@@ -1,0 +1,155 @@
+/**
+ * Diccionario inglés → español de la UI. La clave es el texto exacto en inglés
+ * que aparece en el componente (ver `index.ts`). Glosario en
+ * `docs/traduccion-inventario.md`: Harness/Worktree/Pipeline/Prompt no se
+ * traducen; Settings → Ajustes; Run → Ejecución; Step → Paso.
+ * Los marcadores `{nombre}` deben conservarse (lo comprueba index.test.ts).
+ */
+export const es: Record<string, string> = {
+  // ── Cabecera de la app (App.tsx)
+  "Dismiss error": "Descartar error",
+  "Discard unsaved pipeline changes?": "¿Descartar los cambios sin guardar del pipeline?",
+  "Discard": "Descartar",
+  "Settings": "Ajustes",
+  "Stop & archive": "Detener y archivar",
+  "Delete": "Eliminar",
+  "Git pull requests and issues (GitHub, GitLab, Bitbucket)": "Pull requests e issues de Git (GitHub, GitLab, Bitbucket)",
+  "Import Claude Code sessions and OpenCode sessions": "Importar sesiones de Claude Code y de OpenCode",
+  "Worktrees": "Worktrees",
+  "Pipelines": "Pipelines",
+  "Task actions": "Acciones de la tarea",
+  "Pipeline finished": "Pipeline terminado",
+  "Pipeline needs you": "El pipeline te necesita",
+  "Couldn't open terminal": "No se pudo abrir la terminal",
+  "Couldn't resume": "No se pudo reanudar",
+  "Couldn't cancel auto-resume": "No se pudo cancelar la reanudación automática",
+
+  // ── Formulario "New task" (NewTaskForm.tsx)
+  "Expand new task panel": "Expandir el panel de nueva tarea",
+  "Collapse new task panel": "Contraer el panel de nueva tarea",
+  "New task": "Nueva tarea",
+  "How these fields fit together": "Cómo encajan estos campos",
+  "A task is a unit of agent work. Type, Title and Prompt say what to do. Project, Branch and Isolate say where — with Isolate on, work happens on a fresh branch in a separate worktree, so your checkout stays clean. Harness, Mode, Model and Effort pick which agent runs it and how much autonomy it gets. Defaults are sensible — a title, a prompt and a project are enough to start.":
+    "Una tarea es una unidad de trabajo del agente. Tipo, Título y Prompt dicen qué hacer. Proyecto, Rama y Aislar dicen dónde: con Aislar activado, el trabajo ocurre en una rama nueva dentro de un worktree aparte, así tu copia de trabajo queda limpia. Harness, Modo, Modelo y Esfuerzo eligen qué agente la ejecuta y cuánta autonomía tiene. Los valores por defecto son razonables: un título, un prompt y un proyecto bastan para empezar.",
+  "Short description": "Descripción breve",
+  "Title": "Título",
+  "Project": "Proyecto",
+  "Pipeline": "Pipeline",
+  "Agent": "Agente",
+  "Harness": "Harness",
+  "Mode": "Modo",
+  "Model": "Modelo",
+  "Effort": "Esfuerzo",
+  "Speed": "Velocidad",
+  "Max Mode": "Max Mode",
+  "Change": "Cambiar",
+  "Code": "Código",
+  "Plan": "Plan",
+  "To backlog": "A pendientes",
+  "Run task": "Ejecutar tarea",
+  "About this mode": "Sobre este modo",
+  "Refresh model list": "Actualizar la lista de modelos",
+  "Use Cursor Max Mode context": "Usar el contexto de Cursor Max Mode",
+  "Pick the working directory the agent runs in. Add new ones with the folder picker at the bottom of the list.":
+    "Elige el directorio de trabajo donde se ejecuta el agente. Añade más con el selector de carpetas al final de la lista.",
+  "Execute changes (auto / accept edits / ask all live under Code — pick the exact variant below).":
+    "Ejecuta cambios (auto / aceptar ediciones / preguntar todo están bajo Código; elige la variante exacta abajo).",
+
+  // ── Tarjeta de tarea (TaskCard.tsx)
+  "Stop this pipeline?": "¿Detener este pipeline?",
+  "Live steps will be cancelled and the pending review dismissed. History is kept.":
+    "Los pasos en curso se cancelarán y la revisión pendiente se descartará. El historial se conserva.",
+  "Stop": "Detener",
+  "New messages": "Mensajes nuevos",
+  "Open the pipeline run": "Abrir la ejecución del pipeline",
+  "Open the human review gate": "Abrir la puerta de revisión humana",
+  "Mark this task as done": "Marcar esta tarea como hecha",
+  "Archive task": "Archivar tarea",
+  "Stop the running agent and archive task": "Detener el agente en ejecución y archivar la tarea",
+  "Unarchive task": "Desarchivar tarea",
+  "View changes (git diff)": "Ver cambios (git diff)",
+  "Delete task": "Eliminar tarea",
+  "Open run panel to answer": "Abre el panel de ejecución para responder",
+  "Agent is waiting on you — open the run panel": "El agente te está esperando: abre el panel de ejecución",
+
+  // ── Filtros del tablero (KanbanFilters.tsx)
+  "Search harnesses…": "Buscar harnesses…",
+  "Search title, prompt, workdir, branch…": "Buscar título, prompt, directorio, rama…",
+  "Search tasks": "Buscar tareas",
+  "Search projects…": "Buscar proyectos…",
+  "Search statuses…": "Buscar estados…",
+  "Search types…": "Buscar tipos…",
+  "Filter by archive state": "Filtrar por estado de archivo",
+  "Active only": "Solo activas",
+  "All": "Todas",
+  "Archived only": "Solo archivadas",
+  "Clear": "Limpiar",
+  "Archived": "Archivadas",
+
+  // ── Ajustes (SettingsDialog.tsx)
+  "Language": "Idioma",
+  "The interface language. Changing it reloads the app.": "El idioma de la interfaz. Al cambiarlo se recarga la app.",
+  "Default harness for new tasks": "Harness por defecto para tareas nuevas",
+  "tmux for Claude Code": "tmux para Claude Code",
+  "System tmux (from PATH)": "tmux del sistema (desde PATH)",
+  "Claude Code runs through a tmux session per task. Switch to the bundled binary if you don't want to install tmux system-wide.":
+    "Claude Code se ejecuta en una sesión de tmux por tarea. Cambia al binario incluido si no quieres instalar tmux en todo el sistema.",
+  "Theme": "Tema",
+  "Auto": "Auto",
+  "Dark": "Oscuro",
+  "Light": "Claro",
+  "Auto follows your system's appearance and switches live if it changes.":
+    "Auto sigue la apariencia del sistema y cambia al instante si esta cambia.",
+  "Font size": "Tamaño de letra",
+  "Decrease font size": "Reducir el tamaño de letra",
+  "Increase font size": "Aumentar el tamaño de letra",
+  "Reset font size": "Restablecer el tamaño de letra",
+  "Reset": "Restablecer",
+  "Look for Claude Code and OpenCode sessions on launch": "Buscar sesiones de Claude Code y OpenCode al iniciar",
+  "On startup, notice Claude Code and OpenCode sessions that were started outside Agetor so you can import them.":
+    "Al arrancar, avisa de las sesiones de Claude Code y OpenCode iniciadas fuera de Agetor para que puedas importarlas.",
+  "Sticky user messages": "Mensajes de usuario fijos",
+  "Keep your latest sent message visible while its response scrolls. Turn this off for a standard chat list.":
+    "Mantiene visible tu último mensaje mientras se desplaza la respuesta. Desactívalo para una lista de chat normal.",
+  "Keep Agetor's macOS permissions away from agents (macOS)": "Mantener los permisos de macOS de Agetor lejos de los agentes (macOS)",
+  "Auto-resume fx after a rate limit": "Reanudar fx automáticamente tras un límite de uso",
+  "Auto-resume delay (seconds)": "Espera antes de reanudar (segundos)",
+  "Getting started": "Primeros pasos",
+  "Show getting started guide": "Mostrar la guía de primeros pasos",
+  "Bring back the onboarding checklist.": "Recupera la lista de primeros pasos.",
+  "Harnesses": "Harnesses",
+  "Settings sections": "Secciones de ajustes",
+  "Back": "Atrás",
+  "Close": "Cerrar",
+  "Cancel": "Cancelar",
+  "Edit": "Editar",
+  "Disable": "Desactivar",
+  "Discard unsaved changes?": "¿Descartar los cambios sin guardar?",
+  "Compact the database?": "¿Compactar la base de datos?",
+  "Compact": "Compactar",
+  "Compact database": "Compactar base de datos",
+  "Reclaims unused space; pauses Agetor briefly.": "Recupera el espacio sin usar; pausa Agetor unos instantes.",
+  "Agetor won't respond until this finishes. Please don't quit.": "Agetor no responderá hasta que esto termine. No cierres la app.",
+  "Archived task history": "Historial de tareas archivadas",
+  "Loading usage…": "Cargando uso…",
+  "No local usage history for this account (last 30 days).": "Sin historial local de uso para esta cuenta (últimos 30 días).",
+  "Day": "Día",
+  "In": "Entrada",
+  "Out": "Salida",
+  "Msgs": "Msj.",
+  "Label": "Etiqueta",
+  "Harness type": "Tipo de harness",
+  "Detected accounts": "Cuentas detectadas",
+  "Experimental": "Experimental",
+  "Pick a starting point. You can edit every field before saving.": "Elige un punto de partida. Puedes editar cada campo antes de guardar.",
+};
+
+/** Nombres de las columnas del tablero (`COLUMNS` en shared/types.ts). Aparte porque "Review" también es un verbo en otros sitios. */
+export const esColumns: Record<string, string> = {
+  Backlog: "Pendientes",
+  Ready: "Lista",
+  Running: "En ejecución",
+  Blocked: "Bloqueada",
+  Review: "En revisión",
+  Done: "Hecha",
+};
