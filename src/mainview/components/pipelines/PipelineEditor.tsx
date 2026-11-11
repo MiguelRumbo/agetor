@@ -49,6 +49,7 @@ import { StepPanel } from "./StepPanel";
 import { SubagentDetailsDialog } from "./SubagentDetailsDialog";
 import { SubagentEdge } from "./SubagentEdge";
 import { SubagentNode } from "./SubagentNode";
+import { t } from "@/lib/i18n";
 
 const NODE_TYPES = { step: StepNode, subagent: SubagentNode };
 const EDGE_TYPES = { step: StepEdge, subagent: SubagentEdge };
@@ -652,9 +653,9 @@ function PipelineEditorInner({ pipelineId, onBack, onSaved, onDirtyChange, onOpe
   const handleBack = useCallback(async () => {
     if (isDirty) {
       const ok = await confirm({
-        title: "Discard unsaved changes?",
-        description: "You have unsaved changes to this pipeline — leaving now will discard them.",
-        confirmLabel: "Discard changes",
+        title: t("Discard unsaved changes?"),
+        description: t("You have unsaved changes to this pipeline — leaving now will discard them."),
+        confirmLabel: t("Discard changes"),
         variant: "destructive",
       });
       if (!ok) return;
@@ -719,7 +720,7 @@ function PipelineEditorInner({ pipelineId, onBack, onSaved, onDirtyChange, onOpe
   if (loading) {
     return (
       <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
-        Loading pipeline…
+        {t("Loading pipeline…")}
       </div>
     );
   }
@@ -729,7 +730,7 @@ function PipelineEditorInner({ pipelineId, onBack, onSaved, onDirtyChange, onOpe
       <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-sm text-danger">
         <p>{loadError}</p>
         <Button type="button" variant="outline" size="sm" onClick={onBack}>
-          Back to pipelines
+          {t("Back to pipelines")}
         </Button>
       </div>
     );
@@ -749,7 +750,7 @@ function PipelineEditorInner({ pipelineId, onBack, onSaved, onDirtyChange, onOpe
           data-testid="pipeline-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Pipeline name"
+          placeholder={t("Pipeline name")}
           maxLength={PIPELINE_LIMITS.name}
           className="h-8 w-48"
         />
@@ -757,7 +758,7 @@ function PipelineEditorInner({ pipelineId, onBack, onSaved, onDirtyChange, onOpe
           data-testid="pipeline-description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="Description (optional)"
+          placeholder={t("Description (optional)")}
           maxLength={PIPELINE_LIMITS.description}
           className="h-8 min-w-[160px] flex-1"
         />
@@ -837,7 +838,7 @@ function PipelineEditorInner({ pipelineId, onBack, onSaved, onDirtyChange, onOpe
           {nodes.length === 0 && (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
               <p className="rounded-md border border-dashed border-border bg-card/80 px-4 py-2 text-sm text-muted-foreground">
-                Add a step to get started.
+                {t("Add a step to get started.")}
               </p>
             </div>
           )}

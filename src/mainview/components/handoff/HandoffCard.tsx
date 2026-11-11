@@ -27,6 +27,7 @@ import { HandoffArtifactChips } from "./HandoffArtifactChips";
 import { HandoffDialog } from "./HandoffDialog";
 import { handoffRecordForFile, RecordHandoffDialog, useFileOpener } from "./HandoffFileChip";
 import { stepNameFor, useHandoffView } from "./handoff-context";
+import { t } from "@/lib/i18n";
 
 const CARD_CLASS = "rounded-md border border-border/60 bg-card p-3 text-foreground";
 
@@ -182,10 +183,10 @@ export const HandoffCard = memo(function HandoffCard({
         {usage === "not-used" && (
           <span
             data-testid="handoff-card-not-used"
-            title="The pipeline read a different handoff from this step"
+            title={t("The pipeline read a different handoff from this step")}
             className="rounded border border-border/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground"
           >
-            Not used
+            {t("Not used")}
           </span>
         )}
         <OpenButton onClick={openModal} />
@@ -279,7 +280,7 @@ export const InvalidHandoffCard = memo(function InvalidHandoffCard({
           onToggle={(e) => setRawOpen(e.currentTarget.open)}
           className="mt-2 text-xs"
         >
-          <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground">Raw handoff</summary>
+          <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground">{t("Raw handoff")}</summary>
           <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded border border-border/40 bg-muted/40 p-2 font-mono text-[11px]">
             {raw}
           </pre>

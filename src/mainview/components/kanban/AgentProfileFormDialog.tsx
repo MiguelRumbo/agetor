@@ -15,6 +15,7 @@ import { AGENT_PROFILE_LIMITS } from "../../../shared/agent-profile.ts";
 import type { AgentProfile } from "../../../shared/types.ts";
 import { SkillsPicker } from "./SkillsPicker";
 import { TaskLaunchPickers, useTaskLaunch, type TaskLaunch } from "./TaskLaunchPickers";
+import { t } from "@/lib/i18n";
 
 /** Local edit-buffer shape for the create/edit form — the two fields
  *  `TaskLaunchPickers` doesn't own (name, and the composition-only
@@ -165,16 +166,16 @@ export function AgentProfileForm({
           data-testid="agent-profile-form-error"
           className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive-foreground"
         >
-          This agent no longer exists — it may have been deleted elsewhere.
+          {t("This agent no longer exists — it may have been deleted elsewhere.")}
         </div>
       ) : (
         <div data-testid="agent-profile-form-loading" className="text-xs text-muted-foreground">
-          Loading…
+          {t("Loading…")}
         </div>
       )}
       <div className={cn("flex justify-end gap-2", variant === "page" && PAGE_FOOTER_CLASS)}>
         <Button variant="outline" size="sm" data-testid="agent-profile-cancel" onClick={onCancel}>
-          Cancel
+          {t("Cancel")}
         </Button>
       </div>
     </div>
@@ -323,7 +324,7 @@ function AgentProfileFormBody({
           fieldset reaches its selects/buttons/switches natively. */}
       <fieldset disabled={saving} className="m-0 min-w-0 space-y-3 border-0 p-0">
       <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">Name</label>
+        <label className="text-xs text-muted-foreground">{t("Name")}</label>
         <Input
           {...IDENTIFIER_INPUT_PROPS}
           data-testid="agent-profile-name"
@@ -338,19 +339,19 @@ function AgentProfileFormBody({
       <TaskLaunchPickers launch={trackedLaunch} hideProfilePicker />
 
       <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">Instructions</label>
+        <label className="text-xs text-muted-foreground">{t("Instructions")}</label>
         <Textarea
           data-testid="agent-profile-instructions"
           value={form.instructions}
           maxLength={AGENT_PROFILE_LIMITS.instructions}
           onChange={(e) => setForm({ ...form, instructions: e.target.value })}
           rows={5}
-          placeholder="General instructions this agent should always follow…"
+          placeholder={t("General instructions this agent should always follow…")}
         />
       </div>
 
       <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">Skills</label>
+        <label className="text-xs text-muted-foreground">{t("Skills")}</label>
         <SkillsPicker
           value={form.skills}
           onChange={(skills) => setForm({ ...form, skills })}
@@ -369,9 +370,9 @@ function AgentProfileFormBody({
             onChange={(e) => setCopyTasks(e.target.checked)}
           />
           <span className="space-y-0.5">
-            <span className="block text-xs">Also copy tasks that use this agent</span>
+            <span className="block text-xs">{t("Also copy tasks that use this agent")}</span>
             <span className="block text-xs text-muted-foreground">
-              New backlog cards. Runs, pipeline steps, and tasks on an existing branch stay on the original.
+              {t("New backlog cards. Runs, pipeline steps, and tasks on an existing branch stay on the original.")}
             </span>
           </span>
         </label>
@@ -396,11 +397,11 @@ function AgentProfileFormBody({
             onClick={() => onDuplicate?.()}
             disabled={saving}
           >
-            Duplicate
+            {t("Duplicate")}
           </Button>
         )}
         <Button variant="outline" size="sm" data-testid="agent-profile-cancel" onClick={onCancel} disabled={saving}>
-          Cancel
+          {t("Cancel")}
         </Button>
         <Button size="sm" data-testid="agent-profile-save" onClick={() => void save()} disabled={disabled}>
           {saving ? "Saving…" : "Save"}
@@ -445,9 +446,9 @@ export function AgentProfileFormDialog({ open, profileId, onClose, onSaved }: Ag
     confirmingRef.current = true;
     try {
       const ok = await confirm({
-        title: "Discard unsaved changes?",
-        description: "Your edits to this agent will be lost.",
-        confirmLabel: "Discard",
+        title: t("Discard unsaved changes?"),
+        description: t("Your edits to this agent will be lost."),
+        confirmLabel: t("Discard"),
         variant: "destructive",
       });
       if (ok) onClose();
@@ -467,7 +468,7 @@ export function AgentProfileFormDialog({ open, profileId, onClose, onSaved }: Ag
           <div id="agent-profile-form-dialog-title" className="text-sm font-semibold">
             {title}
           </div>
-          <Button variant="ghost" size="icon" className="shrink-0" title="Close" aria-label="Close" onClick={() => void requestClose()}>
+          <Button variant="ghost" size="icon" className="shrink-0" title={t("Close")} aria-label={t("Close")} onClick={() => void requestClose()}>
             <X className="size-4" />
           </Button>
         </header>

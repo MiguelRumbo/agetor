@@ -18,6 +18,7 @@ import { createAndStartTask, TaskLaunchPickers, useTaskLaunch } from "./TaskLaun
 import { useWorktreeOptions, WorktreeOptions } from "./WorktreeOptions";
 import { PromptComposer } from "./PromptComposer";
 import { TaskTypePicker } from "./TaskTypePicker";
+import { t } from "@/lib/i18n";
 
 /** The exact sibling of `ResolveConflictsContext` for issues: enough to
  *  refetch the thread and know where to put the resulting task. */
@@ -202,9 +203,9 @@ export function CreateTaskFromIssueDialog({ open, onClose, context, onCreated, o
     if (submitting) return;
     if (draftDirty) {
       const ok = await confirm({
-        title: "Discard this task draft and open Pipelines?",
-        description: "Your prompt edits, references and selections will be lost.",
-        confirmLabel: "Discard draft",
+        title: t("Discard this task draft and open Pipelines?"),
+        description: t("Your prompt edits, references and selections will be lost."),
+        confirmLabel: t("Discard draft"),
         variant: "destructive",
       });
       if (!ok) return;
@@ -284,8 +285,8 @@ export function CreateTaskFromIssueDialog({ open, onClose, context, onCreated, o
             variant="ghost"
             size="icon"
             className="shrink-0"
-            title="Close"
-            aria-label="Close"
+            title={t("Close")}
+            aria-label={t("Close")}
             disabled={submitting}
             onClick={onClose}
           >
@@ -344,7 +345,7 @@ export function CreateTaskFromIssueDialog({ open, onClose, context, onCreated, o
                     <div>Comments weren't fetched — {thread.commentsError}</div>
                     {thread.refetchCommand && (
                       <div className="mt-1">
-                        The agent can fetch them itself with the re-fetch command in the prompt.
+                        {t("The agent can fetch them itself with the re-fetch command in the prompt.")}
                       </div>
                     )}
                   </div>
@@ -397,7 +398,7 @@ export function CreateTaskFromIssueDialog({ open, onClose, context, onCreated, o
 
         <div className="flex shrink-0 justify-end gap-2 border-t border-border/60 p-3">
           <Button variant="outline" onClick={onClose} disabled={submitting}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button data-testid="issue-task-submit" onClick={() => void submit()} disabled={!canSubmit}>
             {submitting ? (

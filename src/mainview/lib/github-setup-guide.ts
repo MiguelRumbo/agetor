@@ -1,4 +1,5 @@
-/**
+
+import { t } from "@/lib/i18n";/**
  * Content for the "Connect Agetor to GitHub" setup guide (`GitHubSetupDialog.tsx`).
  *
  * This module is the **single source of truth** for that guide's copy — the
@@ -56,20 +57,20 @@ export const GITHUB_URLS = {
  */
 export const AUTH_RESOLUTION_STEPS: GuideStep[] = [
   {
-    title: "A token saved in this Settings section",
+    title: t("A token saved in this Settings section"),
     detail:
       "Agetor looks up the token stored for the repo's remote host (the raw ssh host — " +
       "e.g. github-work.com for an ssh alias remote). If none is stored for that exact " +
       "host, it falls back to whatever token is stored under the github.com entry.",
   },
   {
-    title: "Environment variables",
+    title: t("Environment variables"),
     detail:
       "If no token is stored for the host, Agetor reads the GITHUB_TOKEN or GH_TOKEN " +
       "environment variable from the process it was launched with.",
   },
   {
-    title: "GitHub CLI login",
+    title: t("GitHub CLI login"),
     detail:
       "If neither of the above resolves a token, Agetor shells out to `gh auth token` " +
       "and uses whatever the GitHub CLI has you logged in as, if anything.",
@@ -185,19 +186,19 @@ export const FINE_GRAINED_CREATE_STEPS: GuideStep[] = [
     detail: "Choose \"Fine-grained tokens\", then click \"Generate new token\".",
   },
   {
-    title: "Name, expiration, and resource owner",
+    title: t("Name, expiration, and resource owner"),
     detail:
       "Pick a name and expiration. Set \"Resource owner\" to your personal account, or " +
       "the organization that owns the repositories you want Agetor to work with.",
   },
   {
-    title: "Repository access",
+    title: t("Repository access"),
     detail:
       "Choose \"Only select repositories\" and pick the repos Agetor should touch (or " +
       "\"All repositories\" if you want it to cover everything under that owner).",
   },
   {
-    title: "Set permissions",
+    title: t("Set permissions"),
     detail: "Grant the permissions listed below, then click \"Generate token\" and copy it — it's shown only once.",
   },
 ];
@@ -213,15 +214,15 @@ export const CLASSIC_CREATE_STEPS: GuideStep[] = [
     detail: "Choose \"Tokens (classic)\", then \"Generate new token\" → \"Generate new token (classic)\".",
   },
   {
-    title: "Note and expiration",
+    title: t("Note and expiration"),
     detail: "Give the token a note describing what it's for, and pick an expiration.",
   },
   {
-    title: "Select scopes",
+    title: t("Select scopes"),
     detail: "Tick the scopes listed below, then click \"Generate token\" and copy it — it's shown only once.",
   },
   {
-    title: "SAML SSO organizations",
+    title: t("SAML SSO organizations"),
     detail:
       "If the token needs to reach an org with SAML SSO enabled, open the token's " +
       "\"Configure SSO\" menu afterward and authorize it for that organization.",

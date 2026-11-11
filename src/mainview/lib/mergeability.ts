@@ -1,4 +1,5 @@
 import type { GitHubPullMergeability } from "../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 export type MergeTone = "ok" | "warn" | "bad" | "muted";
 
@@ -21,7 +22,7 @@ export function mergeabilityView(m: GitHubPullMergeability): MergeabilityView {
     // pre-mergeability-feature baseline (no verdict meant merge stayed
     // enabled) rather than regressing Bitbucket to a permanently dead button.
     return {
-      label: "Mergeability hasn't been verified — merging will be attempted as-is",
+      label: t("Mergeability hasn't been verified — merging will be attempted as-is"),
       tone: "muted",
       canMerge: true,
       showUpdateBranch: m.mergeableState === "behind",
@@ -30,17 +31,17 @@ export function mergeabilityView(m: GitHubPullMergeability): MergeabilityView {
   switch (m.mergeableState) {
     case "clean":
     case "has_hooks":
-      return { label: "Ready to merge", tone: "ok", canMerge: m.mergeable, showUpdateBranch: false };
+      return { label: t("Ready to merge"), tone: "ok", canMerge: m.mergeable, showUpdateBranch: false };
     case "unstable":
-      return { label: "Mergeable — some checks are pending or failing", tone: "warn", canMerge: m.mergeable, showUpdateBranch: false };
+      return { label: t("Mergeable — some checks are pending or failing"), tone: "warn", canMerge: m.mergeable, showUpdateBranch: false };
     case "behind":
-      return { label: "Out of date with the base branch", tone: "warn", canMerge: m.mergeable, showUpdateBranch: true };
+      return { label: t("Out of date with the base branch"), tone: "warn", canMerge: m.mergeable, showUpdateBranch: true };
     case "dirty":
-      return { label: "Conflicts must be resolved before merging", tone: "bad", canMerge: false, showUpdateBranch: false };
+      return { label: t("Conflicts must be resolved before merging"), tone: "bad", canMerge: false, showUpdateBranch: false };
     case "blocked":
-      return { label: "Blocked by required reviews or checks", tone: "bad", canMerge: false, showUpdateBranch: false };
+      return { label: t("Blocked by required reviews or checks"), tone: "bad", canMerge: false, showUpdateBranch: false };
     case "draft":
-      return { label: "Draft — mark ready for review to merge", tone: "muted", canMerge: false, showUpdateBranch: false };
+      return { label: t("Draft — mark ready for review to merge"), tone: "muted", canMerge: false, showUpdateBranch: false };
     default:
       return { label: `Mergeability: ${m.mergeableState}`, tone: "muted", canMerge: m.mergeable, showUpdateBranch: false };
   }

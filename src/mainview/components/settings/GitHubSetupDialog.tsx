@@ -16,6 +16,7 @@ import {
   type GuideScopeRow,
   type GuideStep,
 } from "@/lib/github-setup-guide";
+import { t } from "@/lib/i18n";
 
 /** Click-path to create a Bitbucket Atlassian API token, used in place of
  *  the retired (2026-06-09) app-password flow. Stored as a single
@@ -36,7 +37,7 @@ const BITBUCKET_CREATE_STEPS: GuideStep[] = [
       "rejects it). Give it a name, then select \"Bitbucket\" and tick the scopes listed below.",
   },
   {
-    title: "Copy the token",
+    title: t("Copy the token"),
     detail: "Click \"Create\" and copy the generated token — it's shown only once.",
   },
   {
@@ -84,7 +85,7 @@ const GITLAB_CREATE_STEPS: GuideStep[] = [
       "sidebar.",
   },
   {
-    title: "Name, expiration, and scope",
+    title: t("Name, expiration, and scope"),
     detail: "Give the token a name and expiration, then select the \"api\" scope.",
   },
   {
@@ -120,9 +121,9 @@ export function GitHubSetupDialog({ open, onClose }: { open: boolean; onClose: (
     >
       <div className="flex items-center justify-between border-b border-border/60 pb-3">
         <h2 id="github-setup-dialog-title" className="text-base font-semibold">
-          Connect Agetor to a git host
+          {t("Connect Agetor to a git host")}
         </h2>
-        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
+        <Button variant="ghost" size="icon" onClick={onClose} aria-label={t("Close")}>
           <X className="size-4" />
         </Button>
       </div>
@@ -183,7 +184,7 @@ export function GitHubSetupDialog({ open, onClose }: { open: boolean; onClose: (
           </div>
           <div className="space-y-1 rounded-md border border-border/60 px-3 py-2">
             <p className="text-[11px] font-medium uppercase tracking-wide text-warning">
-              Not available with fine-grained tokens
+              {t("Not available with fine-grained tokens")}
             </p>
             <ul className="list-disc space-y-1 pl-4 text-[11px] leading-snug text-muted-foreground">
               {FINE_GRAINED_LIMITATIONS.map((item) => (
@@ -262,7 +263,7 @@ export function GitHubSetupDialog({ open, onClose }: { open: boolean; onClose: (
               className="h-auto p-0"
               onClick={() => void api.openExternal(GITHUB_URLS.tokenDocs)}
             >
-              GitHub's token documentation
+              {t("GitHub's token documentation")}
             </Button>
           </div>
         </GuideSection>

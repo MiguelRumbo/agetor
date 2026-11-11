@@ -4,6 +4,7 @@ import { Bot, Check, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SUBAGENT_NODE_WIDTH, type SubagentFlowNode, type SubagentVisualState } from "@/lib/pipelines";
 import { usePipelineCanvasContext } from "./pipeline-canvas-context";
+import { t } from "@/lib/i18n";
 
 /**
  * The pipelines canvas's `"subagent"` node: one small satellite per persona
@@ -74,9 +75,9 @@ function SubagentNodeImpl({ data }: NodeProps<SubagentFlowNode>) {
       />
       <span className="flex size-4 shrink-0 items-center justify-center">
         {visual === "working" ? (
-          <Loader2 className="size-3.5 animate-spin text-info" aria-label="Working" />
+          <Loader2 className="size-3.5 animate-spin text-info" aria-label={t("Working")} />
         ) : visual === "done" ? (
-          <Check className="size-3.5 text-success" aria-label="Finished" />
+          <Check className="size-3.5 text-success" aria-label={t("Finished")} />
         ) : (
           <Bot className="size-3.5" aria-hidden />
         )}

@@ -57,6 +57,7 @@ import type {
   PlannedPipeline,
 } from "../../../shared/bundle-import.ts";
 import { useBundleFileDrop } from "./useBundleFileDrop";
+import { t } from "@/lib/i18n";
 
 const TITLE_ID = "bundle-import-title";
 /** Debounce for re-previewing after an option change (typing a name). */
@@ -148,12 +149,12 @@ interface ImportFailure {
 }
 
 const DISCARD_IMPORT = {
-  title: "Discard this import?",
-  description: "Your changes to names and harnesses will be lost.",
+  title: t("Discard this import?"),
+  description: t("Your changes to names and harnesses will be lost."),
 } as const;
 const DISCARD_PASTE = {
-  title: "Discard the pasted JSON?",
-  description: "The text you pasted will be lost.",
+  title: t("Discard the pasted JSON?"),
+  description: t("The text you pasted will be lost."),
 } as const;
 
 /**
@@ -473,9 +474,9 @@ export function ImportBundleDialog({
       void (async () => {
         if (importOptionsEdited(optionsRef.current)) {
           const ok = await confirm({
-            title: "Replace this import?",
+            title: t("Replace this import?"),
             description: DISCARD_IMPORT.description,
-            confirmLabel: "Replace",
+            confirmLabel: t("Replace"),
             variant: "destructive",
           });
           if (!ok) return;
@@ -497,7 +498,7 @@ export function ImportBundleDialog({
   const requestClose = useCallback(async () => {
     if (importing) return;
     if (discardAsk) {
-      const ok = await confirm({ ...discardAsk, confirmLabel: "Discard", variant: "destructive" });
+      const ok = await confirm({ ...discardAsk, confirmLabel: t("Discard"), variant: "destructive" });
       if (!ok) return;
     }
     onClose();
@@ -508,7 +509,7 @@ export function ImportBundleDialog({
   const backToSource = async () => {
     if (importing) return;
     if (importOptionsEdited(optionsRef.current)) {
-      const ok = await confirm({ ...DISCARD_IMPORT, confirmLabel: "Discard", variant: "destructive" });
+      const ok = await confirm({ ...DISCARD_IMPORT, confirmLabel: t("Discard"), variant: "destructive" });
       if (!ok) return;
     }
     noteLeavingPendingVerdict();
@@ -792,7 +793,7 @@ export function ImportBundleDialog({
             data-testid="bundle-import-close"
             onClick={() => void requestClose()}
             disabled={importing}
-            aria-label="Close"
+            aria-label={t("Close")}
           >
             <X className="size-4" />
           </Button>
@@ -817,7 +818,7 @@ export function ImportBundleDialog({
               onPreviewPaste={previewPaste}
             />
           ) : (
-            <div ref={previewRef} tabIndex={-1} role="region" aria-label="Import preview" className="outline-none">
+            <div ref={previewRef} tabIndex={-1} role="region" aria-label={t("Import preview")} className="outline-none">
               {/* Locked while the import runs (an edit then would be dropped)
                   and while a lost import's verdict is pending. */}
               <fieldset disabled={previewLocked} className="m-0 min-w-0 border-0 p-0">
@@ -844,7 +845,7 @@ export function ImportBundleDialog({
                 {plan.blocking.length} blocking issue{plan.blocking.length === 1 ? "" : "s"} — fix them to import
               </span>
             )}
-            {showPreview && plan?.canImport && (previewing || (planStale && !previewError)) && <span>Updating preview…</span>}
+            {showPreview && plan?.canImport && (previewing || (planStale && !previewError)) && <span>{t("Updating preview…")}</span>}
             {showPreview && plan?.canImport && !previewing && planStale && previewError && (
               <span className="text-danger">{previewOutdatedNote(previewError)}</span>
             )}
@@ -863,7 +864,7 @@ export function ImportBundleDialog({
               </Button>
             )}
             <Button size="sm" variant="outline" onClick={() => void requestClose()} disabled={importing}>
-              Cancel
+              {t("Cancel")}
             </Button>
             {showPreview && (
               <Button
@@ -924,7 +925,7 @@ function ErrorBox({ text, onRetry, tone = "danger" }: { text: string; onRetry?: 
       <span className="min-w-0">{text}</span>
       {onRetry && (
         <Button size="sm" variant="outline" data-testid="bundle-import-retry" className="h-6 shrink-0 px-2 text-[11px]" onClick={onRetry}>
-          Retry
+          {t("Retry")}
         </Button>
       )}
     </div>
@@ -970,7 +971,7 @@ function SourceStep({
       </div>
       <Textarea
         data-testid="bundle-import-paste"
-        aria-label="Bundle JSON"
+        aria-label={t("Bundle JSON")}
         aria-invalid={pasteError ? true : undefined}
         aria-describedby={pasteError ? "bundle-import-paste-error" : undefined}
         value={pasteDraft}
@@ -992,7 +993,7 @@ function SourceStep({
           disabled={!pasteDraft.trim()}
           onClick={onPreviewPaste}
         >
-          Preview
+          {t("Preview")}
         </Button>
       </div>
     </div>
@@ -1041,15 +1042,14 @@ function PreviewStep({
         >
           <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
           <span>
-            Nothing was imported: something on this machine changed since the preview, so the import changed
-            too. The plan below is what it would create now — review it, then import again.
+            {t("Nothing was imported: something on this machine changed since the preview, so the import changed too. The plan below is what it would create now — review it, then import again.")}
           </span>
         </div>
       )}
       {previewErrorBox}
       {plan.legacy && (
         <div data-testid="bundle-import-legacy" className="rounded-md bg-info/10 px-3 py-2 text-info">
-          Legacy pipeline file — its Agents are matched by name to the Agents already on this machine.
+          {t("Legacy pipeline file — its Agents are matched by name to the Agents already on this machine.")}
         </div>
       )}
       <div
@@ -1058,8 +1058,7 @@ function PreviewStep({
       >
         <ShieldAlert className="mt-px size-3.5 shrink-0" aria-hidden />
         <span>
-          This file is third-party content: its instructions become part of your agents' prompts. Read them
-          before importing.
+          {t("This file is third-party content: its instructions become part of your agents' prompts. Read them before importing.")}
         </span>
       </div>
 
@@ -1084,7 +1083,7 @@ function PreviewStep({
 
       {harnessesWithNotes.length > 0 && (
         <section className="space-y-2">
-          <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Harnesses</h3>
+          <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t("Harnesses")}</h3>
           {harnessesWithNotes.map((h) => (
             <HarnessRow key={h.id} harness={h} options={options} dispatch={dispatch} />
           ))}
@@ -1152,7 +1151,7 @@ function AgentRow({
     >
       <div className="grid gap-2 sm:grid-cols-2">
         <label className="space-y-1">
-          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Name</span>
+          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("Name")}</span>
           <Input
             data-testid="bundle-import-agent-name"
             // Every row's field reads "Name"; say whose, visible word first.
@@ -1165,7 +1164,7 @@ function AgentRow({
           />
         </label>
         <label className="space-y-1">
-          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Harness</span>
+          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("Harness")}</span>
           <Select
             data-testid="bundle-import-agent-harness"
             aria-label={rowFieldLabel("Harness", "Agent", agent.sourceName, position, plan.agents.length)}
@@ -1178,7 +1177,7 @@ function AgentRow({
             }}
             className="h-8 text-xs"
           >
-            {selected === "" && <option value="">Pick a harness…</option>}
+            {selected === "" && <option value="">{t("Pick a harness…")}</option>}
             {missing && (
               <option value={selected} disabled>
                 {selected} — not available
@@ -1213,7 +1212,7 @@ function AgentRow({
           Skills: <span className="font-mono">{agent.skills.map((s) => `/${s}`).join(", ")}</span>
         </p>
       )}
-      <Collapsed label="Instructions" text={agent.instructions} testId="bundle-import-agent-instructions" />
+      <Collapsed label={t("Instructions")} text={agent.instructions} testId="bundle-import-agent-instructions" />
       <Issues issues={agent.warnings} kind="warning" />
       <Issues issues={agent.errors} kind="blocking" />
     </div>
@@ -1278,7 +1277,7 @@ function PipelineRow({
   return (
     <div data-testid="bundle-import-pipeline-row" className="rounded-md border border-border/60 p-2.5">
       <label className="space-y-1">
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Name</span>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("Name")}</span>
         <Input
           data-testid="bundle-import-pipeline-name"
           aria-label={rowFieldLabel("Name", "Pipeline", pipeline.sourceName, pipeline.index, total)}
@@ -1307,7 +1306,7 @@ function PipelineRow({
                 </span>
               )}
             </div>
-            <Collapsed label="Step instructions" text={step.instructions} />
+            <Collapsed label={t("Step instructions")} text={step.instructions} />
           </li>
         ))}
       </ol>

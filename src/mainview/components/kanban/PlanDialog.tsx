@@ -16,6 +16,7 @@ import {
   type MdImageScope,
 } from "./md-components";
 import type { AgentKind, Task, TaskPlan } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 /** Status pill for a plan card / the PlanDialog header — same four-state
  *  vocabulary throughout (`pending` / `approved` / `superseded` / `rejected`),
@@ -28,25 +29,25 @@ export function PlanStatusBadge({ status }: { status: TaskPlan["status"] }) {
     case "pending":
       return (
         <Badge variant="outline" className="border-primary/50 text-primary">
-          Awaiting approval
+          {t("Awaiting approval")}
         </Badge>
       );
     case "approved":
       return (
         <Badge variant="outline" className="border-success/50 text-success">
-          Approved
+          {t("Approved")}
         </Badge>
       );
     case "superseded":
       return (
         <Badge variant="outline" className="border-muted-foreground/40 text-muted-foreground">
-          Superseded
+          {t("Superseded")}
         </Badge>
       );
     case "rejected":
       return (
         <Badge variant="outline" className="border-danger/50 text-danger">
-          Rejected
+          {t("Rejected")}
         </Badge>
       );
   }
@@ -365,17 +366,17 @@ export function PlanDialog({ task, plan, agentKind, onClose, onPlanUpdated, focu
             <PlanStatusBadge status={plan.status} />
             {plan.status === "superseded" && (
               <span className="text-[10px] text-muted-foreground">
-                A newer plan replaced this one before it was approved.
+                {t("A newer plan replaced this one before it was approved.")}
               </span>
             )}
             {plan.status === "rejected" && claude && (
               <span className="text-[10px] text-muted-foreground">
-                Claude's plan was declined or the turn was interrupted before approval.
+                {t("Claude's plan was declined or the turn was interrupted before approval.")}
               </span>
             )}
           </div>
         </div>
-        <Button variant="ghost" size="icon" onClick={() => requestClose()} aria-label="Close">
+        <Button variant="ghost" size="icon" onClick={() => requestClose()} aria-label={t("Close")}>
           <X className="size-4" />
         </Button>
       </header>
@@ -391,7 +392,7 @@ export function PlanDialog({ task, plan, agentKind, onClose, onPlanUpdated, focu
                 mode === "preview" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/40",
               )}
             >
-              Preview
+              {t("Preview")}
             </button>
             <button
               type="button"
@@ -402,7 +403,7 @@ export function PlanDialog({ task, plan, agentKind, onClose, onPlanUpdated, focu
                 mode === "edit" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/40",
               )}
             >
-              Edit
+              {t("Edit")}
             </button>
           </div>
         )}
@@ -442,11 +443,11 @@ export function PlanDialog({ task, plan, agentKind, onClose, onPlanUpdated, focu
         <div className="flex items-center justify-end gap-2">
           {editable && edited && (
             <Button size="sm" variant="outline" onClick={() => void doRevert()} disabled={busy}>
-              Revert Changes
+              {t("Revert Changes")}
             </Button>
           )}
           <Button size="sm" variant="secondary" onClick={chatAboutIt} disabled={busy}>
-            Chat about it
+            {t("Chat about it")}
           </Button>
           {editable && (
             <Button
@@ -460,7 +461,7 @@ export function PlanDialog({ task, plan, agentKind, onClose, onPlanUpdated, focu
           )}
           {approved && (
             <Button size="sm" disabled>
-              Approved
+              {t("Approved")}
             </Button>
           )}
         </div>
@@ -469,10 +470,10 @@ export function PlanDialog({ task, plan, agentKind, onClose, onPlanUpdated, focu
       {confirmClose && (
         <Dialog open onClose={() => setConfirmClose(null)} labelledBy="plan-dialog-unsaved-title" className="max-w-sm">
           <h2 id="plan-dialog-unsaved-title" className="text-sm font-semibold">
-            You have unsaved plan edits
+            {t("You have unsaved plan edits")}
           </h2>
           <p className="mt-2 text-xs text-muted-foreground">
-            Save your edits as a draft before closing, or discard them.
+            {t("Save your edits as a draft before closing, or discard them.")}
           </p>
           {closeError && (
             <div className="mt-2 flex items-center gap-2 text-xs text-danger">
@@ -481,7 +482,7 @@ export function PlanDialog({ task, plan, agentKind, onClose, onPlanUpdated, focu
           )}
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="outline" onClick={closeWithoutSaving} disabled={closeSaving}>
-              Close without saving
+              {t("Close without saving")}
             </Button>
             <Button onClick={() => void saveAndClose()} disabled={closeSaving}>
               {closeSaving && <Loader2 className="mr-1 size-3 animate-spin" />}

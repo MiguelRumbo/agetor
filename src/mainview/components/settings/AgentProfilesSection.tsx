@@ -9,6 +9,7 @@ import { AgentProfileCard } from "@/components/kanban/AgentProfileCard";
 import { useAgentProfiles } from "@/lib/agent-profiles";
 import { BundleToolbar, useBundleList } from "@/components/bundle";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 /** Render `p.taskCount` (server-derived, rides on the same `/agent-profiles`
  *  payload `useAgentProfiles` already fetches — no extra request) as the
@@ -62,7 +63,7 @@ export function AgentProfilesSection({ harnesses, onAdd, onEdit, onDuplicate, on
         n > 0
           ? `${n} task${n === 1 ? "" : "s"} are bound to it and keep their own frozen copy; they will show it as deleted.`
           : "Tasks that already used it keep their own copy.",
-      confirmLabel: "Delete",
+      confirmLabel: t("Delete"),
       variant: "destructive",
     });
     if (!ok) return;
@@ -88,7 +89,7 @@ export function AgentProfilesSection({ harnesses, onAdd, onEdit, onDuplicate, on
       {...bundle.dropProps}
     >
       <div className="flex items-center justify-between">
-        <label className="text-xs text-muted-foreground">Agents</label>
+        <label className="text-xs text-muted-foreground">{t("Agents")}</label>
         <Button variant="outline" size="sm" data-testid="agent-profile-add" onClick={onAdd}>
           <Plus className="mr-1 size-3.5" /> Add agent
         </Button>
@@ -137,10 +138,10 @@ export function AgentProfilesSection({ harnesses, onAdd, onEdit, onDuplicate, on
                   <Download className="size-3.5" aria-hidden />
                 </Button>
                 <Button size="sm" variant="ghost" data-testid="agent-profile-edit" onClick={() => onEdit(p)}>
-                  Edit
+                  {t("Edit")}
                 </Button>
                 <Button size="sm" variant="ghost" data-testid="agent-profile-duplicate" onClick={() => onDuplicate(p)}>
-                  Duplicate
+                  {t("Duplicate")}
                 </Button>
                 <Button
                   size="sm"
@@ -149,15 +150,14 @@ export function AgentProfilesSection({ harnesses, onAdd, onEdit, onDuplicate, on
                   onClick={() => void remove(p)}
                   disabled={deletingId === p.id}
                 >
-                  Delete
+                  {t("Delete")}
                 </Button>
               </div>
             </div>
           ))}
           {profiles.length === 0 && (
             <p className="text-xs text-muted-foreground">
-              No agents yet. Bundle a harness, model, effort, and instructions into a reusable preset you can
-              pick on task launch.
+              {t("No agents yet. Bundle a harness, model, effort, and instructions into a reusable preset you can pick on task launch.")}
             </p>
           )}
         </div>

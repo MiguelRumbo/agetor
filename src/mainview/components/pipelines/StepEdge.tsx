@@ -9,6 +9,7 @@ import {
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { EdgeVisualState } from "@/lib/pipelines";
+import { t } from "@/lib/i18n";
 
 /** Edge `data` shape for the pipelines canvas's custom `"step"` edge type. */
 export type StepEdgeData = Record<string, unknown> & {
@@ -147,7 +148,7 @@ function StepEdgeImpl({
               <button
                 type="button"
                 data-testid="pipeline-step-edge-delete"
-                title="Remove connection"
+                title={t("Remove connection")}
                 onClick={() => data.onDelete?.(id)}
                 className="rounded-full p-0.5 hover:bg-accent hover:text-foreground"
               >

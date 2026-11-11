@@ -18,6 +18,7 @@ import {
   type DiscoveredAccount,
   type OpencodeSessionListItem,
 } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 interface Props {
   open: boolean;
@@ -400,13 +401,13 @@ export function ImportSessionsDialog({ open, onClose, onImported }: Props) {
         <header className="flex items-center justify-between border-b border-border/60 px-4 py-3">
           <div className="min-w-0">
             <h2 id="import-claude-sessions-title" className="text-sm font-semibold">
-              Import sessions
+              {t("Import sessions")}
             </h2>
             <p className="text-[11px] text-muted-foreground">
-              Claude Code and OpenCode sessions started outside Agetor
+              {t("Claude Code and OpenCode sessions started outside Agetor")}
             </p>
           </div>
-          <Button size="icon" variant="ghost" onClick={onClose} aria-label="Close">
+          <Button size="icon" variant="ghost" onClick={onClose} aria-label={t("Close")}>
             <X className="size-4" />
           </Button>
         </header>
@@ -422,10 +423,10 @@ export function ImportSessionsDialog({ open, onClose, onImported }: Props) {
             </p>
           )}
           {loading && rows.length === 0 && (
-            <p className="text-xs text-muted-foreground">Looking for sessions…</p>
+            <p className="text-xs text-muted-foreground">{t("Looking for sessions…")}</p>
           )}
           {!loading && rows.length === 0 && !claudeError && !opencodeError && (
-            <p className="text-xs text-muted-foreground">No sessions to import.</p>
+            <p className="text-xs text-muted-foreground">{t("No sessions to import.")}</p>
           )}
           {importableKeys.length > 0 && (
             <label className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -471,7 +472,7 @@ export function ImportSessionsDialog({ open, onClose, onImported }: Props) {
                           data-testid="import-claude-session-live"
                           className="shrink-0 rounded bg-warning/15 px-1 py-px text-[10px] font-medium text-warning"
                         >
-                          Live
+                          {t("Live")}
                         </span>
                       )}
                       <span
@@ -520,7 +521,7 @@ export function ImportSessionsDialog({ open, onClose, onImported }: Props) {
                         title={blocked ?? undefined}
                         onClick={() => void importOne(row)}
                       >
-                        Import
+                        {t("Import")}
                       </Button>
                       {row.kind === "claude-code" && row.session.branchMismatch && row.session.gitBranch && (
                         <Button
@@ -544,7 +545,7 @@ export function ImportSessionsDialog({ open, onClose, onImported }: Props) {
                           disabled={busy}
                           onClick={() => void addAccount(row.session)}
                         >
-                          Add
+                          {t("Add")}
                         </Button>
                       )}
                     </div>
@@ -564,7 +565,7 @@ export function ImportSessionsDialog({ open, onClose, onImported }: Props) {
             {selectedCount > 0 ? `Import selected (${selectedCount})` : "Import selected"}
           </Button>
           <Button size="sm" variant="outline" disabled={loading || busy} onClick={() => void recheckAll()}>
-            Re-check
+            {t("Re-check")}
           </Button>
         </footer>
       </div>

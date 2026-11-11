@@ -1,6 +1,7 @@
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { t } from "@/lib/i18n";
 
 interface Props {
   open: boolean;
@@ -33,7 +34,7 @@ export function WelcomeDialog({ open, onAcknowledge, onSkip }: Props) {
             <Sparkles className="size-4" />
           </div>
           <h2 id="onboarding-welcome-title" className="text-base font-semibold">
-            Welcome to Agetor
+            {t("Welcome to Agetor")}
           </h2>
         </div>
 
@@ -44,7 +45,7 @@ export function WelcomeDialog({ open, onAcknowledge, onSkip }: Props) {
             and a coding agent — Claude Code, Codex, Cursor, or Gemini.
           </p>
           <p>
-            Run it and the card moves to <span className="text-foreground">Running</span> while
+            Run it and the card moves to <span className="text-foreground">{t("Running")}</span> while
             the agent's output streams live; it lands in{" "}
             <span className="text-foreground">Review</span> when the agent finishes (or{" "}
             <span className="text-foreground">Blocked</span> / back to{" "}
@@ -52,17 +53,16 @@ export function WelcomeDialog({ open, onAcknowledge, onSkip }: Props) {
             mark it <span className="text-foreground">Done</span>.
           </p>
           <p>
-            The checklist that's about to appear walks through the handful of things a fresh
-            install needs: a ready agent, a registered project, and your first task.
+            {t("The checklist that's about to appear walks through the handful of things a fresh install needs: a ready agent, a registered project, and your first task.")}
           </p>
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3">
           <Button variant="ghost" size="sm" onClick={onSkip}>
-            Skip — I know my way around
+            {t("Skip — I know my way around")}
           </Button>
           <Button size="sm" onClick={onAcknowledge}>
-            Get started
+            {t("Get started")}
           </Button>
         </div>
       </div>

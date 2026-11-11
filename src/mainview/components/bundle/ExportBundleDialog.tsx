@@ -8,6 +8,7 @@ import { api, ApiError } from "@/lib/api";
 import { countsSummary, requestFailureText } from "@/lib/bundle";
 import { ApiUnreachableError } from "@/lib/net-retry";
 import type { BundleExportResponse, BundleSelection } from "../../../shared/bundle.ts";
+import { t } from "@/lib/i18n";
 
 const TITLE_ID = "bundle-export-title";
 
@@ -179,8 +180,7 @@ export function ExportBundleDialog({
                 Export
               </h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                A portable JSON file. Each Agent keeps its harness and the built-in harness it wraps, so it
-                still imports on a machine without that account.
+                {t("A portable JSON file. Each Agent keeps its harness and the built-in harness it wraps, so it still imports on a machine without that account.")}
               </p>
             </div>
             <Button
@@ -189,7 +189,7 @@ export function ExportBundleDialog({
               data-testid="bundle-export-close"
               onClick={requestClose}
               disabled={busy !== null}
-              aria-label="Close"
+              aria-label={t("Close")}
             >
               <X className="size-4" />
             </Button>
@@ -200,7 +200,7 @@ export function ExportBundleDialog({
               ref={summaryRef}
               tabIndex={-1}
               role="region"
-              aria-label="Export summary"
+              aria-label={t("Export summary")}
               data-testid="bundle-export-summary"
               className="rounded-md border border-border/60 px-3 py-2 outline-none"
             >
@@ -233,7 +233,7 @@ export function ExportBundleDialog({
                   </div>
                 </>
               ) : (
-                <span className="text-muted-foreground">Preparing export…</span>
+                <span className="text-muted-foreground">{t("Preparing export…")}</span>
               )}
             </div>
             {summary?.warnings.map((w, i) => (

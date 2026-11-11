@@ -1597,7 +1597,7 @@ function HarnessesSection({
                       <span
                         data-testid="harness-stack-chip"
                         className="rounded border border-info/40 px-1.5 py-0.5 text-[10px] font-medium text-info"
-                        title="Harness account stack — fails over to the next account at its limit"
+                        title={tr("Harness account stack — fails over to the next account at its limit")}
                       >
                         {stackAt.text}
                       </span>
@@ -1655,7 +1655,7 @@ function HarnessesSection({
                     onClick={() => setUsageOpenFor((cur) => (cur === h.id ? null : h.id))}
                     aria-label={`${usageOpenFor === h.id ? "Hide" : "Show"} token usage for ${h.label}`}
                     aria-expanded={usageOpenFor === h.id}
-                    title="Token usage — this account's local 30-day rollup"
+                    title={tr("Token usage — this account's local 30-day rollup")}
                   >
                     <BarChart3 className="size-4" />
                   </Button>
@@ -1665,7 +1665,7 @@ function HarnessesSection({
                   variant="ghost"
                   onClick={() => onOpenTerminal(h)}
                   aria-label={`Open ${h.label} in Terminal`}
-                  title="Open in Terminal — load this harness's env to log in or inspect it"
+                  title={tr("Open in Terminal — load this harness's env to log in or inspect it")}
                 >
                   <Terminal className="size-4" />
                 </Button>
@@ -1688,10 +1688,9 @@ function HarnessesSection({
               {h.kind === "fx" && (
                 <div className="flex items-start gap-2 pl-6">
                   <div className="min-w-0 flex-1">
-                    <div className="text-xs">Load profile MCP servers</div>
+                    <div className="text-xs">{tr("Load profile MCP servers")}</div>
                     <div className="text-[11px] text-muted-foreground">
-                      Loads the MCP servers from your own fx profile into each
-                      task's session (fx 0.0.13 or later).
+                      {tr("Loads the MCP servers from your own fx profile into each task's session (fx 0.0.13 or later).")}
                     </div>
                   </div>
                   <Switch
@@ -2061,7 +2060,7 @@ function Editor({
         </p>
       </div>
       <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">Bin override (absolute path; optional)</label>
+        <label className="text-xs text-muted-foreground">{tr("Bin override (absolute path; optional)")}</label>
         <Input
           {...IDENTIFIER_INPUT_PROPS}
           value={bin}
@@ -2071,7 +2070,7 @@ function Editor({
         />
       </div>
       <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">Env vars (one KEY=value per line)</label>
+        <label className="text-xs text-muted-foreground">{tr("Env vars (one KEY=value per line)")}</label>
         <Textarea
           value={envText}
           onChange={(e) => setEnvText(e.target.value)}

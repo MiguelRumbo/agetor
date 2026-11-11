@@ -16,6 +16,7 @@ import type {
   PipelineStepRecord,
   Task,
 } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 interface HumanStepPanelProps {
   /** The pipeline parent task. */
@@ -153,21 +154,21 @@ export function HumanStepPanel({
                 : "Review the work so far, then accept it or send it back."}
             </p>
           </div>
-          <Button type="button" variant="ghost" size="icon" onClick={onClose} title="Close">
+          <Button type="button" variant="ghost" size="icon" onClick={onClose} title={t("Close")}>
             <X className="size-4" aria-hidden />
           </Button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
           <section className="mb-3">
-            <p className="mb-1 text-xs font-medium text-muted-foreground">Goal</p>
+            <p className="mb-1 text-xs font-medium text-muted-foreground">{t("Goal")}</p>
             <p data-testid="pipeline-human-goal" className="whitespace-pre-wrap rounded-md bg-muted p-2 text-xs">
               {task.prompt}
             </p>
           </section>
 
           <section className="mb-3">
-            <p className="mb-1 text-xs font-medium text-muted-foreground">What to check</p>
+            <p className="mb-1 text-xs font-medium text-muted-foreground">{t("What to check")}</p>
             <p data-testid="pipeline-human-check" className="whitespace-pre-wrap text-xs">
               {step?.instructions.trim() ? step.instructions : "(no checklist for this gate)"}
             </p>
@@ -175,7 +176,7 @@ export function HumanStepPanel({
 
           <section className="mb-3">
             <div className="mb-1 flex items-center justify-between gap-2">
-              <p className="text-xs font-medium text-muted-foreground">Last handoff</p>
+              <p className="text-xs font-medium text-muted-foreground">{t("Last handoff")}</p>
               <Button
                 type="button"
                 variant="outline"
@@ -203,14 +204,14 @@ export function HumanStepPanel({
               </div>
             ) : (
               <p data-testid="pipeline-human-handoff-empty" className="text-xs text-muted-foreground">
-                No handoff — entered manually.
+                {t("No handoff — entered manually.")}
               </p>
             )}
           </section>
 
           {priorRounds.length > 0 && (
             <section className="mb-3">
-              <p className="mb-1 text-xs font-medium text-muted-foreground">Prior rounds on this gate</p>
+              <p className="mb-1 text-xs font-medium text-muted-foreground">{t("Prior rounds on this gate")}</p>
               <ul data-testid="pipeline-human-prior" className="flex flex-col gap-1">
                 {[...priorRounds].reverse().map((h) => (
                   <li key={`${h.seq}:${h.outcome}`} className="rounded-md border border-border p-1.5 text-xs">
@@ -226,9 +227,9 @@ export function HumanStepPanel({
           )}
 
           <section>
-            <p className="mb-1 text-xs font-medium text-muted-foreground">Run history</p>
+            <p className="mb-1 text-xs font-medium text-muted-foreground">{t("Run history")}</p>
             {run.history.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No steps have run yet.</p>
+              <p className="text-xs text-muted-foreground">{t("No steps have run yet.")}</p>
             ) : (
               <ul data-testid="pipeline-human-history" className="flex flex-col gap-1">
                 {[...run.history].reverse().map((h) => {
@@ -246,7 +247,7 @@ export function HumanStepPanel({
                           className="h-6 px-1.5 text-xs"
                           onClick={() => onOpenTask(stepTask)}
                         >
-                          Transcript
+                          {t("Transcript")}
                         </Button>
                       )}
                     </li>
@@ -267,14 +268,14 @@ export function HumanStepPanel({
             data-testid="pipeline-human-comment"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            placeholder="Comment — required to return, optional to accept"
+            placeholder={t("Comment — required to return, optional to accept")}
             className="min-h-[70px] text-xs"
             disabled={archived}
           />
 
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span>Return mode</span>
+              <span>{t("Return mode")}</span>
               <Button
                 type="button"
                 variant={mode === "fresh" ? "secondary" : "outline"}
@@ -284,7 +285,7 @@ export function HumanStepPanel({
                 disabled={archived || busy}
                 onClick={() => setMode("fresh")}
               >
-                Fresh
+                {t("Fresh")}
               </Button>
               <Button
                 type="button"
@@ -296,14 +297,14 @@ export function HumanStepPanel({
                 title={resumeAvailable ? "Continue the previous step's session" : "The previous step can't be resumed — use Fresh"}
                 onClick={() => setMode("resume")}
               >
-                Resume
+                {t("Resume")}
               </Button>
             </div>
           </div>
 
           {needsTarget && (
             <div data-testid="pipeline-human-targets" className="mt-2 flex flex-wrap items-center gap-1.5">
-              <span className="text-xs text-muted-foreground">Next step</span>
+              <span className="text-xs text-muted-foreground">{t("Next step")}</span>
               {outgoing.map((o) => (
                 <Button
                   key={o.step.id}

@@ -12,6 +12,7 @@ import { TERMINAL_FONT_FAMILY, terminalFontSize } from "@/lib/font-size";
 import { macEditSequence } from "./terminal-keys.ts";
 import type { TerminalTab } from "../../../shared/types.ts";
 import type { ITheme } from "@xterm/xterm";
+import { t as tr } from "@/lib/i18n";
 
 /**
  * xterm renders to its own canvas and can't read CSS custom properties, so it
@@ -397,7 +398,7 @@ export function TerminalView({ taskId, archived = false }: { taskId: string; arc
               <button
                 type="button"
                 className="rounded p-0.5 opacity-60 hover:bg-destructive/20 hover:opacity-100"
-                title="Close terminal"
+                title={tr("Close terminal")}
                 onClick={() => void closeTab(t.id)}
               >
                 <X className="size-3" />

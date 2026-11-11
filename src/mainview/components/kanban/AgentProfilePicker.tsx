@@ -7,6 +7,7 @@ import { filterAgentProfiles } from "@/lib/agent-profiles";
 import { cn } from "@/lib/utils";
 import type { AgentProfile, Harness } from "../../../shared/types.ts";
 import { AgentProfileCard } from "./AgentProfileCard";
+import { t } from "@/lib/i18n";
 
 interface AgentProfilePickerProps {
   /** Selected profile id, or `null` for "No agent — pick harness manually". */
@@ -130,12 +131,12 @@ export function AgentProfilePicker({
           ) : value ? (
             <span className="flex min-w-0 items-center gap-1.5 text-warning">
               <Bot className="size-4 shrink-0" aria-hidden />
-              <span className="truncate">Selected agent is no longer available</span>
+              <span className="truncate">{t("Selected agent is no longer available")}</span>
             </span>
           ) : (
             <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
               <Bot className="size-4 shrink-0" aria-hidden />
-              <span className="truncate">No agent — pick harness manually</span>
+              <span className="truncate">{t("No agent — pick harness manually")}</span>
             </span>
           )}
           <ChevronDown
@@ -149,7 +150,7 @@ export function AgentProfilePicker({
             data-testid="agent-profile-picker-clear"
             onClick={() => onChange(null)}
             disabled={disabled}
-            title="Clear agent"
+            title={t("Clear agent")}
             className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-accent/40 hover:text-foreground disabled:opacity-50"
           >
             <X className="size-4" aria-hidden />
@@ -177,7 +178,7 @@ export function AgentProfilePicker({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onSearchKeyDown}
-              placeholder="Search agents…"
+              placeholder={t("Search agents…")}
               className="h-7 border-0 px-0 shadow-none focus-visible:ring-0"
             />
           </div>
@@ -203,7 +204,7 @@ export function AgentProfilePicker({
             </button>
 
             {profiles.length === 0 ? (
-              <p className="px-3 py-2 text-xs text-muted-foreground">No agents yet.</p>
+              <p className="px-3 py-2 text-xs text-muted-foreground">{t("No agents yet.")}</p>
             ) : filtered.length === 0 ? (
               <p className="px-3 py-2 text-xs text-muted-foreground">No matches.</p>
             ) : (
@@ -245,7 +246,7 @@ export function AgentProfilePicker({
                 }}
                 className="w-full px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent/40 hover:text-foreground"
               >
-                Manage agents…
+                {t("Manage agents…")}
               </button>
             </div>
           )}

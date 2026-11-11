@@ -1,6 +1,7 @@
 import type { Task } from "../../shared/types.ts";
 import { isTaskFxPaused } from "../../shared/fx-recovery.ts";
 import { importedSessionOf } from "../../shared/imported-session.ts";
+import { t } from "@/lib/i18n";
 
 /** Every action the task context menu can offer. A subset of App.tsx's
  *  existing card callbacks (`start`/`cancel`/`markDone`/`archive`/
@@ -100,18 +101,18 @@ export function buildTaskContextMenu(task: Task, ctx: { isOpen: boolean }): Task
 
   // primary
   if (isPipelineParent) {
-    entries.push({ action: "open-pipeline", label: "Open pipeline", group: "primary" });
+    entries.push({ action: "open-pipeline", label: t("Open pipeline"), group: "primary" });
     if (gatePending && !archived) {
-      entries.push({ action: "review-pipeline", label: "Review pipeline", group: "primary" });
+      entries.push({ action: "review-pipeline", label: t("Review pipeline"), group: "primary" });
     }
   } else {
-    entries.push({ action: "open", label: "Open details", group: "primary" });
+    entries.push({ action: "open", label: t("Open details"), group: "primary" });
   }
   if (!archived && !awaiting && !active && !openable && !importedSessionOf(task)) {
     entries.push({ action: "start", label: "Run", group: "primary" });
   }
   if (stoppable && !archived) {
-    entries.push({ action: "stop", label: "Stop", group: "primary" });
+    entries.push({ action: "stop", label: t("Stop"), group: "primary" });
   }
   // A resumable fx pause (see TaskFxRecovery) offers its own quick actions
   // right after Stop — "Resume paused response" whenever the task is
@@ -119,29 +120,29 @@ export function buildTaskContextMenu(task: Task, ctx: { isOpen: boolean }): Task
   // orchestrator has a pending timer armed for it (`fxRecovery.autoResume`
   // non-null). Both are hidden once archived — archiving clears the row.
   if (isTaskFxPaused(task) && !archived) {
-    entries.push({ action: "resume-recovery", label: "Resume paused response", group: "primary" });
+    entries.push({ action: "resume-recovery", label: t("Resume paused response"), group: "primary" });
     if (task.fxRecovery?.autoResume) {
-      entries.push({ action: "cancel-auto-resume", label: "Cancel auto-resume", group: "primary" });
+      entries.push({ action: "cancel-auto-resume", label: t("Cancel auto-resume"), group: "primary" });
     }
   }
   if (task.column === "review" && !archived && !gatePending && !(isPipelineParent && task.pipelineRun?.status !== "done")) {
-    entries.push({ action: "mark-done", label: "Mark done", group: "primary" });
+    entries.push({ action: "mark-done", label: t("Mark done"), group: "primary" });
   }
   if (!archived && !isStepTask && (task.column === "done" || active)) {
     entries.push({ action: "archive", label: active ? "Stop & archive…" : "Archive", group: "primary" });
   }
   if (archived && !isStepTask) {
-    entries.push({ action: "unarchive", label: "Unarchive", group: "primary" });
+    entries.push({ action: "unarchive", label: t("Unarchive"), group: "primary" });
   }
 
   // inspect
-  entries.push({ action: "diff", label: "View changes", group: "inspect" });
-  entries.push({ action: "open-in-finder", label: "Open in Finder", group: "inspect" });
+  entries.push({ action: "diff", label: t("View changes"), group: "inspect" });
+  entries.push({ action: "open-in-finder", label: t("Open in Finder"), group: "inspect" });
   if (task.prUrl) {
-    entries.push({ action: "view-pr", label: "View pull request", group: "inspect" });
+    entries.push({ action: "view-pr", label: t("View pull request"), group: "inspect" });
   }
   if (task.issueUrl) {
-    entries.push({ action: "view-issue", label: "View issue", group: "inspect" });
+    entries.push({ action: "view-issue", label: t("View issue"), group: "inspect" });
   }
 
   // utility — read/unread + copy entries share one group so they render as a
@@ -150,22 +151,22 @@ export function buildTaskContextMenu(task: Task, ctx: { isOpen: boolean }): Task
   // message; `hasAssistantMessages` is what lets "Mark as unread" avoid
   // re-flagging a task that never said anything.
   if (task.unread === true && !ctx.isOpen) {
-    entries.push({ action: "mark-read", label: "Mark as read", group: "utility" });
+    entries.push({ action: "mark-read", label: t("Mark as read"), group: "utility" });
   }
   if (!task.unread && !ctx.isOpen && task.hasAssistantMessages === true) {
-    entries.push({ action: "mark-unread", label: "Mark as unread", group: "utility" });
+    entries.push({ action: "mark-unread", label: t("Mark as unread"), group: "utility" });
   }
   if (task.branch) {
-    entries.push({ action: "copy-branch", label: "Copy branch name", group: "utility" });
+    entries.push({ action: "copy-branch", label: t("Copy branch name"), group: "utility" });
   }
   if (task.worktreePath) {
-    entries.push({ action: "copy-worktree-path", label: "Copy worktree path", group: "utility" });
+    entries.push({ action: "copy-worktree-path", label: t("Copy worktree path"), group: "utility" });
   }
 
   // danger — always last. A step task can't be deleted individually — the
   // parent pipeline task owns its lifecycle (409 server-side, D9).
   if (!isStepTask) {
-    entries.push({ action: "delete", label: "Delete…", group: "danger", danger: true });
+    entries.push({ action: "delete", label: t("Delete…"), group: "danger", danger: true });
   }
 
   return entries;

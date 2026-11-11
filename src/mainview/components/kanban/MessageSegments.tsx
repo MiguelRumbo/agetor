@@ -39,6 +39,7 @@ import {
 import { AGENT_INSTRUCTIONS_TAG } from "../../../shared/agent-profile.ts";
 import { USER_MD_COMPONENTS, MD_URL_TRANSFORM } from "./md-components";
 import { UserHandoffMarkdown } from "@/components/handoff/HandoffMessage";
+import { t } from "@/lib/i18n";
 
 /** The existing 9px "you" / "command output" style label, hoisted here so
  *  every machine-emitted block (and `UserMessageBlock`'s own header) shares
@@ -63,7 +64,7 @@ export function HandoffReminderBadge() {
       data-testid="handoff-reminder-badge"
       className="mb-1 inline-flex w-fit items-center gap-1 rounded-md bg-muted/60 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground"
     >
-      Automatic handoff reminder
+      {t("Automatic handoff reminder")}
     </div>
   );
 }
@@ -93,7 +94,7 @@ export function ForkedSkillCard({ launch }: { launch: ForkedSkillLaunch }) {
       className="inline-flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-[11px]"
     >
       <GitFork className="size-3 text-primary" />
-      <span>Skill launched in background</span>
+      <span>{t("Skill launched in background")}</span>
       <span className="rounded-md border border-primary/40 bg-primary/15 px-1.5 py-0.5 font-mono text-[11px] font-medium text-primary">
         {forkedSkillLabel(launch)}
       </span>

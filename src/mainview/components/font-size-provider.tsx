@@ -10,6 +10,7 @@ import {
   type FontSizeAction,
 } from "@/lib/font-size";
 import { isMacPlatform } from "@/lib/platform";
+import { t } from "@/lib/i18n";
 
 // Trailing-edge debounce for the persisted write: a burst of Cmd+= presses
 // updates the optimistic UI state on every keystroke, but only writes once,
@@ -126,7 +127,7 @@ export function FontSizeProvider({ children }: { children: React.ReactNode }) {
         if (percentRef.current !== pct) return;
         setPercentState(persistedRef.current);
         toast.error("Couldn't save font size preference", {
-          description: "Reverted to the previous setting — try again.",
+          description: t("Reverted to the previous setting — try again."),
         });
       });
   }, []);

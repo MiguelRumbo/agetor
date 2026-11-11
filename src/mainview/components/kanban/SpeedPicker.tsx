@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { SPEED_OPTIONS, speedLabel } from "../../../shared/speed.ts";
 import type { Speed } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 /** Whether `<SpeedPicker>` renders anything for this options/value pair —
  *  for a consumer that wraps it in its own label row (a `<dt>`, a field
@@ -46,7 +47,7 @@ export function SpeedPicker({
       data-testid={testId}
       data-value={value}
       role="group"
-      aria-label="Speed"
+      aria-label={t("Speed")}
       className="flex gap-1"
     >
       {options.map((id) => (

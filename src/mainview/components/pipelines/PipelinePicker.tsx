@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { IDENTIFIER_INPUT_PROPS } from "@/lib/identifier-input";
 import { cn } from "@/lib/utils";
 import type { Pipeline } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 interface PipelinePickerProps {
   /** Selected pipeline id, or `null` for "No pipeline". */
@@ -114,12 +115,12 @@ export function PipelinePicker({ value, onChange, pipelines, onManage, disabled,
           ) : value ? (
             <span className="flex min-w-0 items-center gap-1.5 text-warning">
               <Workflow className="size-4 shrink-0" aria-hidden />
-              <span className="truncate">Selected pipeline is no longer available</span>
+              <span className="truncate">{t("Selected pipeline is no longer available")}</span>
             </span>
           ) : (
             <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
               <Workflow className="size-4 shrink-0" aria-hidden />
-              <span className="truncate">No pipeline</span>
+              <span className="truncate">{t("No pipeline")}</span>
             </span>
           )}
           <ChevronDown className={cn("size-4 shrink-0 opacity-60 transition-transform", open && "rotate-180")} aria-hidden />
@@ -130,7 +131,7 @@ export function PipelinePicker({ value, onChange, pipelines, onManage, disabled,
             data-testid="pipeline-picker-clear"
             onClick={() => onChange(null)}
             disabled={disabled}
-            title="Clear pipeline"
+            title={t("Clear pipeline")}
             className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-accent/40 hover:text-foreground disabled:opacity-50"
           >
             <X className="size-4" aria-hidden />
@@ -158,7 +159,7 @@ export function PipelinePicker({ value, onChange, pipelines, onManage, disabled,
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onSearchKeyDown}
-              placeholder="Search pipelines…"
+              placeholder={t("Search pipelines…")}
               className="h-7 border-0 px-0 shadow-none focus-visible:ring-0"
             />
           </div>
@@ -184,7 +185,7 @@ export function PipelinePicker({ value, onChange, pipelines, onManage, disabled,
             </button>
 
             {pipelines.length === 0 ? (
-              <p className="px-3 py-2 text-xs text-muted-foreground">No pipelines yet.</p>
+              <p className="px-3 py-2 text-xs text-muted-foreground">{t("No pipelines yet.")}</p>
             ) : filtered.length === 0 ? (
               <p className="px-3 py-2 text-xs text-muted-foreground">No matches.</p>
             ) : (
@@ -233,7 +234,7 @@ export function PipelinePicker({ value, onChange, pipelines, onManage, disabled,
                 }}
                 className="w-full px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent/40 hover:text-foreground disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
               >
-                Manage pipelines…
+                {t("Manage pipelines…")}
               </button>
             </div>
           )}

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { t } from "@/lib/i18n";
 
 /**
  * The export/import strip above an Agents or Pipelines list
@@ -70,7 +71,7 @@ export function BundleToolbar({
           data-testid="bundle-export-all"
           onClick={onExportAll}
           className="gap-1"
-          title="Export every Agent and every Pipeline"
+          title={t("Export every Agent and every Pipeline")}
         >
           <Download className="size-3.5" aria-hidden /> Export all
         </Button>

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { IDENTIFIER_INPUT_PROPS } from "@/lib/identifier-input";
 import { GitHubSetupDialog } from "@/components/settings/GitHubSetupDialog";
 import { GIT_HOST_TOKENS_SECTION } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 const DATALIST_ID = "github-token-hosts";
 
@@ -168,7 +169,7 @@ export function GitHubTokensSection() {
                 onClick={() => setGuideOpen(true)}
                 className="text-primary underline-offset-4 hover:underline"
               >
-                How to create one →
+                {t("How to create one →")}
               </button>
             </p>
           )}
@@ -192,7 +193,7 @@ export function GitHubTokensSection() {
 
       <div className="grid grid-cols-2 gap-2 pt-1">
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">Host</label>
+          <label className="text-xs text-muted-foreground">{t("Host")}</label>
           <Input
             {...IDENTIFIER_INPUT_PROPS}
             // Keeps the detected-hosts <datalist> working — see identifier-input.ts.
@@ -209,7 +210,7 @@ export function GitHubTokensSection() {
           </datalist>
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">Label (optional)</label>
+          <label className="text-xs text-muted-foreground">{t("Label (optional)")}</label>
           <Input
             value={label}
             onChange={(e) => setLabel(e.target.value)}
@@ -218,7 +219,7 @@ export function GitHubTokensSection() {
         </div>
       </div>
       <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">Token</label>
+        <label className="text-xs text-muted-foreground">{t("Token")}</label>
         <Input
           type="password"
           value={token}

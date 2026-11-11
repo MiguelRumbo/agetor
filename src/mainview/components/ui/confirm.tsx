@@ -2,6 +2,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { t } from "@/lib/i18n";
 
 export interface ConfirmOptions {
   title: string;
@@ -27,7 +28,7 @@ const DESC_ID = "agetor-confirm-desc";
  * the latest `useConfirm()` call requested — so callers stay simple:
  *
  *     const confirm = useConfirm();
- *     if (await confirm({ title: "Delete?" })) doIt();
+ *     if (await confirm({ title: t("Delete?") })) doIt();
  *
  * The promise resolves `true` on confirm and `false` on Cancel, backdrop click,
  * Escape, or a superseding `confirm()` call. For `variant: "destructive"` we

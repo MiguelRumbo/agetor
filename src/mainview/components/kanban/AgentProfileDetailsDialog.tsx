@@ -7,6 +7,7 @@ import { AgentIcon } from "./AgentIcon";
 import { speedLabel } from "../../../shared/speed.ts";
 import type { TaskProfileDisplay } from "@/lib/agent-profiles";
 import type { AgentKind, Harness, Task } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 const TITLE_ID = "agent-profile-details-title";
 
@@ -112,14 +113,14 @@ export function AgentProfileDetailsDialog({
               {statusText}
             </p>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label={t("Close")}>
             <X className="size-4" />
           </Button>
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           <dl className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1.5 text-xs">
-            <dt className="text-muted-foreground">Harness</dt>
+            <dt className="text-muted-foreground">{t("Harness")}</dt>
             <dd className="flex min-w-0 flex-wrap items-center gap-1.5">
               <AgentIcon kind={harnessKind} className="size-3.5 shrink-0" />
               <span>{harnessLabel || harnessId}</span>
@@ -127,32 +128,32 @@ export function AgentProfileDetailsDialog({
               {harnessDisabled && <span className="text-warning">(harness disabled)</span>}
             </dd>
 
-            <dt className="text-muted-foreground">Model</dt>
+            <dt className="text-muted-foreground">{t("Model")}</dt>
             <dd className="min-w-0">{model ?? "—"}</dd>
 
-            <dt className="text-muted-foreground">Effort</dt>
+            <dt className="text-muted-foreground">{t("Effort")}</dt>
             <dd className="min-w-0">{effort ?? "—"}</dd>
 
-            <dt className="text-muted-foreground">Mode</dt>
+            <dt className="text-muted-foreground">{t("Mode")}</dt>
             <dd className="min-w-0">{mode ?? "default"}</dd>
 
             {/* Speed shows for the kinds that offer tiers, and for any
              *  other kind whose snapshot somehow carries one. */}
             {(harnessKind === "cursor" || harnessKind === "fx" || speed !== "off") && (
               <>
-                <dt className="text-muted-foreground">Speed</dt>
+                <dt className="text-muted-foreground">{t("Speed")}</dt>
                 <dd className="min-w-0" data-testid="agent-profile-details-speed">{speedLabel(speed)}</dd>
               </>
             )}
 
             {harnessKind === "cursor" && (
               <>
-                <dt className="text-muted-foreground">Max mode</dt>
+                <dt className="text-muted-foreground">{t("Max mode")}</dt>
                 <dd className="min-w-0">{maxMode ? "on" : "off"}</dd>
               </>
             )}
 
-            <dt className="text-muted-foreground">Skills</dt>
+            <dt className="text-muted-foreground">{t("Skills")}</dt>
             <dd className="min-w-0">
               {skills.length > 0 ? (
                 <div className="flex flex-wrap gap-1">
@@ -169,7 +170,7 @@ export function AgentProfileDetailsDialog({
           </dl>
 
           <div className="mt-3">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Instructions</div>
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("Instructions")}</div>
             {instructions.length > 0 ? (
               <p className="mt-1 max-h-64 overflow-y-auto whitespace-pre-wrap text-xs leading-snug">
                 {instructions}
@@ -191,11 +192,11 @@ export function AgentProfileDetailsDialog({
                 onClose();
               }}
             >
-              Edit in Settings
+              {t("Edit in Settings")}
             </Button>
           )}
           <Button size="sm" data-testid="agent-profile-details-close" onClick={onClose}>
-            Close
+            {t("Close")}
           </Button>
         </div>
       </div>

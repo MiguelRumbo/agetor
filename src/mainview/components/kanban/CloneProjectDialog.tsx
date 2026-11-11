@@ -14,6 +14,7 @@ import { buildEli5Prompt } from "../../../shared/clone-eli5.ts";
 import { CLONE_PROVIDERS, detectCloneProvider, parseCloneInput } from "../../../shared/clone-input.ts";
 import { PROVIDER_CAPS, type GitProvider } from "../../../shared/types.ts";
 import { TaskLaunchPickers, useTaskLaunch } from "./TaskLaunchPickers";
+import { t } from "@/lib/i18n";
 
 /** Human copy for each in-progress `CloneProgressPhase` — the two terminal
  *  phases the dialog can actually observe live (`failed`/`cancelled`) never
@@ -304,14 +305,14 @@ export function CloneProjectDialog({ open, onClose, onCloned }: Props) {
       <div data-testid="clone-project-dialog" className="contents">
         <header className="flex items-center justify-between border-b border-border/60 px-4 py-3">
           <h2 id="clone-project-title" className="text-sm font-semibold">
-            Clone repository
+            {t("Clone repository")}
           </h2>
           <Button
             size="icon"
             variant="ghost"
             onClick={onClose}
             disabled={busy}
-            aria-label="Close"
+            aria-label={t("Close")}
             className="size-7"
           >
             <X className="size-4" />
@@ -321,7 +322,7 @@ export function CloneProjectDialog({ open, onClose, onCloned }: Props) {
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 text-sm">
           <div className="space-y-1.5">
             <label htmlFor="clone-provider" className="text-xs font-medium text-muted-foreground">
-              Provider
+              {t("Provider")}
             </label>
             <Select
               id="clone-provider"
@@ -352,7 +353,7 @@ export function CloneProjectDialog({ open, onClose, onCloned }: Props) {
 
           <div className="space-y-1.5">
             <label htmlFor="clone-url" className="text-xs font-medium text-muted-foreground">
-              Repository
+              {t("Repository")}
             </label>
             <Input
               id="clone-url"
@@ -372,7 +373,7 @@ export function CloneProjectDialog({ open, onClose, onCloned }: Props) {
 
           <div className="space-y-1.5">
             <label htmlFor="clone-dest" className="text-xs font-medium text-muted-foreground">
-              Destination folder
+              {t("Destination folder")}
             </label>
             <Input
               id="clone-dest"
@@ -391,9 +392,9 @@ export function CloneProjectDialog({ open, onClose, onCloned }: Props) {
 
           <label className="flex cursor-pointer items-center justify-between gap-3">
             <span className="min-w-0">
-              <span className="block text-xs font-medium">Explain this repo</span>
+              <span className="block text-xs font-medium">{t("Explain this repo")}</span>
               <span className="block text-[11px] text-muted-foreground">
-                Runs a task that writes an ELI5.md guide at the repo root
+                {t("Runs a task that writes an ELI5.md guide at the repo root")}
               </span>
             </span>
             <Switch data-testid="clone-eli5-switch" checked={eli5} onCheckedChange={setEli5} disabled={busy} />
@@ -485,7 +486,7 @@ export function CloneProjectDialog({ open, onClose, onCloned }: Props) {
               data-testid="clone-progress-bar"
               max={100}
               value={busy ? progress?.percent ?? undefined : undefined}
-              aria-label="Clone progress"
+              aria-label={t("Clone progress")}
               aria-valuetext={busy ? (progress ? cloneProgressLabel(progress) : "Starting…") : undefined}
               className="h-1.5 w-full accent-primary"
             />
@@ -511,7 +512,7 @@ export function CloneProjectDialog({ open, onClose, onCloned }: Props) {
             </Button>
           ) : (
             <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
-              Cancel
+              {t("Cancel")}
             </Button>
           )}
           <Button data-testid="clone-submit" size="sm" onClick={() => void submit()} disabled={!canSubmit}>

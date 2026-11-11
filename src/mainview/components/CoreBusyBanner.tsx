@@ -1,6 +1,7 @@
 import { Loader2 } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { getCoreBusy, subscribeCoreBusy } from "@/lib/core-busy";
+import { t } from "@/lib/i18n";
 
 /**
  * App-level strip shown while the core stops answering — a request has been
@@ -22,7 +23,7 @@ export function CoreBusyBanner() {
     >
       <Loader2 className="size-3.5 shrink-0 animate-spin text-warning motion-reduce:animate-none" aria-hidden />
       <span className="min-w-0 flex-1 font-medium text-foreground">
-        Agetor is busy — waiting for the core…
+        {t("Agetor is busy — waiting for the core…")}
       </span>
     </div>
   );

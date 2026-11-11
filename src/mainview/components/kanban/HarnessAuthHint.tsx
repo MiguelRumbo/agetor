@@ -1,4 +1,5 @@
 import type { AgentStatus } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 /**
  * Non-blocking "not logged in" warning box for a selected harness. Renders
@@ -14,7 +15,7 @@ export function HarnessAuthHint({ status }: { status: AgentStatus | undefined })
   if (!status?.available || status.loggedIn !== false) return null;
   return (
     <div className="rounded-md border border-warning/40 bg-warning/10 p-2 text-[11px] text-warning">
-      <div className="font-medium">Not logged in</div>
+      <div className="font-medium">{t("Not logged in")}</div>
       {status.authHelp && <div className="mt-1 opacity-80">{status.authHelp}</div>}
     </div>
   );

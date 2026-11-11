@@ -13,6 +13,7 @@
  *               running tasks stop; [Quit completely] [Cancel].
  */
 import type { AppEvent } from "../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 export type QuitRequestEvent = Extract<AppEvent, { type: "quit_request" }>;
 
@@ -41,7 +42,7 @@ export function quitDialogModel(ev: QuitRequestEvent): QuitDialogModel {
   const titlesPreview = quitTitlesPreview(ev.runningTaskTitles);
   if (ev.completely) {
     return {
-      title: "Quit Agetor completely?",
+      title: t("Quit Agetor completely?"),
       body: `${n} ${noun} still running. Quitting completely also stops the background core, so they will stop.`,
       titlesPreview,
       actions: ["quit", "cancel"],
@@ -50,7 +51,7 @@ export function quitDialogModel(ev: QuitRequestEvent): QuitDialogModel {
   }
   if (ev.backgroundArmed) {
     return {
-      title: "Quit Agetor?",
+      title: t("Quit Agetor?"),
       body: `${n} ${noun} still running. They'll keep running in the background; you can reconnect to them next time you open Agetor.`,
       titlesPreview,
       actions: ["quit", "quit-completely", "cancel"],
@@ -58,7 +59,7 @@ export function quitDialogModel(ev: QuitRequestEvent): QuitDialogModel {
     };
   }
   return {
-    title: "Quit Agetor?",
+    title: t("Quit Agetor?"),
     body: `${n} ${noun} still running. They will keep running in the background; you can reconnect to them next time you open Agetor.`,
     titlesPreview,
     actions: ["quit", "cancel"],

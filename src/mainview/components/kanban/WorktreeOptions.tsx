@@ -15,6 +15,7 @@ import {
 } from "../../../shared/types.ts";
 import { BranchNamingDialog } from "@/components/settings/BranchNamingDialog";
 import { BranchPicker } from "./BranchPicker";
+import { t } from "@/lib/i18n";
 
 /**
  * The shared worktree row: the Branch (base ref) picker, the "Isolate
@@ -252,23 +253,23 @@ export function WorktreeOptions(props: Props) {
     return (
       <div data-testid="worktree-options-locked" className="space-y-3">
         <div className="min-w-0 space-y-1">
-          <label className="text-muted-foreground">Branch</label>
+          <label className="text-muted-foreground">{t("Branch")}</label>
           <Input
             data-testid="locked-branch"
             readOnly
             value={branch}
             className="font-mono text-[11px]"
           />
-          <p className="text-[10px] text-muted-foreground">PR head branch — checked out as-is.</p>
+          <p className="text-[10px] text-muted-foreground">{t("PR head branch — checked out as-is.")}</p>
         </div>
 
         <label
           className="flex cursor-default items-center gap-1.5 opacity-80"
-          title="Always isolated — the PR's head branch is checked out in its own worktree, so your checkout stays clean."
+          title={t("Always isolated — the PR's head branch is checked out in its own worktree, so your checkout stays clean.")}
         >
           <input type="checkbox" checked disabled data-testid="isolate-toggle" />
           <GitBranch className="size-3" />
-          <span>Isolate (worktree)</span>
+          <span>{t("Isolate (worktree)")}</span>
         </label>
       </div>
     );
@@ -297,7 +298,7 @@ export function WorktreeOptions(props: Props) {
   return (
     <div data-testid="worktree-options" className="space-y-3">
       <BranchPicker
-        label="Branch"
+        label={t("Branch")}
         workdir={workdir}
         value={baseRef}
         onChange={setBaseRef}
@@ -321,12 +322,12 @@ export function WorktreeOptions(props: Props) {
           data-testid="isolate-toggle"
         />
         <GitBranch className="size-3" />
-        <span>Isolate (worktree)</span>
+        <span>{t("Isolate (worktree)")}</span>
       </label>
 
       {isolate && (
         <div className="space-y-1">
-          <label className="text-muted-foreground">Branch name</label>
+          <label className="text-muted-foreground">{t("Branch name")}</label>
           <div className="relative">
             <Input
               data-testid="branch-name-input"
@@ -338,14 +339,14 @@ export function WorktreeOptions(props: Props) {
                 "pr-9 font-mono text-[11px]",
                 !branchValidation.ok && "border-destructive focus-visible:ring-destructive",
               )}
-              title="Git branch the worktree will use. Live-resolved from this project's nomenclature (title, type, project name); edit to override, or use the settings button to change the pattern."
+              title={t("Git branch the worktree will use. Live-resolved from this project's nomenclature (title, type, project name); edit to override, or use the settings button to change the pattern.")}
             />
             <button
               type="button"
               onClick={() => setBranchSettingsOpen(true)}
               disabled={!workdir.trim()}
-              title="Branch naming settings for this project"
-              aria-label="Configure branch naming"
+              title={t("Branch naming settings for this project")}
+              aria-label={t("Configure branch naming")}
               className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
             >
               <SlidersHorizontal className="size-3.5" />
@@ -367,7 +368,7 @@ export function WorktreeOptions(props: Props) {
               onClick={() => setBranchDirty(false)}
               className="text-[10px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
             >
-              Reset to pattern
+              {t("Reset to pattern")}
             </button>
           )}
         </div>

@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 interface Props {
   open: boolean;
@@ -104,7 +105,7 @@ export function TmuxInstallDialog({ open, onClose, onResolved }: Props) {
               variant="ghost"
               size="icon"
               onClick={showChoice}
-              aria-label="Back"
+              aria-label={t("Back")}
             >
               <ChevronLeft className="size-4" />
             </Button>
@@ -116,7 +117,7 @@ export function TmuxInstallDialog({ open, onClose, onResolved }: Props) {
             {view === "choice" ? "tmux is required for Claude Code" : "Install tmux"}
           </h2>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
+        <Button variant="ghost" size="icon" onClick={onClose} aria-label={t("Close")}>
           <X className="size-4" />
         </Button>
       </div>
@@ -166,7 +167,7 @@ function ChoiceView({
         <Option
           ref={useBundledRef}
           icon={<Package className="size-5" />}
-          title="Use Agetor's bundled tmux"
+          title={t("Use Agetor's bundled tmux")}
           description={
             bundledAvailable === false
               ? "Not available in this build. Use the manual install option instead."
@@ -178,8 +179,8 @@ function ChoiceView({
         />
         <Option
           icon={<Download className="size-5" />}
-          title="I'll install tmux myself"
-          description="Show install commands for Homebrew or MacPorts."
+          title={t("I'll install tmux myself")}
+          description={t("Show install commands for Homebrew or MacPorts.")}
           disabled={busy}
           onClick={onShowInstructions}
         />
@@ -250,7 +251,7 @@ function InstructionsView({
   return (
     <div className="space-y-4 pt-4 text-sm">
       <p className="text-muted-foreground">
-        Run one of these in your terminal, then click <strong>Re-check</strong>{" "}
+        Run one of these in your terminal, then click <strong>{t("Re-check")}</strong>{" "}
         below.
       </p>
       <div className="space-y-2">

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useConfirm } from "@/components/ui/confirm";
 import type { SavedPrompt } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 type FormState = { id: string | null; name: string; content: string };
 
@@ -73,8 +74,8 @@ export function SavedPromptsSection() {
   const remove = async (p: SavedPrompt) => {
     const ok = await confirm({
       title: `Delete "${p.name}"?`,
-      description: "The prompt will be removed permanently.",
-      confirmLabel: "Delete",
+      description: t("The prompt will be removed permanently."),
+      confirmLabel: t("Delete"),
       variant: "destructive",
     });
     if (!ok) return;
@@ -93,7 +94,7 @@ export function SavedPromptsSection() {
   return (
     <div className="space-y-4 pt-3 text-sm">
       <div className="flex items-center justify-between">
-        <label className="text-xs text-muted-foreground">Saved Prompts</label>
+        <label className="text-xs text-muted-foreground">{t("Saved Prompts")}</label>
         {!form && (
           <Button
             variant="outline"
@@ -128,7 +129,7 @@ export function SavedPromptsSection() {
                 onClick={() => setForm({ id: p.id, name: p.name, content: p.content })}
                 disabled={form !== null}
               >
-                Edit
+                {t("Edit")}
               </Button>
               <Button
                 size="sm"
@@ -136,12 +137,12 @@ export function SavedPromptsSection() {
                 onClick={() => void remove(p)}
                 disabled={deletingId === p.id}
               >
-                Delete
+                {t("Delete")}
               </Button>
             </div>
           ))}
           {prompts.length === 0 && (
-            <p className="text-xs text-muted-foreground">No saved prompts yet.</p>
+            <p className="text-xs text-muted-foreground">{t("No saved prompts yet.")}</p>
           )}
         </div>
       )}
@@ -188,7 +189,7 @@ function PromptForm({
   return (
     <div className="space-y-2 rounded-md border border-border/60 p-3">
       <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">Name</label>
+        <label className="text-xs text-muted-foreground">{t("Name")}</label>
         <Input
           value={form.name}
           onChange={(e) => onChange({ ...form, name: e.target.value })}
@@ -196,7 +197,7 @@ function PromptForm({
         />
       </div>
       <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">Content</label>
+        <label className="text-xs text-muted-foreground">{t("Content")}</label>
         <Textarea
           value={form.content}
           onChange={(e) => onChange({ ...form, content: e.target.value })}
@@ -212,7 +213,7 @@ function PromptForm({
 
       <div className="flex justify-end gap-2">
         <Button variant="outline" size="sm" onClick={onCancel} disabled={saving}>
-          Cancel
+          {t("Cancel")}
         </Button>
         <Button size="sm" onClick={onSave} disabled={disabled}>
           {saving ? "Saving…" : "Save"}

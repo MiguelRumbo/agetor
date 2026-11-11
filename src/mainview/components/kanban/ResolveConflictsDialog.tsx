@@ -10,6 +10,7 @@ import { promptByteOverage } from "../../../shared/prompt-limits.ts";
 import { createAndStartTask, TaskLaunchPickers, useTaskLaunch } from "./TaskLaunchPickers";
 import { WorktreeOptions } from "./WorktreeOptions";
 import { PromptComposer } from "./PromptComposer";
+import { t } from "@/lib/i18n";
 
 export interface ResolveConflictsContext {
   path: string;
@@ -113,9 +114,9 @@ export function ResolveConflictsDialog({ open, onClose, context, onCreated, onMa
     if (submitting) return;
     if (draftDirty) {
       const ok = await confirm({
-        title: "Discard this task draft and open Pipelines?",
-        description: "Your prompt edits, references and selections will be lost.",
-        confirmLabel: "Discard draft",
+        title: t("Discard this task draft and open Pipelines?"),
+        description: t("Your prompt edits, references and selections will be lost."),
+        confirmLabel: t("Discard draft"),
         variant: "destructive",
       });
       if (!ok) return;
@@ -191,8 +192,8 @@ export function ResolveConflictsDialog({ open, onClose, context, onCreated, onMa
             variant="ghost"
             size="icon"
             className="shrink-0"
-            title="Close"
-            aria-label="Close"
+            title={t("Close")}
+            aria-label={t("Close")}
             disabled={submitting}
             onClick={onClose}
           >
@@ -271,7 +272,7 @@ export function ResolveConflictsDialog({ open, onClose, context, onCreated, onMa
 
         <div className="flex shrink-0 justify-end gap-2 border-t border-border/60 p-3">
           <Button variant="outline" onClick={onClose} disabled={submitting}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button data-testid="resolve-conflicts-submit" onClick={() => void submit()} disabled={!canSubmit}>
             {submitting ? (
