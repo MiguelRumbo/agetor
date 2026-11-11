@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Folder, GitBranch, Import, Plus } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { SearchSelect } from "@/components/ui/search-select";
 import { CloneProjectDialog } from "@/components/kanban/CloneProjectDialog";
 import { ImportSessionsDialog } from "@/components/kanban/ImportSessionsDialog";
@@ -97,8 +97,25 @@ export function ProjectPicker({
         await refresh();
         onChange(project.path);
       }
-    } catch { /* surface elsewhere — the picker just no-ops on failure */ }
+    } catch (e) {
+      // A headless core (the Linux build, docs/linux-port.md) has no native
+      // folder dialog and answers 501: ask for the path instead. Any other
+      // failure is surfaced elsewhere — the picker just no-ops.
+      if (e instanceof ApiError && e.status === 501) await addTypedPath();
+    }
     finally { setPicking(false); }
+  };
+
+  const addTypedPath = async () => {
+    const typed = window.prompt("Absolute path of the project folder:", value || "")?.trim();
+    if (!typed) return;
+    try {
+      const project = await api.addProject(typed);
+      await refresh();
+      onChange(project.path);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+    }
   };
 
   return (

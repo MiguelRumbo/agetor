@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "dev-stack": {
+      "source": { "source": "github", "repo": "MiguelRumbo/dev-stack" }
+    }
+  },
+  "enabledPlugins": {
+    "metodo@dev-stack": true,
+    "superpowers@dev-stack": true,
+    "ponytail@dev-stack": true,
+    "interface-design@dev-stack": true
+  }
+}

@@ -53,6 +53,16 @@ const STAT = "/usr/bin/stat";
 const FIND = "/usr/bin/find";
 const TAR = "/usr/bin/tar";
 
+/** BSD (macOS) and GNU (Linux) userlands spell the same operations differently:
+ *  BSD `stat -f %HT` prints "Directory"/"Regular File", GNU `stat -c %F` prints
+ *  "directory"/"regular file"/"regular empty file"; BSD `tar -L` follows
+ *  symlinks while GNU `tar -L` is `--tape-length` (GNU follows with
+ *  `--dereference`). Without this the CLI path gate classified every path as
+ *  `denied` on Linux (docs/linux-port.md). */
+const IS_DARWIN = process.platform === "darwin";
+const STAT_TYPE_ARGS = IS_DARWIN ? "-f %HT" : "-c %F";
+const TAR_FOLLOW_LINKS = IS_DARWIN ? "-L" : "--dereference";
+
 /**
  * Probe script (argv: sh -c SCRIPT sh path1 path2 …). One token per path, in
  * order. `stat -L` follows symlinks, matching `statSync`. Classification comes
@@ -72,15 +82,15 @@ const TAR = "/usr/bin/tar";
  */
 const PROBE_SCRIPT = `
 for p in "$@"; do
-  out=$(${STAT} -L -f %HT -- "$p" 2>&1)
+  out=$(${STAT} -L ${STAT_TYPE_ARGS} -- "$p" 2>&1)
   rc=$?
   if [ "$rc" -eq 0 ]; then
     case "$out" in
-      "Directory") if [ -r "$p" ]; then echo dir; else echo denied; fi ;;
-      "Regular File") if [ -r "$p" ]; then echo file; else echo denied; fi ;;
+      "Directory"|"directory") if [ -r "$p" ]; then echo dir; else echo denied; fi ;;
+      "Regular File"|"regular file"|"regular empty file") if [ -r "$p" ]; then echo file; else echo denied; fi ;;
       # BSD stat -L falls back to lstat on a dangling link and reports the link
       # itself; statSync would say ENOENT, so a link that survives -L is missing.
-      "Symbolic Link") echo missing ;;
+      "Symbolic Link"|"symbolic link") echo missing ;;
       *) echo other ;;
     esac
   else
@@ -453,7 +463,7 @@ export async function callerProjectTree(
     return refProjectTree(files);
   }
 
-  const archive = await runChildCapped([TAR, "-c", "-f", "-", "--format=pax", "-L", "--null", "-T", "-"], {
+  const archive = await runChildCapped([TAR, "-c", "-f", "-", "--format=pax", TAR_FOLLOW_LINKS, "--null", "-T", "-"], {
     cwd: root,
     maxBytes: PROJECT_TREE_TAR_MAX_BYTES,
     timeoutMs: TREE_TIMEOUT_MS,

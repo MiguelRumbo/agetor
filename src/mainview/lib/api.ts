@@ -858,6 +858,10 @@ export const api = {
         body: JSON.stringify({ startingFolder }),
       }),
     ),
+  /** Register a project by absolute path — what the browser UI uses on a
+   *  headless core, where `/projects/pick` has no native dialog (501). */
+  addProject: (p: string) =>
+    j<Project>("/projects", { method: "POST", body: JSON.stringify({ path: p }) }),
   deleteProject: (p: string) =>
     j<void>("/projects", { method: "DELETE", body: JSON.stringify({ path: p }) }),
   cloneProject: (input: {
