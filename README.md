@@ -169,6 +169,8 @@ The installer verifies a SHA-256 checksum and installs a single `agetor` binary 
 
 > [!NOTE]
 > Agetor ships for **macOS on Apple Silicon** only. Linux and Windows targets are configured but not built or tested yet.
+>
+> **This fork runs on Linux** as a compiled core plus the same UI in your browser: `scripts/linux.sh start`. See [docs/linux-port.md](docs/linux-port.md).
 
 ---
 
