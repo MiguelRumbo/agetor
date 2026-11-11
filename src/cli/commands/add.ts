@@ -50,6 +50,7 @@ import { unresolvedAtTokens } from "../../shared/at-refs.ts";
 import { agentProfileSummary, asProfileError, matchAgentProfileRef } from "../../shared/agent-profile.ts";
 import { matchPipelineRef } from "../../shared/pipeline.ts";
 import { escapeControlChars, escapeFreeText } from "../../shared/terminal-text.ts";
+import { ct } from "../i18n.ts";
 
 interface AddOpts {
   title?: string;
@@ -215,7 +216,7 @@ export async function cmdAdd(args: string[], flags: Flags): Promise<void> {
   let issueWarning: string | undefined;
   if (o.issue) {
     const parsed = parseIssueUrl(o.issue);
-    if (!parsed) throw new Error("--issue: not a recognized GitHub/GitLab/Bitbucket issue URL");
+    if (!parsed) throw new Error(ct("--issue: not a recognized GitHub/GitLab/Bitbucket issue URL"));
     // Resolve relative to the CLI's cwd (not the daemon's — see `baseInput`'s
     // comment) so the thread fetch and the eventual task both land on the
     // same absolute path the user meant.
@@ -223,7 +224,7 @@ export async function cmdAdd(args: string[], flags: Flags): Promise<void> {
     o.workdir = workdir;
     const thread = await client.getIssueThread(workdir, parsed.number);
     if (!sameIssueUrl(thread.item.htmlUrl, o.issue)) {
-      throw new Error("--issue: that issue belongs to a different repository than --workdir");
+      throw new Error(ct("--issue: that issue belongs to a different repository than --workdir"));
     }
     o.title ??= issueTaskTitle(thread.item);
     prompt ??= buildIssueTaskPrompt({ ...thread, snapshotAttached: true }).prompt;

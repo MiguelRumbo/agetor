@@ -17,6 +17,7 @@ import type {
   BundleIssue,
   PlannedAgent,
 } from "../../shared/bundle-import.ts";
+import { ct } from "../i18n.ts";
 
 /**
  * `agetor export` / `agetor import` and the `profile`/`pipeline`
@@ -86,7 +87,7 @@ export function parseHarnessMap(values: string[]): Record<string, string> {
     const eq = v.lastIndexOf("=");
     const from = eq > 0 ? v.slice(0, eq).trim() : "";
     const to = eq > 0 ? v.slice(eq + 1).trim() : "";
-    if (!from || !to) throw new Error(`--harness-map expects <fileHarnessId>=<localHarnessId>, got "${v}"`);
+    if (!from || !to) throw new Error(`${ct("--harness-map expects <fileHarnessId>=<localHarnessId>, got \"")}${v}"`);
     map.set(from, to);
   }
   // Own properties, so a file harness id such as "__proto__" isn't dropped
@@ -169,7 +170,7 @@ async function bundleCall<T>(fn: () => Promise<T>): Promise<T> {
     return await fn();
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) {
-      throw new Error("the running agetor core is older than this CLI — restart or update it");
+      throw new Error(ct("the running agetor core is older than this CLI — restart or update it"));
     }
     throw e;
   }
@@ -214,7 +215,7 @@ async function runExport(client: AgetorClient, flags: Flags, f: ExportFlags, out
   if (outPath) {
     writeOutFile(outPath, res.text, f.force);
     if (flags.json) return printJson({ written: outPath, counts: res.counts, warnings: res.warnings });
-    out(`${c.green("✓")} wrote ${countsText(res.counts)} to ${outPath}`);
+    out(`${c.green("✓")} ${ct("wrote")} ${countsText(res.counts)} to ${outPath}`);
   } else if (flags.json) {
     // --json is the machine-readable result, like every other command: the
     // bundle plus what was exported. Without --json stdout is the file.
@@ -233,13 +234,13 @@ function writeOutFile(outPath: string, text: string, force: boolean): void {
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
     if (code === "EEXIST") {
-      throw new Error(`refusing to overwrite ${outPath} — pass --force to replace it`);
+      throw new Error(`${ct("refusing to overwrite")} ${outPath} ${ct("— pass --force to replace it")}`);
     }
-    if (code === "EISDIR") throw new Error(`can't write to ${outPath}: it is a folder — give a file name with --out`);
-    if (code === "ENOENT") throw new Error(`can't write to ${outPath}: its folder doesn't exist`);
-    if (code === "ENOTDIR") throw new Error(`can't write to ${outPath}: its parent isn't a folder`);
-    if (code === "EACCES" || code === "EPERM") throw new Error(`can't write to ${outPath} — permission denied`);
-    throw new Error(`can't write to ${outPath}${code ? ` (${code})` : `: ${(e as Error).message}`}`);
+    if (code === "EISDIR") throw new Error(`${ct("can't write to")} ${outPath}${ct(": it is a folder — give a file name with --out")}`);
+    if (code === "ENOENT") throw new Error(`${ct("can't write to")} ${outPath}${ct(": its folder doesn't exist")}`);
+    if (code === "ENOTDIR") throw new Error(`${ct("can't write to")} ${outPath}${ct(": its parent isn't a folder")}`);
+    if (code === "EACCES" || code === "EPERM") throw new Error(`${ct("can't write to")} ${outPath} ${ct("— permission denied")}`);
+    throw new Error(`${ct("can't write to")} ${outPath}${code ? ` (${code})` : `: ${(e as Error).message}`}`);
   }
 }
 
@@ -257,10 +258,10 @@ function isDirectoryPath(p: string): boolean {
 function checkOutPath(f: ExportFlags): string | null {
   const outPath = f.out && f.out !== "-" ? f.out : null;
   if (outPath && isDirectoryPath(outPath)) {
-    throw new Error(`can't write to ${outPath}: it is a folder — give a file name with --out`);
+    throw new Error(`${ct("can't write to")} ${outPath}${ct(": it is a folder — give a file name with --out")}`);
   }
   if (outPath && !f.force && existsSync(outPath)) {
-    throw new Error(`refusing to overwrite ${outPath} — pass --force to replace it`);
+    throw new Error(`${ct("refusing to overwrite")} ${outPath} ${ct("— pass --force to replace it")}`);
   }
   return outPath;
 }
@@ -269,7 +270,7 @@ function checkOutPath(f: ExportFlags): string | null {
 export async function cmdExport(args: string[], flags: Flags): Promise<void> {
   const f = parseExportFlags(args, "export");
   if (f.all && (f.profiles.length > 0 || f.pipelines.length > 0)) {
-    throw new Error("--all exports everything — it can't be combined with --profile or --pipeline");
+    throw new Error(ct("--all exports everything — it can't be combined with --profile or --pipeline"));
   }
   if (!f.all && f.profiles.length === 0 && f.pipelines.length === 0) throw usageError("export");
   const outPath = checkOutPath(f);
@@ -540,10 +541,10 @@ export async function readCappedText(stream: ReadableStream<Uint8Array>, what: s
  *  get words, anything else keeps its code. */
 function readFailure(file: string, e: unknown): Error {
   const code = (e as NodeJS.ErrnoException | null)?.code;
-  if (code === "ENOENT") return new Error(`no such file: ${file}`);
-  if (code === "EACCES" || code === "EPERM") return new Error(`can't read ${file} — permission denied`);
-  if (code === "EISDIR") return new Error(`${file} is a folder — pass a bundle file`);
-  return new Error(`can't read ${file}${code ? ` (${code})` : ""}`);
+  if (code === "ENOENT") return new Error(`${ct("no such file:")} ${file}`);
+  if (code === "EACCES" || code === "EPERM") return new Error(`${ct("can't read")} ${file} ${ct("— permission denied")}`);
+  if (code === "EISDIR") return new Error(`${file} ${ct("is a folder — pass a bundle file")}`);
+  return new Error(`${ct("can't read")} ${file}${code ? ` (${code})` : ""}`);
 }
 
 /** Read `stream` through the cap; a failing read becomes `readFailure`'s
@@ -565,7 +566,7 @@ async function readImportText(file: string): Promise<string> {
   } catch (e) {
     throw readFailure(file, e);
   }
-  if (st.isDirectory()) throw new Error(`${file} is a folder — pass a bundle file`);
+  if (st.isDirectory()) throw new Error(`${file} ${ct("is a folder — pass a bundle file")}`);
   if (!st.isFile()) {
     // A FIFO, /dev/stdin, /dev/fd/N…: its size says nothing about what it
     // will deliver, so read it through the same cap as stdin.
@@ -575,7 +576,7 @@ async function readImportText(file: string): Promise<string> {
     );
   }
   if (st.size > BUNDLE_MAX_BYTES) {
-    throw new Error(`${file} is too large — the limit is ${BUNDLE_MAX_BYTES / (1024 * 1024)} MB`);
+    throw new Error(`${file} ${ct("is too large — the limit is")} ${BUNDLE_MAX_BYTES / (1024 * 1024)} MB`);
   }
   try {
     return readFileSync(file, "utf8");
@@ -653,7 +654,7 @@ async function runImport(
   const parsed = parseBundleText(text);
   // `parsed.error` never carries a raw control character (the parser escapes
   // the file text it quotes), so printing it can't drive the terminal.
-  if (!parsed.ok) throw new Error(`can't import ${file === "-" ? "stdin" : file}: ${parsed.error}`);
+  if (!parsed.ok) throw new Error(`${ct("can't import")} ${file === "-" ? "stdin" : file}: ${parsed.error}`);
   const mapError = unknownHarnessMapError(f.harnessMap, parsed.bundle);
   if (mapError) throw new Error(mapError);
 
@@ -671,7 +672,7 @@ async function runImport(
       out(c.dim("dry run — nothing was imported"));
       for (const line of importPlanLines(plan, { singleNameFlag })) out(line);
     }
-    if (!plan.canImport) throw new Error(`the import would be blocked by ${plural(plan.blocking.length, "issue")}`);
+    if (!plan.canImport) throw new Error(`${ct("the import would be blocked by")} ${plural(plan.blocking.length, "issue")}`);
     return;
   }
 
@@ -684,7 +685,7 @@ async function runImport(
   if (confirm) {
     const plan = await bundleCall(() => api.previewBundleImport(text, options));
     for (const line of importPlanLines(plan, { singleNameFlag })) out(line);
-    if (!plan.canImport) throw new Error(`nothing was imported — ${plural(plan.blocking.length, "blocking issue")}`);
+    if (!plan.canImport) throw new Error(`${ct("nothing was imported —")} ${plural(plan.blocking.length, "blocking issue")}`);
     const answer = await confirm(plan);
     if (answer !== true) {
       // Ctrl+C is an interrupt, not a "No": exit 130 like any other one.
@@ -706,9 +707,9 @@ async function runImport(
     // A name taken between the plan and the commit 409s with a plan that may
     // list no blocking issue — the core's own message says what happened.
     if (plan.blocking.length === 0) {
-      throw new Error(`nothing was imported — ${escapeControlChars((e as Error).message)}`);
+      throw new Error(`${ct("nothing was imported —")} ${escapeControlChars((e as Error).message)}`);
     }
-    throw new Error(`nothing was imported — ${plural(plan.blocking.length, "blocking issue")}`);
+    throw new Error(`${ct("nothing was imported —")} ${plural(plan.blocking.length, "blocking issue")}`);
   }
   if (flags.json) return printJson(result);
   for (const line of importResultLines(result)) out(line);

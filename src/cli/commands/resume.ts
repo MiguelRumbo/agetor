@@ -2,6 +2,7 @@ import { getClient, type Flags } from "../context.ts";
 import { resolveTask } from "../resolve.ts";
 import { out } from "../output.ts";
 import { usageError } from "../usage.ts";
+import { ct } from "../i18n.ts";
 
 /**
  * `agetor resume <task-id> [--cancel]` — continue an fx response the Vercel
@@ -37,7 +38,7 @@ export async function cmdResume(args: string[], flags: Flags): Promise<void> {
   if (cancel) {
     const res = await client.cancelFxAutoResume(task.id);
     if (flags.json) return out(JSON.stringify(res));
-    out(`■ auto-resume cancelled for ${task.id.slice(0, 8)}`);
+    out(`${ct("■ auto-resume cancelled for")} ${task.id.slice(0, 8)}`);
     return;
   }
 
@@ -45,5 +46,5 @@ export async function cmdResume(args: string[], flags: Flags): Promise<void> {
 
   if (flags.json) return out(JSON.stringify(res));
 
-  out(`▸ resuming paused fx response for ${task.id.slice(0, 8)} (run ${res.runId.slice(0, 8)})`);
+  out(`${ct("▸ resuming paused fx response for")} ${task.id.slice(0, 8)} ${ct("(run")} ${res.runId.slice(0, 8)})`);
 }

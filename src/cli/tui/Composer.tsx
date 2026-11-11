@@ -3,6 +3,7 @@ import { Box, Text, useInput } from "ink";
 import { sanitizeDrop } from "./paste.ts";
 import type { FileEntry } from "../../shared/at-file-filter.ts";
 import { acceptSuggestion, suggestAtEntries } from "./at-complete.ts";
+import { ct } from "../i18n.ts";
 
 /** A stable identity for an active `@`-query slice — used to know when the
  *  query has moved on (so a stale `sel`/dismiss doesn't leak into a new
@@ -272,7 +273,7 @@ export function Composer({
               {entry.path}
             </Text>
           ))}
-          <Text dimColor>tab/enter accept · esc dismiss</Text>
+          <Text dimColor>{ct("tab/enter accept · esc dismiss")}</Text>
         </Box>
       ) : null}
     </Box>

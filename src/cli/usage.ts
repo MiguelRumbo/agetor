@@ -3,6 +3,7 @@ import { isSpeed } from "../shared/speed.ts";
 import { parseOpencodeServerInput } from "../shared/opencode.ts";
 import { escapeControlChars, escapeFreeText } from "../shared/terminal-text.ts";
 import { c, errln } from "./output.ts";
+import { ct } from "./i18n.ts";
 
 const COLUMN_IDS = COLUMNS.map((col) => col.id).join(", ");
 
@@ -495,7 +496,7 @@ export function usageError(cmd: string): Error {
  *  several speed flags wins. */
 export function parseSpeedFlag(value: string): Speed {
   if (isSpeed(value)) return value;
-  throw new Error(`'--speed' must be one of ${SPEEDS.join(", ")} (got '${escapeControlChars(value)}')`);
+  throw new Error(`'--speed' must be one of ${SPEEDS.join(", ")} ${ct("(got '")}${escapeControlChars(value)}')`);
 }
 
 /** The one stderr line printed when a script still passes `--opencode-server`.

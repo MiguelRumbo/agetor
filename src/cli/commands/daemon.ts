@@ -25,6 +25,7 @@ import { escapeControlChars } from "../../shared/terminal-text.ts";
 import { ensureOpts } from "../context.ts";
 import { c, out, printJson } from "../output.ts";
 import type { Flags } from "../context.ts";
+import { ct } from "../i18n.ts";
 
 const DAEMON_USAGE =
   "usage: agetor daemon <status | start | stop | background [status | off]>";
@@ -226,7 +227,7 @@ export async function cmdDaemon(args: string[], flags: Flags): Promise<void> {
         return;
       }
       if (flags.json) return printJson({ stopped: false });
-      out(`${c.gray("○")} no core was running`);
+      out(`${c.gray("○")} ${ct("no core was running")}`);
       return;
     }
     case "status": {
@@ -240,7 +241,7 @@ export async function cmdDaemon(args: string[], flags: Flags): Promise<void> {
         );
       }
       if (!core) {
-        out(`${c.gray("○")} no Agetor core running`);
+        out(`${c.gray("○")} ${ct("no Agetor core running")}`);
         out(backgroundLine(background));
         return;
       }
@@ -284,7 +285,7 @@ async function cmdDaemonBackground(
         status = await new AgetorClient(core).turnOffBackground();
       } catch (e) {
         if (e instanceof ApiError && e.status === 404) {
-          throw new Error("the running agetor core is older than this CLI — restart or update it");
+          throw new Error(ct("the running agetor core is older than this CLI — restart or update it"));
         }
         throw e;
       }

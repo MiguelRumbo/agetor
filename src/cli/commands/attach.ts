@@ -3,6 +3,7 @@ import { resolveTask } from "../resolve.ts";
 import { c, out, isTTY } from "../output.ts";
 import { usageError } from "../usage.ts";
 import type { AgetorClient } from "../api-client.ts";
+import { ct } from "../i18n.ts";
 
 /**
  * Mirrors `tmuxSocketName()`/`tmuxSocketArgs()` from `../../bun/tmux-resolution.ts`
@@ -76,7 +77,7 @@ export function opencodeServerTurnAttachError(
 export async function cmdAttach(args: string[], flags: Flags): Promise<void> {
   const ref = args[0];
   if (!ref) throw usageError("attach");
-  if (!isTTY) throw new Error("agetor attach needs an interactive terminal (TTY)");
+  if (!isTTY) throw new Error(ct("agetor attach needs an interactive terminal (TTY)"));
 
   const client = await getClient(flags);
   const task = await resolveTask(client, ref);

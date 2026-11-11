@@ -60,3 +60,15 @@ Cuando supere ~2000 líneas, archivar en `bitacora/<año>-Q<n>.md` y dejar aquí
 **Verificado:** `bun run typecheck`, `bun test src/mainview src/shared` (único fallo: `StackBadge`, depende de la fecha del día, anterior a este cambio) y `vite build`. No se comprobó visualmente en el navegador.
 
 **Pendientes:** core (`src/bun`), CLI/TUI, `README.md`; revisar visualmente cada pantalla y cadenas con ternarias/plantillas que quedaron en inglés.
+
+## 2026-11-11 — Traducción del core y del CLI/TUI
+
+**Decisiones:**
+- [Claude] Un único idioma para UI, core y CLI: preferencia `locale` en `preferences` (rutas existentes, sin endpoint nuevo).
+- [Claude] Errores del core traducidos en `json()` (único punto de paso, ~534 respuestas) con un traductor de plantillas compartido en `src/shared/i18n-core.ts`; estados del transcript traducidos al escribirlos en `saveAndEmit`.
+- [Claude] CLI: traducción por fragmentos de plantilla para no tocar colores ni valores; `AGETOR_LANG` fuerza el idioma.
+- [Claude] Quedan en inglés los mensajes que el cliente compara por texto (ver `docs/i18n.md`).
+
+**Verificado:** `bun run typecheck`; tests de `src/cli` (salvo los de daemon/remote, que terminan el proceso de bun también sin este cambio), `orchestrator.test.ts`, `route-policy.test.ts` y los nuevos `src/bun/i18n.test.ts`, `src/cli/i18n.test.ts`. No se probó a mano contra un core real en español.
+
+**Pendientes:** prosa larga de `--help`, salida del CLI armada fuera de `out(\`…\`)`, revisar visualmente UI/CLI, README.

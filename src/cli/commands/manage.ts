@@ -7,6 +7,7 @@ import { ApiError, type PatchTaskInput } from "../api-client.ts";
 import { COLUMNS } from "../../shared/types.ts";
 import { flagValue } from "../args.ts";
 import { parseOpencodeServerFlag, parseSpeedFlag, usageError, warnOpencodeServerFlagIgnored } from "../usage.ts";
+import { ct } from "../i18n.ts";
 
 const COLUMN_IDS = COLUMNS.map((col) => col.id);
 
@@ -57,7 +58,7 @@ export async function cmdEdit(args: string[], flags: Flags): Promise<void> {
     );
   }
   if (patch.column && !COLUMN_IDS.includes(patch.column as (typeof COLUMN_IDS)[number])) {
-    throw new Error(`unknown column "${patch.column}" — one of: ${COLUMN_IDS.join(", ")}`);
+    throw new Error(`${ct("unknown column \"")}${patch.column}" — one of: ${COLUMN_IDS.join(", ")}`);
   }
   const client = await getClient(flags);
   const task = await resolveTask(client, ref);
@@ -91,7 +92,7 @@ export async function cmdEdit(args: string[], flags: Flags): Promise<void> {
   // model/mode/effort changes are forwarded to a live claude session by the
   // server (reconcileTaskSession sends /model, /effort, cycles mode).
   const changed = [...(detachProfile ? ["detach-profile"] : []), ...Object.keys(patch)];
-  out(`${c.green("✓")} updated ${c.dim(updated.id.slice(0, 8))} — ${changed.join(", ")}`);
+  out(`${c.green("✓")} ${ct("updated")} ${c.dim(updated.id.slice(0, 8))} — ${changed.join(", ")}`);
 }
 
 export async function cmdMove(args: string[], flags: Flags): Promise<void> {
@@ -101,13 +102,13 @@ export async function cmdMove(args: string[], flags: Flags): Promise<void> {
     throw usageError("move");
   }
   if (!COLUMN_IDS.includes(column as (typeof COLUMN_IDS)[number])) {
-    throw new Error(`unknown column "${column}" — one of: ${COLUMN_IDS.join(", ")}`);
+    throw new Error(`${ct("unknown column \"")}${column}" — one of: ${COLUMN_IDS.join(", ")}`);
   }
   const client = await getClient(flags);
   const task = await resolveTask(client, ref);
   const updated = await client.patchTask(task.id, { column });
   if (flags.json) return printJson(updated);
-  out(`${c.cyan("→")} moved ${c.dim(updated.id.slice(0, 8))} → ${column}`);
+  out(`${c.cyan("→")} ${ct("moved")} ${c.dim(updated.id.slice(0, 8))} → ${column}`);
 }
 
 export async function cmdArchive(args: string[], flags: Flags): Promise<void> {

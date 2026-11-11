@@ -3,6 +3,7 @@ import { ApiError } from "../api-client.ts";
 import { c, out, printJson } from "../output.ts";
 import { escapeControlChars } from "../../shared/terminal-text.ts";
 import type { RemoteAccessStatus } from "../../shared/types.ts";
+import { ct } from "../i18n.ts";
 
 /**
  * `agetor remote [status | off]` — remote access (preview), the switch that
@@ -24,7 +25,7 @@ async function remoteCall(fn: () => Promise<RemoteAccessStatus>): Promise<Remote
     return await fn();
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) {
-      throw new Error("the running agetor core is older than this CLI — restart or update it");
+      throw new Error(ct("the running agetor core is older than this CLI — restart or update it"));
     }
     throw e;
   }

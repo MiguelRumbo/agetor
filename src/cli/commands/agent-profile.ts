@@ -14,6 +14,7 @@ import {
   type Harness,
   type Speed,
 } from "../../shared/types.ts";
+import { ct } from "../i18n.ts";
 
 export async function cmdAgentProfile(args: string[], flags: Flags): Promise<void> {
   const sub = args[0] ?? "ls";
@@ -65,7 +66,7 @@ export async function cmdAgentProfile(args: string[], flags: Flags): Promise<voi
       };
       const created = await client.createAgentProfile(input);
       if (flags.json) return printJson(created);
-      out(`${c.green("✓")} created profile ${c.bold(safe(created.name))} (${c.dim(created.id)})`);
+      out(`${c.green("✓")} ${ct("created profile")} ${c.bold(safe(created.name))} (${c.dim(created.id)})`);
       return;
     }
     case "edit": {
@@ -111,7 +112,7 @@ export async function cmdAgentProfile(args: string[], flags: Flags): Promise<voi
       }
       const updated = await client.patchAgentProfile(profile.id, patch);
       if (flags.json) return printJson(updated);
-      out(`${c.green("✓")} updated profile ${c.bold(safe(updated.name))} (${c.dim(updated.id)})`);
+      out(`${c.green("✓")} ${ct("updated profile")} ${c.bold(safe(updated.name))} (${c.dim(updated.id)})`);
       return;
     }
     case "duplicate": {
@@ -136,8 +137,8 @@ export async function cmdAgentProfile(args: string[], flags: Flags): Promise<voi
         ...(withTasks ? { copyTasks: true } : {}),
       });
       if (flags.json) return printJson(result);
-      out(`${c.green("✓")} duplicated profile ${c.bold(safe(result.profile.name))} (${c.dim(result.profile.id)})`);
-      if (withTasks) out(`copied ${taskCountText(result.copiedTasks.length)}`);
+      out(`${c.green("✓")} ${ct("duplicated profile")} ${c.bold(safe(result.profile.name))} (${c.dim(result.profile.id)})`);
+      if (withTasks) out(`${ct("copied")} ${taskCountText(result.copiedTasks.length)}`);
       for (const err of result.taskCopyErrors) {
         out(c.yellow(`could not copy task ${escapeFreeText(err.sourceTaskId.slice(0, 8))}: ${escapeFreeText(err.error)}`));
       }
@@ -150,11 +151,11 @@ export async function cmdAgentProfile(args: string[], flags: Flags): Promise<voi
       const profile = await resolveProfile(client, ref);
       await client.deleteAgentProfile(profile.id);
       if (flags.json) return printJson({ removed: profile.id });
-      out(`${c.red("✗")} removed profile ${c.bold(safe(profile.name))} — existing tasks keep their snapshot`);
+      out(`${c.red("✗")} ${ct("removed profile")} ${c.bold(safe(profile.name))} ${ct("— existing tasks keep their snapshot")}`);
       return;
     }
     default:
-      throw new Error(`unknown profile subcommand: ${sub} (use ls | show | add | edit | duplicate | rm | export | import)`);
+      throw new Error(`${ct("unknown profile subcommand:")} ${sub} ${ct("(use ls | show | add | edit | duplicate | rm | export | import)")}`);
   }
 }
 

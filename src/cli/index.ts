@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import pkg from "../../package.json" with { type: "json" };
 import { setPlain, c, out, errln, printJson, isTTY } from "./output.ts";
-import { getClient, ensureOpts, type Flags } from "./context.ts";
+import { getClient, getClientIfRunning, ensureOpts, type Flags } from "./context.ts";
 import { ensureCore } from "./daemon/supervisor.ts";
 import { AgetorClient } from "./api-client.ts";
 import { cmdDaemon } from "./commands/daemon.ts";
@@ -30,6 +30,7 @@ import { cmdCompact } from "./commands/compact.ts";
 import { cmdShell } from "./commands/shell.ts";
 import { cmdCommands } from "./commands/discovery.ts";
 import { helpFor } from "./usage.ts";
+import { ct, ctHelp, initCliLocale } from "./i18n.ts";
 
 const HELP = `agetor — drive Agetor from the terminal
 
@@ -132,11 +133,17 @@ async function main(): Promise<void> {
   if (flags.plain || flags.json) setPlain(true);
 
   if (version) return out(pkg.version);
+  // Idioma: AGETOR_LANG, o la preferencia `locale` de un core ya en marcha (nunca arranca uno).
+  await initCliLocale(async () => {
+    const client = await getClientIfRunning(flags);
+    if (!client) return null;
+    return await Promise.race([client.getPreferences(), new Promise<null>((r) => setTimeout(() => r(null), 1000))]);
+  });
   // `agetor help [cmd [sub [subsub]]]` and `agetor <cmd> [sub [subsub]] --help`
   // both resolve to the most specific block (`harness stack create`); bare
   // `help`/`--help` falls back to the index.
-  if (cmd === "help") return out(helpFor(args[0], args[1], args[2]) ?? HELP);
-  if (help) return out(helpFor(cmd, args[0], args[1]) ?? HELP);
+  if (cmd === "help") return out(ctHelp(helpFor(args[0], args[1], args[2]) ?? HELP));
+  if (help) return out(ctHelp(helpFor(cmd, args[0], args[1]) ?? HELP));
 
   switch (cmd) {
     case undefined: {
@@ -230,11 +237,11 @@ async function main(): Promise<void> {
     case "info": {
       const client = await getClient(flags);
       const meta = await client.info();
-      return flags.json ? printJson(meta) : out(`agetor core v${meta.version}`);
+      return flags.json ? printJson(meta) : out(`${ct("agetor core v")}${meta.version}`);
     }
     default:
       errln(c.red(`unknown command: ${cmd}`));
-      errln("run `agetor --help` for usage");
+      errln(ct("run `agetor --help` for usage"));
       process.exitCode = 1;
   }
 }
