@@ -652,7 +652,13 @@ export async function spawnCodexViaTmux(opts: CodexLaunchOptions): Promise<Spawn
 
   const tmux = resolveTmuxBin();
   const launchEnv = pinCodexHome(opts.env);
-  const inner = `${launchEnv.unset ? "unset CODEX_HOME; " : ""}exec ${opts.argv.map(sq).join(" ")} < ${sq(promptPath)} > ${sq(logPath)} 2>&1`;
+  // `3<&0` keeps the pane's PTY open on fd 3 before stdin/stdout/stderr are
+  // pointed at files. On Linux, once no process holds the PTY slave, tmux reads
+  // EIO from the master, treats the pane as dead and SIGHUPs codex mid-turn
+  // (the run ends "unexpectedly" with an empty log). macOS PTYs don't hang up
+  // that way, which is why this only showed up on the Linux port
+  // (docs/linux-port.md).
+  const inner = `${launchEnv.unset ? "unset CODEX_HOME; " : ""}exec ${opts.argv.map(sq).join(" ")} 3<&0 < ${sq(promptPath)} > ${sq(logPath)} 2>&1`;
   const envArgs: string[] = [];
   // Forward PATH so codex's own shell-tool invocations resolve dev binaries,
   // plus the harness env (CODEX_HOME/HOME) that controls codex's login/history.
