@@ -186,6 +186,33 @@ When iterating on the webview, run `bun run dev:hmr`. When iterating on `src/bun
 - The fake drivers (`AGETOR_<KIND>_DRIVER=fake`) and their prompt markers (`FAKE_*_PROMPT_MARKER`) are documented beside the behavior they exercise, in the `harness-<kind>.md` docs and the subsystem docs; `grep -rn FAKE_ docs/architecture` finds the documented ones, and `grep -rn PROMPT_MARKER src` lists every marker (some have no doc yet). The native picker and Downloads seams for e2e (`AGETOR_FAKE_PICK_REFS_DIR`, `AGETOR_DOWNLOADS_DIR`) are in [testing-seams.md](docs/architecture/testing-seams.md).
 - Worktree isolation creates branches in the **user's source repo** (`workdir`), not a clone. Branches are named `agetor/<short-id>-<slug>` and worktrees live under `~/.agetor/worktrees/<task-id>/`. Tests must use a temp git repo (see `worktree.test.ts`) or pass `isolation: "none"` (see `orchestrator.test.ts`), otherwise they will create real branches in whatever repo `process.cwd()` resolves to.
 
+## Fork personal: Linux y método de trabajo (dev-stack)
+
+Este repositorio es un **fork personal** (`MiguelRumbo/agetor`) que se usa en **Linux**, sin Mac. No se envían PRs al upstream (`alamops/agetor`). Reglas propias del fork:
+
+- **Prioridades:** 1) que compile en Linux, 2) que tenga UI. Romper algo exclusivo de macOS es aceptable: se **documenta** en [`docs/linux-port.md`](docs/linux-port.md) (sección "Lo que se rompe o no aplica en macOS") y no se arregla salvo que afecte a lo que se está trabajando.
+- **Cómo se ejecuta en Linux:** `scripts/linux.sh start` (core compilado + UI en el navegador). Detalle, verificación y problemas conocidos en [`docs/linux-port.md`](docs/linux-port.md).
+- **Ramas:** la rama que crea cada sesión de Claude no recibe el trabajo. Todo cambio va en una **rama aparte** con nombre `<tipo>/<tema>` (`metodo:git-flujo`), y desde ella se abre el PR contra `main` del fork.
+- **Idioma:** el producto está en inglés. La documentación propia del fork (bitácora, ADRs, `docs/linux-port.md`) va en español. El inventario de textos visibles para traducir está en [`docs/traduccion-inventario.md`](docs/traduccion-inventario.md).
+
+### Método de trabajo
+
+Este proyecto usa el stack `dev-stack` ([MiguelRumbo/dev-stack](https://github.com/MiguelRumbo/dev-stack)), registrado en `.claude/settings.json`. La skill `metodo:metodo` manda sobre el proceso. Adaptado a la estructura que ya tenía Agetor:
+
+- **Fases:** entender → diseñar → planear → ejecutar → verificar → cerrar. No se codea sin plan aprobado si la tarea toca más de un archivo o algún contrato.
+- **Código:** ponytail. La solución más corta que funciona. Sin abstracciones no pedidas.
+- **Arquitectura:** la de Agetor (core Bun + UI React + `src/shared`), documentada en las secciones de arriba y en `docs/architecture/`. No se reorganiza en módulos por contrato: es un fork de un proyecto grande y se busca poca divergencia.
+- **Comentarios en código:** completos (el código heredado ya explica los porqués junto a cada decisión; se mantiene ese estilo en lo que se toque).
+- **Un .md por módulo:** los "módulos" de `metodo` son los subsistemas de la [Topic map](#topic-map); su doc es `docs/architecture/<subsistema>.md` (equivale a `docs/modulos/`). Se actualiza en el mismo commit que el cambio.
+- **Índice:** [`docs/README.md`](docs/README.md).
+- **Bitácora:** [`docs/BITACORA.md`](docs/BITACORA.md), append-only, toda decisión con `[quién]`.
+- **ADR** en `docs/adr/` para: dependencias nuevas, cambios de contrato, elección de framework/runtime/plataforma.
+- **Planes:** `docs/plans/` (equivale a `docs/planes/`).
+- **Seguridad:** sin secretos en código ni en el chat; amenazas y controles en [`docs/architecture/security.md`](docs/architecture/security.md). Ver `metodo:seguridad`.
+- **Commits:** Conventional Commits con scope de subsistema (`fix(codex): …`, `docs(bitacora): …`), uno por tarea, con los tests relevantes ejecutados. Ver `metodo:git-flujo`.
+- **Commit directo en main:** nunca; siempre rama aparte + PR.
+- **UI:** app de producto → `interface-design` (tokens existentes en `src/mainview/index.css` y `tailwind.config.js`; ver "UI conventions").
+
 ## JubarteAI Agent Identity
 
 This repository participates in the JubarteAI agent fleet. Every coding agent working here must connect to the platform and follow the coordination workflow. The `jubarteai` skill is **required reading** — this section is the quick-start checklist; the skill is the authoritative playbook with full per-tool guidance.
