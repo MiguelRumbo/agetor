@@ -5560,12 +5560,16 @@ export function startApiServer(
           // The command travels base64-encoded so no quoting layer between
           // Linux argv and the Windows command line can mangle it.
           if (process.platform === "linux" && process.env.WSL_DISTRO_NAME) {
-            const b64 = Buffer.from(buildHarnessTerminalCommand(harness)).toString("base64");
+            const b64 = Buffer.from(
+              // The trailing `exec bash -l` lives INSIDE the encoded script:
+              // wt.exe reads a bare `;` in its argv as a new-tab separator.
+              `${buildHarnessTerminalCommand(harness)}; exec bash -l`,
+            ).toString("base64");
             try {
               coreSpawn(
                 [
                   "wt.exe", "wsl.exe", "-d", process.env.WSL_DISTRO_NAME, "--",
-                  "bash", "-lc", `eval "$(echo ${b64} | base64 -d)"; exec bash -l`,
+                  "bash", "-lc", `eval "$(echo ${b64} | base64 -d)"`,
                 ],
                 { stdout: "ignore", stderr: "ignore" },
               );
