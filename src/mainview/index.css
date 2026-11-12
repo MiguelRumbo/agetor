@@ -143,6 +143,10 @@
 
   * { @apply border-border; }
   body { @apply bg-background text-foreground; }
+  /* Native <select> popups ignore the transparent field background: Chromium
+     paints them white while the text inherits the (white) dark-theme
+     foreground. Give the options explicit theme colors. */
+  select option { background-color: hsl(var(--card)); color: hsl(var(--card-foreground)); }
 }
 
 /* WKWebView hides overlay scrollbars when idle. Force a persistent horizontal
