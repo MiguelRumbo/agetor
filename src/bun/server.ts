@@ -14,7 +14,7 @@ import { PROJECT_CAPABILITY_PATHSPECS } from "./ref-tree.ts";
 import { taskDirExists, writeTaskDirFileAtomic } from "./task-dir-fs.ts";
 import { DISCLAIM_PREF_KEY, isDisclaimOffValue } from "./disclaim.ts";
 import { applyDisclaimPreferenceWrite } from "./disclaim-switch.ts";
-import { childEnv } from "./core-spawn.ts";
+import { childEnv, coreSpawn } from "./core-spawn.ts";
 import {
   tasks,
   backlog,
@@ -5556,6 +5556,27 @@ export function startApiServer(
           // binary throws, the request dies and the webview only sees
           // "Failed to fetch". Answer a clear 501 with the working
           // alternative instead (docs/linux-port.md).
+          // WSL: open Windows Terminal running a login shell of this distro.
+          // The command travels base64-encoded so no quoting layer between
+          // Linux argv and the Windows command line can mangle it.
+          if (process.platform === "linux" && process.env.WSL_DISTRO_NAME) {
+            const b64 = Buffer.from(buildHarnessTerminalCommand(harness)).toString("base64");
+            try {
+              coreSpawn(
+                [
+                  "wt.exe", "wsl.exe", "-d", process.env.WSL_DISTRO_NAME, "--",
+                  "bash", "-lc", `eval "$(echo ${b64} | base64 -d)"; exec bash -l`,
+                ],
+                { stdout: "ignore", stderr: "ignore" },
+              );
+              return json({ ok: true }, { headers: corsHeaders(req) });
+            } catch (e) {
+              return json(
+                { error: `Couldn't open Windows Terminal (wt.exe): ${e instanceof Error ? e.message : e}` },
+                { status: 502, headers: corsHeaders(req) },
+              );
+            }
+          }
           if (process.platform !== "darwin") {
             return json(
               {
