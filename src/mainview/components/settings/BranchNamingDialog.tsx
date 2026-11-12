@@ -18,6 +18,7 @@ import {
   validateBranchName,
   type TaskType,
 } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 interface Props {
   open: boolean;
@@ -102,13 +103,13 @@ export function BranchNamingDialog({ open, onClose, projectPath, projectName, ac
       <div className="flex items-center justify-between border-b border-border/60 pb-3">
         <div className="min-w-0">
           <h2 id="branch-naming-title" className="text-base font-semibold">
-            Branch naming
+            {t("Branch naming")}
           </h2>
           <p className="truncate text-xs text-muted-foreground" title={projectPath}>
             {projectName || projectPath || "No project selected"}
           </p>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
+        <Button variant="ghost" size="icon" onClick={onClose} aria-label={t("Close")}>
           <X className="size-4" />
         </Button>
       </div>
@@ -174,7 +175,7 @@ export function BranchNamingDialog({ open, onClose, projectPath, projectName, ac
 
         <label className="flex items-center justify-between gap-3">
           <span className="min-w-0">
-            <span className="text-xs">Include card name in the branch</span>
+            <span className="text-xs">{t("Include card name in the branch")}</span>
             <span className="block text-[10px] text-muted-foreground">
               Off &rarr; branch body is a short unique id instead of the title slug.
             </span>
@@ -200,7 +201,7 @@ export function BranchNamingDialog({ open, onClose, projectPath, projectName, ac
         )}
 
         <div className="flex items-center justify-end gap-2 border-t border-border/60 pt-3">
-          <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>{t("Cancel")}</Button>
           <Button size="sm" onClick={() => void save()} disabled={loading || saving || !validation.ok}>
             {saving ? "Saving…" : "Save"}
           </Button>

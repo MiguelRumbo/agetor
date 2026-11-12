@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { duplicateAgentName } from "../../../shared/duplicate-name.ts";
 import { PIPELINE_LIMITS } from "../../../shared/types.ts";
 import type { Pipeline } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 interface PipelinesPageProps {
   onOpenEditor: (id: string | null) => void;
@@ -74,7 +75,7 @@ export function PipelinesPage({ onOpenEditor, onBack, onImported }: PipelinesPag
         (pipeline.taskCount ?? 0) > 0
           ? `Used by ${pipeline.taskCount} task(s). Deleting it never affects tasks that already ran — they keep their frozen snapshot — but no new run can be started from it.`
           : "This can't be undone.",
-      confirmLabel: "Delete pipeline",
+      confirmLabel: t("Delete pipeline"),
       variant: "destructive",
     });
     if (!ok) return;
@@ -134,11 +135,11 @@ export function PipelinesPage({ onOpenEditor, onBack, onImported }: PipelinesPag
         </div>
 
         {loading ? (
-          <p className="text-sm text-muted-foreground">Loading pipelines…</p>
+          <p className="text-sm text-muted-foreground">{t("Loading pipelines…")}</p>
         ) : pipelines.length === 0 ? (
           <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border py-16 text-center">
             <Workflow className="size-6 text-muted-foreground" aria-hidden />
-            <p className="text-sm text-muted-foreground">No pipelines yet.</p>
+            <p className="text-sm text-muted-foreground">{t("No pipelines yet.")}</p>
             <Button type="button" size="sm" onClick={() => onOpenEditor(null)} className="gap-1.5">
               <Plus className="size-4" aria-hidden />
               Create your first pipeline
@@ -183,7 +184,7 @@ export function PipelinesPage({ onOpenEditor, onBack, onImported }: PipelinesPag
                     type="button"
                     variant="ghost"
                     size="icon"
-                    title="Export"
+                    title={t("Export")}
                     aria-label={`Export ${pipeline.name}`}
                     data-testid="bundle-row-export"
                     onClick={() => bundle.exportOne(pipeline.id)}
@@ -195,7 +196,7 @@ export function PipelinesPage({ onOpenEditor, onBack, onImported }: PipelinesPag
                     type="button"
                     variant="ghost"
                     size="icon"
-                    title="Edit"
+                    title={t("Edit")}
                     data-testid="pipelines-edit"
                     disabled={busyId === pipeline.id}
                     onClick={() => onOpenEditor(pipeline.id)}
@@ -207,7 +208,7 @@ export function PipelinesPage({ onOpenEditor, onBack, onImported }: PipelinesPag
                     type="button"
                     variant="ghost"
                     size="icon"
-                    title="Duplicate"
+                    title={t("Duplicate")}
                     data-testid="pipelines-duplicate"
                     disabled={busyId === pipeline.id}
                     onClick={() => void handleDuplicate(pipeline)}
@@ -219,7 +220,7 @@ export function PipelinesPage({ onOpenEditor, onBack, onImported }: PipelinesPag
                     type="button"
                     variant="ghost"
                     size="icon"
-                    title="Delete"
+                    title={t("Delete")}
                     data-testid="pipelines-delete"
                     disabled={busyId === pipeline.id}
                     onClick={() => void handleDelete(pipeline)}

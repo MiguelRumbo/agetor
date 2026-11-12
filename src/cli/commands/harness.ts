@@ -6,6 +6,7 @@ import type { AgentKind, HarnessStack, HarnessStatus } from "../../shared/types.
 import { stackPositionText } from "../../shared/harness-stack.ts";
 import { usageError } from "../usage.ts";
 import { escapeControlChars, escapeFreeText } from "../../shared/terminal-text.ts";
+import { ct } from "../i18n.ts";
 
 /** Printed under an fx harness whose own saved profile starts in Ask mode
  *  (`fx status --json` `permission_mode`, fx ≥0.0.14). Neutral on purpose:
@@ -57,7 +58,7 @@ export async function cmdHarness(args: string[], flags: Flags): Promise<void> {
       for (const h of harnesses) {
         const st = byId.get(h.id);
         if (st?.loggedIn === false) {
-          out(`  ${c.red("!")} ${c.bold(h.id)} not logged in — ${st.authHelp ?? "run its login command"}`);
+          out(`  ${c.red("!")} ${c.bold(h.id)} ${ct("not logged in —")} ${st.authHelp ?? "run its login command"}`);
         }
         if (h.kind === "fx" && st?.fxProfilePermissionMode === "ask") {
           out(`  ${c.dim("i")} ${c.bold(h.id)} ${FX_ASK_PROFILE_HINT}`);
@@ -82,7 +83,7 @@ export async function cmdHarness(args: string[], flags: Flags): Promise<void> {
         ...(f.profileMcpServers !== undefined ? { profileMcpServers: f.profileMcpServers } : {}),
       });
       if (flags.json) return printJson(created);
-      out(`${c.green("✓")} created harness ${c.bold(created.id)} (${created.kind})`);
+      out(`${c.green("✓")} ${ct("created harness")} ${c.bold(created.id)} (${created.kind})`);
       return;
     }
     case "edit": {
@@ -98,11 +99,11 @@ export async function cmdHarness(args: string[], flags: Flags): Promise<void> {
       if (f.env) patch.env = f.env;
       if (f.profileMcpServers !== undefined) patch.profileMcpServers = f.profileMcpServers;
       if (Object.keys(patch).length === 0) {
-        throw new Error("nothing to edit — pass --label / --home / --bin / --env / --profile-mcp / --no-profile-mcp");
+        throw new Error(ct("nothing to edit — pass --label / --home / --bin / --env / --profile-mcp / --no-profile-mcp"));
       }
       const updated = await client.patchHarness(id, patch);
       if (flags.json) return printJson(updated);
-      out(`${c.green("✓")} updated harness ${c.bold(updated.id)}`);
+      out(`${c.green("✓")} ${ct("updated harness")} ${c.bold(updated.id)}`);
       return;
     }
     case "enable":
@@ -137,7 +138,7 @@ export async function cmdHarness(args: string[], flags: Flags): Promise<void> {
         throw e;
       }
       if (flags.json) return printJson({ removed: id });
-      out(`${c.red("✗")} removed harness ${c.bold(id)}`);
+      out(`${c.red("✗")} ${ct("removed harness")} ${c.bold(id)}`);
       return;
     }
     case "stack": {
@@ -148,14 +149,14 @@ export async function cmdHarness(args: string[], flags: Flags): Promise<void> {
       const id = args[1];
       if (!id) throw usageError("harness shell");
       if (!isTTY) {
-        throw new Error("agetor harness shell needs an interactive terminal (TTY)");
+        throw new Error(ct("agetor harness shell needs an interactive terminal (TTY)"));
       }
       const { env, binDir, launch, kind } = await client.harnessShellEnv(id);
       const shell = process.env.SHELL || "/bin/zsh";
       const childEnv: Record<string, string | undefined> = { ...process.env, ...env };
       if (binDir) childEnv.PATH = `${binDir}:${process.env.PATH ?? ""}`;
       const loginHint = harnessShellLoginHint(kind, launch);
-      out(`${c.green("●")} harness ${c.bold(id)} — env applied. ${loginHint} · Ctrl-D to exit`);
+      out(`${c.green("●")} harness ${c.bold(id)} ${ct("— env applied.")} ${loginHint} ${ct("· Ctrl-D to exit")}`);
       const proc = Bun.spawn([shell], {
         env: childEnv,
         stdin: "inherit",
@@ -219,7 +220,7 @@ export function parseHarnessFlags(args: string[]): HarnessFlags {
       case "--env": {
         const v = val();
         const eq = v.indexOf("=");
-        if (eq < 1) throw new Error(`--env must be KEY=VALUE (got "${v}")`);
+        if (eq < 1) throw new Error(`${ct("--env must be KEY=VALUE (got \"")}${v}")`);
         (f.env ??= {})[v.slice(0, eq)] = v.slice(eq + 1);
         break;
       }
@@ -267,7 +268,7 @@ async function cmdHarnessStack(
       const positional = args[1] !== undefined && !args[1].startsWith("-") ? args[1] : undefined;
       const parsed = parseStackFlags(positional ? args.slice(2) : args.slice(1));
       if (positional !== undefined && parsed.label !== undefined) {
-        throw new Error("pass the stack label once — either positionally or with --label, not both");
+        throw new Error(ct("pass the stack label once — either positionally or with --label, not both"));
       }
       const label = parsed.label ?? positional;
       if (!label || label.startsWith("-")) {
@@ -280,7 +281,7 @@ async function cmdHarnessStack(
         ...(parsed.mirror ? { mirrorMode: parsed.mirror } : {}),
       });
       if (flags.json) return printJson(result);
-      out(`${c.green("✓")} created stack ${c.bold(escapeControlChars(result.stack.id))} (${result.stack.kind})`);
+      out(`${c.green("✓")} ${ct("created stack")} ${c.bold(escapeControlChars(result.stack.id))} (${result.stack.kind})`);
       for (const w of result.warnings) out(`  ${c.yellow("!")} ${escapeFreeText(w.message)}`);
       for (const w of result.mirror.warnings) out(`  ${c.yellow("mirror:")} ${escapeFreeText(w)}`);
       return;
@@ -312,10 +313,10 @@ async function cmdHarnessStack(
       if (parsed.kind !== undefined) patch.kind = parsed.kind;
       if (parsed.members.length > 0) patch.members = parsed.members;
       if (parsed.mirror !== undefined) patch.mirrorMode = parsed.mirror;
-      if (Object.keys(patch).length === 0) throw new Error("nothing to edit — pass --label / --kind / --member / --mirror");
+      if (Object.keys(patch).length === 0) throw new Error(ct("nothing to edit — pass --label / --kind / --member / --mirror"));
       const result = await client.patchHarnessStack(id, patch);
       if (flags.json) return printJson(result);
-      out(`${c.green("✓")} updated stack ${c.bold(escapeControlChars(result.stack.id))}`);
+      out(`${c.green("✓")} ${ct("updated stack")} ${c.bold(escapeControlChars(result.stack.id))}`);
       for (const w of result.warnings) out(`  ${c.yellow("!")} ${escapeFreeText(w.message)}`);
       for (const w of result.mirror.warnings) out(`  ${c.yellow("mirror:")} ${escapeFreeText(w)}`);
       return;
@@ -326,11 +327,11 @@ async function cmdHarnessStack(
       if (!id) throw usageError("harness stack rm");
       await client.deleteHarnessStack(id);
       if (flags.json) return printJson({ removed: id });
-      out(`${c.red("✗")} removed stack ${c.bold(escapeControlChars(id))}`);
+      out(`${c.red("✗")} ${ct("removed stack")} ${c.bold(escapeControlChars(id))}`);
       return;
     }
     default:
-      throw new Error(`unknown harness stack subcommand: ${sub} (use ls | create | show | edit | rm)`);
+      throw new Error(`${ct("unknown harness stack subcommand:")} ${sub} ${ct("(use ls | create | show | edit | rm)")}`);
   }
 }
 
@@ -352,7 +353,7 @@ function parseStackFlags(args: string[], opts: { partial?: boolean } = {}): Stac
       case "--kind": {
         const kind = val();
         if (kind !== "claude-code" && kind !== "codex") {
-          throw new Error("--kind must be claude-code or codex");
+          throw new Error(ct("--kind must be claude-code or codex"));
         }
         f.kind = kind;
         break;
@@ -361,14 +362,14 @@ function parseStackFlags(args: string[], opts: { partial?: boolean } = {}): Stac
       case "--member": f.members.push(val()); break;
       case "--mirror": {
         const mirror = val();
-        if (mirror !== "full" && mirror !== "safe") throw new Error("--mirror must be full or safe");
+        if (mirror !== "full" && mirror !== "safe") throw new Error(ct("--mirror must be full or safe"));
         f.mirror = mirror;
         break;
       }
       default:
-        throw new Error(`unknown flag ${a}`);
+        throw new Error(`${ct("unknown flag")} ${a}`);
     }
   }
-  if (!opts.partial && f.members.length === 0) throw new Error("--member is required at least once");
+  if (!opts.partial && f.members.length === 0) throw new Error(ct("--member is required at least once"));
   return f;
 }

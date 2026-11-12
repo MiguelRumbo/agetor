@@ -13,6 +13,7 @@ import {
   type CloneProgressPhase,
   type GitProvider,
 } from "../../shared/types.ts";
+import { ct } from "../i18n.ts";
 
 /**
  * `agetor clone <url> [--provider github|gitlab|bitbucket] [--dest <path>]
@@ -49,7 +50,7 @@ export async function cmdClone(args: string[], flags: Flags): Promise<void> {
       case "--provider": {
         const v = flagValue(args, ++i, a);
         if (!isGitProvider(v)) {
-          throw new Error("--provider must be one of github, gitlab, bitbucket");
+          throw new Error(ct("--provider must be one of github, gitlab, bitbucket"));
         }
         provider = v;
         break;
@@ -61,7 +62,7 @@ export async function cmdClone(args: string[], flags: Flags): Promise<void> {
         eli5 = false;
         break;
       default:
-        throw new Error(`unknown flag: ${a}`);
+        throw new Error(`${ct("unknown flag:")} ${a}`);
     }
   }
 
@@ -130,7 +131,7 @@ export async function cmdClone(args: string[], flags: Flags): Promise<void> {
     if (flags.json) return printJson(result);
 
     const { project, provider: resolvedProvider, eli5TaskId, eli5Error } = result;
-    out(`${c.green("✓")} cloned ${c.bold(project.name)} ${c.dim(project.path)}`);
+    out(`${c.green("✓")} ${ct("cloned")} ${c.bold(project.name)} ${c.dim(project.path)}`);
     // `provider` is only present when talking to a daemon new enough to send it
     // (the route change is additive) — an older already-running core clones
     // fine but omits the field, and by this point the clone + project
@@ -139,7 +140,7 @@ export async function cmdClone(args: string[], flags: Flags): Promise<void> {
     const providerName = resolvedProvider ? PROVIDER_CAPS[resolvedProvider]?.providerName : undefined;
     if (providerName) out(c.dim(`provider: ${providerName}`));
     if (eli5TaskId) {
-      out(`explainer task started: ${eli5TaskId} — agetor logs ${eli5TaskId}`);
+      out(`${ct("explainer task started:")} ${eli5TaskId} ${ct("— agetor logs")} ${eli5TaskId}`);
     }
     if (eli5Error) {
       out(c.yellow(`clone succeeded, but the explainer task failed: ${eli5Error}`));

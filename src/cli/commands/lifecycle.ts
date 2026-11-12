@@ -10,6 +10,7 @@ import { findAtTokens } from "../../shared/at-refs.ts";
 import { escapeControlChars, escapeFreeText } from "../../shared/terminal-text.ts";
 import { importedSessionOf } from "../../shared/imported-session.ts";
 import type { Task, TaskTeardownPreview } from "../../shared/types.ts";
+import { ct } from "../i18n.ts";
 
 /** The `agetor start` refusal for a task imported from a session started
  *  outside Agetor — the same copy as the core's `imported-session` 409,
@@ -29,7 +30,7 @@ export async function cmdStart(args: string[], flags: Flags): Promise<void> {
   const task = await resolveTask(client, ref);
   const short = task.id.slice(0, 8);
   if (task.archivedAt != null) {
-    throw new Error("task is archived — unarchive it in the app before running");
+    throw new Error(ct("task is archived — unarchive it in the app before running"));
   }
   const importedRefusal = importedStartRefusal(task);
   if (importedRefusal) throw new Error(importedRefusal);
@@ -90,7 +91,7 @@ export async function cmdStart(args: string[], flags: Flags): Promise<void> {
         c.dim("(agent launch still in progress; check `agetor logs " + short + "`)"),
     );
   } else {
-    out(`${c.cyan("▸")} started ${c.dim(short)} — run ${res.runId.slice(0, 8)}`);
+    out(`${c.cyan("▸")} ${ct("started")} ${c.dim(short)} ${ct("— run")} ${res.runId.slice(0, 8)}`);
   }
 }
 
@@ -114,11 +115,11 @@ export async function cmdSend(args: string[], flags: Flags): Promise<void> {
   const task = await resolveTask(client, ref);
   const short = task.id.slice(0, 8);
   if (task.archivedAt != null) {
-    throw new Error("task is archived — unarchive it in the app before sending");
+    throw new Error(ct("task is archived — unarchive it in the app before sending"));
   }
   // Match the run panel: a pending question blocks sending — answer it first.
   if (task.pendingInteractionCount > 0) {
-    throw new Error(`task is waiting for an answer — respond first with 'agetor answer ${short}'`);
+    throw new Error(`${ct("task is waiting for an answer — respond first with 'agetor answer")} ${short}'`);
   }
   // Resolve the run to send to the same way the app does: the live run, else
   // the most recent one so the backend can resume the session. Only fetch the
@@ -126,7 +127,7 @@ export async function cmdSend(args: string[], flags: Flags): Promise<void> {
   const runs = task.runId ? [] : await client.getRuns(task.id);
   const runId = resumableRunId(task, runs);
   if (!runId) {
-    throw new Error(`task has no run yet — start it first: agetor start ${short}`);
+    throw new Error(`${ct("task has no run yet — start it first: agetor start")} ${short}`);
   }
   // Inline any --ref paths into the message (absolute, so the agent finds them);
   // claude attaches image paths. Same plumbing as the app's send box.
@@ -152,7 +153,7 @@ export async function cmdSend(args: string[], flags: Flags): Promise<void> {
         c.dim("(the session is still getting ready; the app reports the delivery outcome, including when a failed message could not be restored to the task's backlog)"),
     );
   } else {
-    out(`${c.green("→")} sent to ${c.dim(short)}${refNote}`);
+    out(`${c.green("→")} ${ct("sent to")} ${c.dim(short)}${refNote}`);
   }
 }
 
@@ -169,16 +170,16 @@ export async function cmdCancel(args: string[], flags: Flags): Promise<void> {
   if (task.pipelineId) {
     const res = await client.cancelPipeline(task.id);
     if (flags.json) return printJson(res);
-    out(`${c.yellow("■")} cancel requested for ${c.dim(task.id.slice(0, 8))}`);
+    out(`${c.yellow("■")} ${ct("cancel requested for")} ${c.dim(task.id.slice(0, 8))}`);
     return;
   }
   // Stop is only meaningful while active (running/blocked) — same as the app.
   if (runControl(task) !== "stop" || !task.runId) {
-    throw new Error("task is not running");
+    throw new Error(ct("task is not running"));
   }
   const res = await client.cancelRun(task.runId);
   if (flags.json) return printJson(res);
-  out(`${c.yellow("■")} cancel requested for ${c.dim(task.id.slice(0, 8))}`);
+  out(`${c.yellow("■")} ${ct("cancel requested for")} ${c.dim(task.id.slice(0, 8))}`);
 }
 
 export async function cmdRm(args: string[], flags: Flags): Promise<void> {
@@ -207,7 +208,7 @@ export async function cmdRm(args: string[], flags: Flags): Promise<void> {
     return printJson(preview ? { deleted: task.id, branches: preview.branches } : { deleted: task.id });
   }
   const removed = preview && preview.branches.length > 0 ? ` and ${teardownPhrase(preview, task)}` : "";
-  out(`${c.red("✗")} deleted ${c.dim(task.id.slice(0, 8))}${removed}`);
+  out(`${c.red("✗")} ${ct("deleted")} ${c.dim(task.id.slice(0, 8))}${removed}`);
 }
 
 /** The exact branches the delete removes, from the core's preview — or, with

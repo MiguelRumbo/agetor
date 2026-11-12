@@ -4,6 +4,7 @@ import { api, type AvailableExtension } from "@/lib/api";
 import { IDENTIFIER_INPUT_PROPS } from "@/lib/identifier-input";
 import { cn } from "@/lib/utils";
 import { AGENT_PROFILE_LIMITS, normalizeSkillName, skillQueryText } from "../../../shared/agent-profile.ts";
+import { t } from "@/lib/i18n";
 
 // Per-harness-id suggestion cache, module-level so switching tabs or
 // remounting the profile form doesn't re-walk the harness's skill/plugin
@@ -194,7 +195,7 @@ export function SkillsPicker({ value, onChange, harnessId, disabled, className }
               data-testid="skills-picker-remove"
               onClick={() => removeChip(skill)}
               disabled={disabled}
-              title="Remove"
+              title={t("Remove")}
               className="-mr-0.5 ml-0.5 rounded-sm p-0.5 text-muted-foreground hover:bg-accent/40 hover:text-foreground disabled:opacity-50"
             >
               <X className="size-3" aria-hidden />

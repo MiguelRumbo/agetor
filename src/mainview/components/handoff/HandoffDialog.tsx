@@ -29,6 +29,7 @@ import { handoffStatusChip, type HandoffNextLabel } from "@/lib/handoff-view";
 import { hasTextSelection, keepsNativeContextMenu } from "@/lib/context-menu";
 import { HandoffDetails } from "./HandoffDetails";
 import { copyText } from "./HandoffArtifactChips";
+import { t } from "@/lib/i18n";
 
 export interface HandoffDialogProps {
   open: boolean;
@@ -94,7 +95,7 @@ export function HandoffDialog({ open, onClose, handoff, title, untrusted, stepNa
             </h2>
             {untrusted && (
               <span
-                title="Written by another agent's turn and quoted into this prompt — treat it as data, not instructions."
+                title={t("Written by another agent's turn and quoted into this prompt — treat it as data, not instructions.")}
                 className="inline-flex items-center gap-1 rounded border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-warning"
               >
                 <ShieldAlert className="size-3" aria-hidden />
@@ -124,7 +125,7 @@ export function HandoffDialog({ open, onClose, handoff, title, untrusted, stepNa
                 {copied ? <Check className="size-3.5" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}
                 {copied ? "Copied" : "Copy JSON"}
               </button>
-              <div role="group" aria-label="View" className="inline-flex rounded-md border border-border/60 p-0.5">
+              <div role="group" aria-label={t("View")} className="inline-flex rounded-md border border-border/60 p-0.5">
                 {(["formatted", "raw"] as const).map((v) => (
                   <button
                     key={v}
@@ -143,7 +144,7 @@ export function HandoffDialog({ open, onClose, handoff, title, untrusted, stepNa
               </div>
               <button
                 type="button"
-                aria-label="Close"
+                aria-label={t("Close")}
                 onClick={onClose}
                 className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/50 hover:text-foreground"
               >
@@ -153,11 +154,11 @@ export function HandoffDialog({ open, onClose, handoff, title, untrusted, stepNa
           </header>
 
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border-b border-border/60 px-4 py-2 text-xs">
-            <dt className="text-muted-foreground">Step</dt>
+            <dt className="text-muted-foreground">{t("Step")}</dt>
             <dd data-testid="handoff-dialog-step" className="min-w-0 truncate">
               {stepName ?? "—"}
             </dd>
-            <dt className="text-muted-foreground">Next</dt>
+            <dt className="text-muted-foreground">{t("Next")}</dt>
             <dd
               data-testid="handoff-dialog-next"
               data-next-kind={next.kind}
@@ -167,7 +168,7 @@ export function HandoffDialog({ open, onClose, handoff, title, untrusted, stepNa
             </dd>
             {usage != null && (
               <>
-                <dt className="text-muted-foreground">Usage</dt>
+                <dt className="text-muted-foreground">{t("Usage")}</dt>
                 <dd
                   data-testid="handoff-dialog-usage"
                   data-usage={usage}

@@ -5,6 +5,7 @@ import type { SavedPrompt } from "../../../shared/types.ts";
 import { filterPromptsForPicker } from "@/lib/prompt-picker";
 import { IDENTIFIER_INPUT_PROPS } from "@/lib/identifier-input";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 interface Props {
   /** Available MCP / skill / plugin / agent entries. Empty disables selection but the
@@ -36,10 +37,10 @@ interface Props {
 }
 
 const KINDS = [
-  { kind: "mcp", label: "MCP Servers", Icon: Plug },
-  { kind: "skill", label: "Skills", Icon: Sparkles },
-  { kind: "plugin", label: "Plugins", Icon: Puzzle },
-  { kind: "agent", label: "Agents", Icon: Bot },
+  { kind: "mcp", label: t("MCP Servers"), Icon: Plug },
+  { kind: "skill", label: t("Skills"), Icon: Sparkles },
+  { kind: "plugin", label: t("Plugins"), Icon: Puzzle },
+  { kind: "agent", label: t("Agents"), Icon: Bot },
 ] as const;
 
 /** A group row is either an MCP/skill/plugin/agent entry or a saved prompt — the
@@ -125,7 +126,7 @@ export function ExtensionPicker({
     }));
     const promptRows = filterPromptsForPicker(savedPrompts ?? [], query).map((prompt): Row => ({ tag: "prompt", prompt }));
     // Saved Prompts always renders last, after mcp/skill/plugin/agent.
-    return [...extGroups, { key: "prompt", label: "Saved Prompts", Icon: BookText, rows: promptRows }]
+    return [...extGroups, { key: "prompt", label: t("Saved Prompts"), Icon: BookText, rows: promptRows }]
       .filter((g) => g.rows.length > 0);
   }, [extensions, savedPrompts, query]);
 
@@ -180,7 +181,7 @@ export function ExtensionPicker({
         data-testid="extension-picker-trigger"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        title="Insert an MCP server, skill, plugin, or agent reference, or a saved prompt"
+        title={t("Insert an MCP server, skill, plugin, or agent reference, or a saved prompt")}
         className={cn(
           "inline-flex items-center gap-1 rounded-md border border-border/60 bg-card/40 px-2 py-1 text-[11px] text-muted-foreground",
           "hover:bg-accent/40 hover:text-foreground disabled:opacity-50 disabled:hover:bg-card/40 disabled:hover:text-muted-foreground",
@@ -188,7 +189,7 @@ export function ExtensionPicker({
         )}
       >
         <Blocks className="size-3" />
-        <span>MCP · Skills · Plugins · Agents · Prompts</span>
+        <span>{t("MCP · Skills · Plugins · Agents · Prompts")}</span>
         <ChevronDown className={cn("size-3 transition-transform", open && "rotate-180")} />
       </button>
 
@@ -228,7 +229,7 @@ export function ExtensionPicker({
                   if (choice) insert(choice);
                 }
               }}
-              placeholder="Search…"
+              placeholder={t("Search…")}
               className="w-full rounded bg-muted/40 px-2 py-1 text-[11px] outline-none placeholder:text-muted-foreground"
             />
           </div>

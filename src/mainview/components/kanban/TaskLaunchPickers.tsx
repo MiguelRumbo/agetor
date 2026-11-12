@@ -37,6 +37,7 @@ import { AgentProfileCard } from "./AgentProfileCard";
 import { AgentProfilePicker } from "./AgentProfilePicker";
 import { HarnessAuthHint } from "./HarnessAuthHint";
 import { showsSpeedPicker, SpeedPicker } from "./SpeedPicker";
+import { t } from "@/lib/i18n";
 
 const initialMode = (kind: AgentKind) => defaultModeFor(kind);
 
@@ -752,7 +753,7 @@ export function TaskLaunchPickers({
       {withPipelines && (
         <>
           <div className="space-y-1">
-            <label className="text-muted-foreground">Pipeline</label>
+            <label className="text-muted-foreground">{t("Pipeline")}</label>
             <div data-testid="launch-pipeline-picker">
               <PipelinePicker
                 value={pipelineId}
@@ -765,7 +766,7 @@ export function TaskLaunchPickers({
           </div>
           {pipelinesLoading && pipelines.length === 0 ? (
             <p data-testid="launch-pipelines-loading" className="text-[11px] text-muted-foreground">
-              Loading pipelines…
+              {t("Loading pipelines…")}
             </p>
           ) : pipelinesUnavailable ? (
             <p data-testid="launch-pipelines-error" className="text-[11px] text-destructive">
@@ -773,7 +774,7 @@ export function TaskLaunchPickers({
             </p>
           ) : pipelines.length === 0 && pipelineId === null ? (
             <p className="text-[11px] text-muted-foreground">
-              No pipelines yet. Create one on the Pipelines page.
+              {t("No pipelines yet. Create one on the Pipelines page.")}
             </p>
           ) : null}
         </>
@@ -796,7 +797,7 @@ export function TaskLaunchPickers({
               disabled={disabled}
               className="shrink-0 text-[11px] text-muted-foreground hover:text-foreground hover:underline disabled:opacity-50"
             >
-              Change
+              {t("Change")}
             </button>
           </div>
           <p className="text-[11px] text-muted-foreground">
@@ -805,7 +806,7 @@ export function TaskLaunchPickers({
           </p>
           {pipelineState === "checking" ? (
             <p data-testid="launch-pipeline-checking" className="text-[11px] text-muted-foreground">
-              Checking the start step's agent…
+              {t("Checking the start step's agent…")}
             </p>
           ) : pipelineProblem ? (
             <div
@@ -816,7 +817,7 @@ export function TaskLaunchPickers({
             </div>
           ) : showStackFallback ? (
             <p data-testid="launch-stack-fallback-hint" className="text-[11px] text-muted-foreground">
-                This account can't start right now — the run starts on the next usable account in its stack.
+                {t("This account can't start right now — the run starts on the next usable account in its stack.")}
               </p>
           ) : null}
         </div>
@@ -824,7 +825,7 @@ export function TaskLaunchPickers({
         <>
           {!hideProfilePicker && (
             <div className="space-y-1">
-              <label className="text-muted-foreground">Agent</label>
+              <label className="text-muted-foreground">{t("Agent")}</label>
               <AgentProfilePicker
                 value={agentProfileId}
                 onChange={setAgentProfileId}
@@ -856,14 +857,14 @@ export function TaskLaunchPickers({
               <HarnessAuthHint status={effectiveStatus} />
               {showStackFallback && (
                 <p data-testid="launch-stack-fallback-hint" className="text-[11px] text-muted-foreground">
-                This account can't start right now — the run starts on the next usable account in its stack.
+                {t("This account can't start right now — the run starts on the next usable account in its stack.")}
               </p>
               )}
             </>
           ) : (
             <>
               <div className="space-y-1">
-                <label className="text-muted-foreground">Harness</label>
+                <label className="text-muted-foreground">{t("Harness")}</label>
                 <div className="grid grid-cols-2 gap-1">
                   {availableHarnesses.map((h) => {
                     const status = agents.find((s) => s.harnessId === h.id);
@@ -914,31 +915,31 @@ export function TaskLaunchPickers({
                 <HarnessAuthHint status={selectedStatus} />
                 {showStackFallback && (
                   <p data-testid="launch-stack-fallback-hint" className="text-[11px] text-muted-foreground">
-                This account can't start right now — the run starts on the next usable account in its stack.
+                {t("This account can't start right now — the run starts on the next usable account in its stack.")}
               </p>
                 )}
               </div>
 
               <div className="space-y-1">
-                <label className="text-muted-foreground">Mode</label>
+                <label className="text-muted-foreground">{t("Mode")}</label>
                 <Select value={mode} onChange={(e) => setMode(e.target.value)} className="h-8">
                   {modes.map((m) => (
-                    <option key={m.id} value={m.id}>{m.label}</option>
+                    <option key={m.id} value={m.id}>{t(m.label)}</option>
                   ))}
                 </Select>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="min-w-0 space-y-1">
-                  <label className="text-muted-foreground">Model</label>
+                  <label className="text-muted-foreground">{t("Model")}</label>
                   <Select value={model} onChange={(e) => setModel(e.target.value)} className="h-8">
                     {models.map((m) => (
-                      <option key={m.id} value={m.id}>{m.label}</option>
+                      <option key={m.id} value={m.id}>{t(m.label)}</option>
                     ))}
                   </Select>
                 </div>
                 <div className="min-w-0 space-y-1">
-                  <label className="text-muted-foreground">Effort</label>
+                  <label className="text-muted-foreground">{t("Effort")}</label>
                   <Select
                     value={effort ?? ""}
                     onChange={(e) => setEffort(e.target.value)}
@@ -949,7 +950,7 @@ export function TaskLaunchPickers({
                       <option value="">n/a</option>
                     ) : (
                       efforts.map((m) => (
-                        <option key={m.id} value={m.id}>{m.label}</option>
+                        <option key={m.id} value={m.id}>{t(m.label)}</option>
                       ))
                     )}
                   </Select>
@@ -958,7 +959,7 @@ export function TaskLaunchPickers({
 
               {showsSpeedPicker(speedOptions, speed) && (
                 <div className="space-y-1">
-                  <label className="text-muted-foreground">Speed</label>
+                  <label className="text-muted-foreground">{t("Speed")}</label>
                   <SpeedPicker options={speedOptions} value={speed} onChange={setSpeed} testId="launch-speed" />
                 </div>
               )}
@@ -969,12 +970,12 @@ export function TaskLaunchPickers({
                     data-testid="launch-max-mode-toggle"
                     className="flex h-8 items-center justify-between rounded-md border border-border px-2 text-xs"
                   >
-                    <span>Max Mode</span>
+                    <span>{t("Max Mode")}</span>
                     <Switch
                       checked={maxMode}
                       onCheckedChange={setMaxMode}
                       disabled={!maxModeAvailable}
-                      aria-label="Use Cursor Max Mode context"
+                      aria-label={t("Use Cursor Max Mode context")}
                     />
                   </label>
                 </div>

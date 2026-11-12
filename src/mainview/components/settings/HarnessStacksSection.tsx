@@ -22,6 +22,7 @@ import {
   virtualWindow,
   type StackDraft,
 } from "@/lib/stack-editor";
+import { t } from "@/lib/i18n";
 
 interface Props {
   /** `list` is the Settings section; `editor` is the create/edit subpage. */
@@ -97,10 +98,9 @@ function StackList({ stacks, limitStates, harnesses, onEdit, onNew, onChange }: 
     <div className="space-y-4 pt-3 text-sm" data-testid="harness-stacks-section">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="font-medium">Account stacks</p>
+          <p className="font-medium">{t("Account stacks")}</p>
           <p className="text-xs text-muted-foreground">
-            Stack two or more accounts of the same harness. At its limit, a task continues on the
-            next account with the same conversation, tools and settings. Stacks are machine-local.
+            {t("Stack two or more accounts of the same harness. At its limit, a task continues on the next account with the same conversation, tools and settings. Stacks are machine-local.")}
           </p>
         </div>
         <Button size="sm" onClick={onNew}>
@@ -109,7 +109,7 @@ function StackList({ stacks, limitStates, harnesses, onEdit, onNew, onChange }: 
       </div>
 
       {stacks.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No stacks yet.</p>
+        <p className="text-xs text-muted-foreground">{t("No stacks yet.")}</p>
       ) : (
         <ul className="space-y-2">
           {stacks.map((stack) => (
@@ -152,7 +152,7 @@ function StackList({ stacks, limitStates, harnesses, onEdit, onNew, onChange }: 
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   <Button size="sm" variant="ghost" onClick={() => onEdit?.(stack.id)}>
-                    Edit
+                    {t("Edit")}
                   </Button>
                   <Button
                     size="sm"
@@ -296,7 +296,7 @@ function StackEditor({ stackId, stacks, limitStates, harnesses, onChange, onSave
   return (
     <div className="space-y-4 pt-3 text-sm" data-testid="harness-stack-editor">
       <div className="space-y-1">
-        <label className="text-xs font-medium" htmlFor="stack-label">Name</label>
+        <label className="text-xs font-medium" htmlFor="stack-label">{t("Name")}</label>
         <Input
           id="stack-label"
           value={draft.label}
@@ -308,7 +308,7 @@ function StackEditor({ stackId, stacks, limitStates, harnesses, onChange, onSave
 
       {!stackId && (
         <div className="space-y-1">
-          <p className="text-xs font-medium">Harness</p>
+          <p className="text-xs font-medium">{t("Harness")}</p>
           <div className="flex gap-2">
             {(Object.keys(KIND_LABEL) as HarnessStackKind[]).map((kind) => (
               <Button
@@ -321,12 +321,12 @@ function StackEditor({ stackId, stacks, limitStates, harnesses, onChange, onSave
               </Button>
             ))}
           </div>
-          <p className="text-xs text-muted-foreground">Both accounts must be the same harness kind.</p>
+          <p className="text-xs text-muted-foreground">{t("Both accounts must be the same harness kind.")}</p>
         </div>
       )}
 
       <div className="space-y-1">
-        <p className="text-xs font-medium">Accounts in order</p>
+        <p className="text-xs font-medium">{t("Accounts in order")}</p>
         <p className="text-xs text-muted-foreground">
           First is the primary; its settings, MCP servers, skills and commands are mirrored onto the backups.
         </p>
@@ -337,7 +337,7 @@ function StackEditor({ stackId, stacks, limitStates, harnesses, onChange, onSave
           data-testid="stack-member-list"
         >
           {draft.members.length === 0 && (
-            <p className="p-3 text-xs text-muted-foreground">No accounts yet.</p>
+            <p className="p-3 text-xs text-muted-foreground">{t("No accounts yet.")}</p>
           )}
           {window.leading > 0 && <div style={{ height: window.leading * 44 }} aria-hidden />}
           <ul>
@@ -404,14 +404,14 @@ function StackEditor({ stackId, stacks, limitStates, harnesses, onChange, onSave
 
         <div className="flex items-end gap-2 pt-1">
           <div className="min-w-0 flex-1 space-y-1">
-            <label className="text-xs font-medium" htmlFor="stack-add-member">Add account</label>
+            <label className="text-xs font-medium" htmlFor="stack-add-member">{t("Add account")}</label>
             <select
               id="stack-add-member"
               className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
               value={picker}
               onChange={(e) => setPicker(e.target.value)}
             >
-              <option value="">Choose an account…</option>
+              <option value="">{t("Choose an account…")}</option>
               {available.map(({ harness: h, note, selectable }) => (
                 <option key={h.id} value={h.id} disabled={!selectable}>
                   {h.label}{note ? ` — ${note}` : ""}
@@ -428,7 +428,7 @@ function StackEditor({ stackId, stacks, limitStates, harnesses, onChange, onSave
               setPicker("");
             }}
           >
-            Add
+            {t("Add")}
           </Button>
         </div>
         {sameKind.length === 0 && (
@@ -439,7 +439,7 @@ function StackEditor({ stackId, stacks, limitStates, harnesses, onChange, onSave
       </div>
 
       <div className="space-y-1">
-        <p className="text-xs font-medium">Mirror mode</p>
+        <p className="text-xs font-medium">{t("Mirror mode")}</p>
         <div className="flex gap-2">
           {(["full", "safe"] as const).map((mode) => (
             <Button

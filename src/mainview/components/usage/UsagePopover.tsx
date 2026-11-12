@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { clampPercent, formatResetsIn, formatUpdatedAgo, tierColorVar, warnTier } from "@/lib/usage";
 import type { HarnessQuota } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 interface Props {
   /** The harness's latest usage snapshot, or `null` when none exists yet
@@ -146,7 +147,7 @@ export function UsagePopover({ quota, harnessLabel, children, onRefresh, placeho
                   size="icon"
                   className="size-6"
                   disabled={refreshing}
-                  aria-label="Refresh usage"
+                  aria-label={t("Refresh usage")}
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();

@@ -28,6 +28,7 @@ import {
 import { escapeControlChars, escapeFreeText, truncateText } from "../../shared/terminal-text.ts";
 import { CURSOR_ASK_FREEFORM } from "../../shared/cursor-ask-verdict.ts";
 import { cursorAskOptionChoiceLabel, cursorAskOptionValue, cursorAskPicksFromValues } from "../../shared/cursor-ask.ts";
+import { ct } from "../i18n.ts";
 
 const CURSOR_SKIP = "__cursor_skip__";
 
@@ -36,7 +37,7 @@ export async function cmdAnswer(args: string[], flags: Flags): Promise<void> {
   if (!opts.ref) throw usageError("answer");
   // `--skip` needs no picker, so it also works from a script.
   if (!isTTY && !opts.skip) {
-    throw new Error("agetor answer needs an interactive terminal (TTY)");
+    throw new Error(ct("agetor answer needs an interactive terminal (TTY)"));
   }
   const client = await getClient(flags);
   const task = await resolveTask(client, opts.ref);

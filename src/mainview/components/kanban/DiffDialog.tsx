@@ -20,6 +20,7 @@ import {
 import { BinaryFilePreview, binaryFileBasename, binaryPreviewSides } from "./BinaryFilePreview";
 import { binaryPreviewKind } from "../../../shared/attachments.ts";
 import type { AgentKind, DiffFile, Harness, Run, Task, TaskDiff } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 interface Props {
   open: boolean;
@@ -682,7 +683,7 @@ export function DiffDialog({ open, task, onClose }: Props) {
               </Button>
             </div>
           )}
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label={t("Close")}>
             <X className="size-4" />
           </Button>
         </div>
@@ -772,7 +773,7 @@ export function DiffDialog({ open, task, onClose }: Props) {
                     }
                   }
                 }}
-                placeholder="Add a message about the selected lines… (optional)"
+                placeholder={t("Add a message about the selected lines… (optional)")}
                 rows={2}
                 disabled={busy}
                 className="relative h-16 min-h-0 w-full resize-none text-xs"
@@ -792,7 +793,7 @@ export function DiffDialog({ open, task, onClose }: Props) {
               </div>
               {archived && (
                 <p className="mt-1 text-[10px] text-muted-foreground">
-                  Sending will unarchive this task and restore its worktree.
+                  {t("Sending will unarchive this task and restore its worktree.")}
                 </p>
               )}
               <div className="mt-2 flex items-center justify-end gap-2">
@@ -905,7 +906,7 @@ function FileBlock({
             />
             {file.truncated && (
               <div className="border-t border-border/60 px-3 py-1.5 text-[11px] italic text-muted-foreground">
-                Diff truncated — this file's changes are too large to display in full.
+                {t("Diff truncated — this file's changes are too large to display in full.")}
               </div>
             )}
           </>
@@ -924,7 +925,7 @@ function FileBlock({
 function BinaryDiffPreview({ taskId, file }: { taskId: string | null; file: DiffFile }) {
   const kind = binaryPreviewKind(file.path);
   if (kind === null || !taskId) {
-    return <div className="px-3 py-2 text-xs italic text-muted-foreground">Binary file — no textual diff.</div>;
+    return <div className="px-3 py-2 text-xs italic text-muted-foreground">{t("Binary file — no textual diff.")}</div>;
   }
   const { oldUrl, newUrl } = binaryPreviewSides(file, (path, side) => api.taskDiffBlobUrl(taskId, path, side));
   return (

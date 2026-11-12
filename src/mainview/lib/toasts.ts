@@ -3,6 +3,7 @@ import type { NotificationKind } from "../../shared/os-notification.ts";
 import { api } from "./api";
 import { filesSentCopy, shouldToastFilesSent } from "./files-sent-notify";
 import { FocusedForcedPosts, TaskToastSlots, type TaskToastKind } from "./toast-slots";
+import { t } from "@/lib/i18n";
 
 /**
  * Args common to every toast helper. `isSelected` / `isFocused` are evaluated
@@ -64,7 +65,7 @@ function showTaskToast(
   id = show({
     release,
     openAction: {
-      label: "Open",
+      label: t("Open"),
       onClick: (event) => {
         onOpen();
         if (!event.defaultPrevented) release();

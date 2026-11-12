@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import type React from "react";
 import { toast } from "sonner";
 import { bundleTextTooLarge, dragHasFiles, pickBundleDropFile } from "@/lib/bundle";
+import { t } from "@/lib/i18n";
 
 /**
  * Drop-a-file import (docs/plans/agents-pipelines-import-export.md K8): spread
@@ -82,7 +83,7 @@ export function useBundleFileDrop(
         // nothing happened rather than loading text into a locked preview.
         if (disabledRef.current) {
           toast.error("Can't import that file now", {
-            description: "Wait for the import to finish, then drop the file again.",
+            description: t("Wait for the import to finish, then drop the file again."),
           });
           return;
         }

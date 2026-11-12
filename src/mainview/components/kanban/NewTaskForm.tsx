@@ -60,6 +60,7 @@ import {
   readCollapsed,
   writeCollapsed,
 } from "@/lib/panel-collapse";
+import { t } from "@/lib/i18n";
 
 const initialMode = (kind: AgentKind) => defaultModeFor(kind);
 
@@ -761,20 +762,20 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
             <button
               type="button"
               onClick={() => setCollapsed(false)}
-              title="Expand new task panel"
+              title={t("Expand new task panel")}
               className="rounded-md px-1 py-2 text-[11px] font-semibold tracking-wide text-muted-foreground transition-colors [writing-mode:vertical-rl] hover:text-foreground"
             >
-              New task
+              {t("New task")}
             </button>
           </div>
         ) : (
           <div className="flex h-full w-80 flex-col">
             <div className="flex shrink-0 items-center justify-between border-b border-border/60 px-4 py-3">
               <div className="flex items-center gap-1.5">
-                <span className="text-sm font-semibold">New task</span>
+                <span className="text-sm font-semibold">{t("New task")}</span>
                 <InfoTip
-                  label="How these fields fit together"
-                  text="A task is a unit of agent work. Type, Title and Prompt say what to do. Project, Branch and Isolate say where — with Isolate on, work happens on a fresh branch in a separate worktree, so your checkout stays clean. Harness, Mode, Model and Effort pick which agent runs it and how much autonomy it gets. Defaults are sensible — a title, a prompt and a project are enough to start."
+                  label={t("How these fields fit together")}
+                  text={t("A task is a unit of agent work. Type, Title and Prompt say what to do. Project, Branch and Isolate say where — with Isolate on, work happens on a fresh branch in a separate worktree, so your checkout stays clean. Harness, Mode, Model and Effort pick which agent runs it and how much autonomy it gets. Defaults are sensible — a title, a prompt and a project are enough to start.")}
                 />
               </div>
               {selectedStatus?.available && selectedStatus.version && (
@@ -788,10 +789,10 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
               <TaskTypePicker value={taskType} onChange={setTaskType} />
 
               <div className="space-y-1">
-                <label className="text-muted-foreground">Title</label>
+                <label className="text-muted-foreground">{t("Title")}</label>
                 <Input
                   ref={titleRef}
-                  placeholder="Short description"
+                  placeholder={t("Short description")}
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                 />
@@ -820,7 +821,7 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
                   the ~140px-per-column grid clipped all but the shortest names; full
                   width lets the picker triggers render the full project/branch name. */}
               <div className="min-w-0 space-y-1">
-                <label className="text-muted-foreground">Project</label>
+                <label className="text-muted-foreground">{t("Project")}</label>
                 <ProjectPicker
                   value={workdir}
                   onChange={(p) => {
@@ -831,7 +832,7 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
                   }}
                   autoSelectFirst
                   placement="bottom"
-                  title="Pick the working directory the agent runs in. Add new ones with the folder picker at the bottom of the list."
+                  title={t("Pick the working directory the agent runs in. Add new ones with the folder picker at the bottom of the list.")}
                 />
               </div>
               <WorktreeOptions state={wt} />
@@ -843,7 +844,7 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
                   (see `submit`). Selecting a pipeline clears any selected
                   agent profile (`onChange` below), and vice versa. */}
               <div className="space-y-1" data-testid="new-task-pipeline-picker">
-                <label className="text-muted-foreground">Pipeline</label>
+                <label className="text-muted-foreground">{t("Pipeline")}</label>
                 <PipelinePicker
                   value={pipelineId}
                   onChange={(id) => {
@@ -871,7 +872,7 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
                       onClick={() => setPipelineId(null)}
                       className="shrink-0 text-[11px] text-muted-foreground hover:text-foreground hover:underline"
                     >
-                      Change
+                      {t("Change")}
                     </button>
                   </div>
                   <p className="text-[11px] text-muted-foreground">
@@ -882,7 +883,7 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
               ) : (
               <>
               <div className="space-y-1">
-                <label className="text-muted-foreground">Agent</label>
+                <label className="text-muted-foreground">{t("Agent")}</label>
                 <AgentProfilePicker
                   value={agentProfileId}
                   onChange={(id) => {
@@ -932,7 +933,7 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
               ) : (
               <>
               <div className="space-y-1">
-                <label className="text-muted-foreground">Harness</label>
+                <label className="text-muted-foreground">{t("Harness")}</label>
                 <div className="grid grid-cols-2 gap-1">
                   {availableHarnesses.map((h) => {
                     const status = agents.find((s) => s.harnessId === h.id);
@@ -977,13 +978,13 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
               </div>
 
               <div className="space-y-1">
-                <label className="text-muted-foreground">Mode</label>
+                <label className="text-muted-foreground">{t("Mode")}</label>
                 <div className="grid grid-cols-2 gap-1">
                   <Button
                     size="sm"
                     variant={primary === "code" ? "default" : "outline"}
                     onClick={onClickCode}
-                    title="Execute changes (auto / accept edits / ask all live under Code — pick the exact variant below)."
+                    title={t("Execute changes (auto / accept edits / ask all live under Code — pick the exact variant below).")}
                   >
                     <Code2 className="mr-1 size-3.5" />
                     Code
@@ -1018,25 +1019,25 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
                   <SearchSelect
                     value={mode}
                     onChange={setMode}
-                    items={modes.map((m) => ({ value: m.id, label: m.label, hint: m.hint }))}
+                    items={modes.map((m) => ({ value: m.id, label: t(m.label), hint: m.hint }))}
                     searchable={false}
                     wrapHints
                     placement="bottom"
                     className="min-w-0 flex-1"
                     triggerClassName="h-8 text-xs"
                   />
-                  {selectedModeHint && <InfoTip text={selectedModeHint} label="About this mode" />}
+                  {selectedModeHint && <InfoTip text={selectedModeHint} label={t("About this mode")} />}
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="min-w-0 space-y-1">
                   <div className="flex items-center gap-1">
-                    <label className="text-muted-foreground">Model</label>
+                    <label className="text-muted-foreground">{t("Model")}</label>
                     <button
                       type="button"
-                      title="Refresh model list"
-                      aria-label="Refresh model list"
+                      title={t("Refresh model list")}
+                      aria-label={t("Refresh model list")}
                       data-testid="refresh-models"
                       disabled={refreshingModels}
                       className={cn(
@@ -1069,7 +1070,7 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
                   </Select>
                 </div>
                 <div className="min-w-0 space-y-1">
-                  <label className="text-muted-foreground">Effort</label>
+                  <label className="text-muted-foreground">{t("Effort")}</label>
                   <Select
                     value={effort ?? ""}
                     onChange={(e) => setEffort(e.target.value)}
@@ -1087,7 +1088,7 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
                       <option value="">n/a</option>
                     ) : (
                       efforts.map((m) => (
-                        <option key={m.id} value={m.id}>{m.label}</option>
+                        <option key={m.id} value={m.id}>{t(m.label)}</option>
                       ))
                     )}
                   </Select>
@@ -1098,12 +1099,12 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
                 <div className="grid grid-cols-2 gap-2">
                   {(maxModeAvailable || maxMode) && (
                     <label className="flex h-8 items-center justify-between rounded-md border border-border px-2 text-xs">
-                      <span>Max Mode</span>
+                      <span>{t("Max Mode")}</span>
                       <Switch
                         checked={maxMode}
                         onCheckedChange={setMaxMode}
                         disabled={!maxModeAvailable}
-                        aria-label="Use Cursor Max Mode context"
+                        aria-label={t("Use Cursor Max Mode context")}
                       />
                     </label>
                   )}
@@ -1112,7 +1113,7 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
 
               {(kind === "cursor" || kind === "fx") && showsSpeedPicker(speedOptions, speed) && (
                 <div className="space-y-1">
-                  <label className="text-muted-foreground">Speed</label>
+                  <label className="text-muted-foreground">{t("Speed")}</label>
                   <SpeedPicker
                     testId="new-task-speed"
                     options={speedOptions}
@@ -1175,7 +1176,7 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
                     : "Pick a project first."
                 }
               >
-                To backlog
+                {t("To backlog")}
               </Button>
               <Button
                 onClick={() => submit({ start: true })}
@@ -1187,7 +1188,7 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
                     : "Pick a project first."
                 }
               >
-                Run task
+                {t("Run task")}
               </Button>
             </div>
           </div>

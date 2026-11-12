@@ -32,6 +32,7 @@ import {
   parseSentFilesToolUse,
 } from "../../../shared/sent-files.ts";
 import type { ToolResultAttachment } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 /** Structural subset of a parsed `tool_use` event — RunPanel's own
  *  `ParsedToolUse` type is module-private, so this card declares just the
@@ -160,7 +161,7 @@ function Tile({
       <button
         type="button"
         data-testid="sent-file-tile-menu"
-        aria-label="File actions"
+        aria-label={t("File actions")}
         onClick={(e) => {
           e.stopPropagation();
           const rect = e.currentTarget.getBoundingClientRect();
@@ -325,21 +326,21 @@ export function SentFilesCard({ call, result, taskId }: SentFilesCardProps) {
     ? [
         {
           id: "open",
-          label: "Open",
+          label: t("Open"),
           onSelect: () => {
             void handleOpenOrReveal(menu.path, "open");
           },
         },
         {
           id: "reveal",
-          label: "Reveal in Finder",
+          label: t("Reveal in Finder"),
           onSelect: () => {
             void handleOpenOrReveal(menu.path, "reveal");
           },
         },
         {
           id: "copy",
-          label: "Copy path",
+          label: t("Copy path"),
           onSelect: () => {
             // `writeText` returns a promise that rejects on a denied
             // clipboard permission — a bare try/catch around the call
@@ -364,7 +365,7 @@ export function SentFilesCard({ call, result, taskId }: SentFilesCardProps) {
     >
       <div className="flex flex-wrap items-center gap-2">
         <Paperclip className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-        <span className="text-sm font-medium">Files sent to you</span>
+        <span className="text-sm font-medium">{t("Files sent to you")}</span>
         <span className="text-xs text-muted-foreground">
           {tiles.length} {tiles.length === 1 ? "file" : "files"}
         </span>
@@ -407,7 +408,7 @@ export function SentFilesCard({ call, result, taskId }: SentFilesCardProps) {
         y={menu?.y ?? 0}
         items={menuItems}
         onClose={() => setMenu(null)}
-        label="File actions"
+        label={t("File actions")}
         testId="sent-file-menu"
       />
 

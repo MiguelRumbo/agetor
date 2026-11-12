@@ -4,6 +4,7 @@ import { resolveTask } from "../resolve.ts";
 import { c, out, isTTY } from "../output.ts";
 import { usageError } from "../usage.ts";
 import { escapeFreeText } from "../../shared/terminal-text.ts";
+import { ct } from "../i18n.ts";
 
 /**
  * Open a shell in the task's worktree (or its workdir when isolation is off) —
@@ -24,7 +25,7 @@ export async function cmdShell(args: string[], flags: Flags): Promise<void> {
     return;
   }
   if (!existsSync(dir)) {
-    throw new Error(`directory no longer exists: ${dir}`);
+    throw new Error(`${ct("directory no longer exists:")} ${dir}`);
   }
   if (!isTTY) {
     throw new Error(
@@ -34,7 +35,7 @@ export async function cmdShell(args: string[], flags: Flags): Promise<void> {
 
   const shell = process.env.SHELL || "/bin/zsh";
   const where = task.branch ? `${c.dim(dir)} ${c.dim(`(${task.branch})`)}` : c.dim(dir);
-  out(`${c.green("●")} ${c.bold(escapeFreeText(task.title))} — ${where} · Ctrl-D to exit`);
+  out(`${c.green("●")} ${c.bold(escapeFreeText(task.title))} — ${where} ${ct("· Ctrl-D to exit")}`);
   const proc = Bun.spawn([shell], {
     cwd: dir,
     stdin: "inherit",

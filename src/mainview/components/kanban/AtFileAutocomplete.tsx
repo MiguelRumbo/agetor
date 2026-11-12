@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { searchProjectFiles, type FileScope } from "@/lib/use-project-files";
 import { findActiveAtQuery, formatAtToken, MAX_PROJECT_FILES } from "../../../shared/at-refs.ts";
 import { descendInto, filterFileEntries, fuzzyPathMatch, type FileEntry } from "../../../shared/at-file-filter.ts";
+import { t } from "@/lib/i18n";
 
 interface Props {
   /** File/directory entries to suggest, scoped to the surface's project +
@@ -384,7 +385,7 @@ export function AtFileAutocomplete({ entries, truncated, value, onChange, textar
         </p>
       )}
       {open && (
-      <ul ref={listRef} role="listbox" id={listboxId} aria-label="Project file suggestions" className="py-1">
+      <ul ref={listRef} role="listbox" id={listboxId} aria-label={t("Project file suggestions")} className="py-1">
         {rows.map((entry, i) => {
           const Icon = iconForRef(entry);
           const match = slice ? fuzzyPathMatch(slice.query, entry.path) : null;

@@ -14,6 +14,7 @@ import { escapeControlChars, escapeFreeText } from "../../shared/terminal-text.t
 import { CURSOR_ASK_FREEFORM } from "../../shared/cursor-ask-verdict.ts";
 import { cursorAskOptionChoiceLabel, cursorAskOptionValue, cursorAskPicksFromValues } from "../../shared/cursor-ask.ts";
 import { sanitizeDrop } from "./paste.ts";
+import { ct } from "../i18n.ts";
 
 const OTHER = "✎ Other — type a custom answer";
 const SKIP = "Skip";
@@ -121,7 +122,7 @@ export function AnswerOverlay({
     ) {
       // Options plus typed text (multi-select Other) must not submit: Cursor
       // would receive only the options, and the overlay would say answered.
-      setHint("Cursor cannot accept a custom answer — pick an option");
+      setHint(ct("Cursor cannot accept a custom answer — pick an option"));
       setCustom(null);
       return false;
     }
@@ -194,7 +195,7 @@ export function AnswerOverlay({
       .catch((e) => {
         if (e instanceof ApiError && e.status === 400) {
           setSubmitting(false);
-          setHint(e.message || "could not answer");
+          setHint(e.message || ct("could not answer"));
           return;
         }
         onDone(`! ${(e as Error).message}`);
@@ -289,7 +290,7 @@ export function AnswerOverlay({
             if (toggled.has(otherIndex)) return setCustom(""); // collect free text, then submit
             const indexes = [...toggled].filter((i) => i < q.options.length);
             const selected = indexes.map((i) => optionPickValue(req, q.options[i]!));
-            if (!commitAnswer(selected, null, indexes)) setHint("pick an option or ✎ Other to answer");
+            if (!commitAnswer(selected, null, indexes)) setHint(ct("pick an option or ✎ Other to answer"));
             return;
           }
           if (cursor === otherIndex) return setCustom(""); // single-select "Other"
@@ -342,9 +343,9 @@ export function AnswerOverlay({
     { isActive: true },
   );
 
-  if (loading) return <Text dimColor>loading question…</Text>;
-  if (submitting) return <Text dimColor>submitting…</Text>;
-  if (!req) return <Text dimColor>nothing pending — esc to close</Text>;
+  if (loading) return <Text dimColor>{ct("loading question…")}</Text>;
+  if (submitting) return <Text dimColor>{ct("submitting…")}</Text>;
+  if (!req) return <Text dimColor>{ct("nothing pending — esc to close")}</Text>;
 
   const multi = req.kind === "ask_questions" && !!req.questions[qIndex]?.multiSelect;
   const width = (process.stdout.columns || 80) - 6;

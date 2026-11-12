@@ -4,6 +4,7 @@ import type { AvailableCommand } from "@/lib/api";
 import type { SavedPrompt } from "../../../shared/types.ts";
 import { filterPromptsForSlash } from "@/lib/prompt-picker";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 interface Props {
   /** Available `/…` entries to suggest. Empty list disables the popover. */
@@ -260,7 +261,7 @@ export function SlashAutocomplete({ commands, savedPrompts, value, onChange, tex
         placement === "above" ? "bottom-full mb-1" : "top-full mt-1",
       )}
     >
-      <ul ref={listRef} role="listbox" id={listboxId} aria-label="Command and prompt suggestions" className="py-1">
+      <ul ref={listRef} role="listbox" id={listboxId} aria-label={t("Command and prompt suggestions")} className="py-1">
         {filtered.map((row, i) => {
           // Group label right before the first prompt row — commands (if any)
           // always come first, so this fires at most once.

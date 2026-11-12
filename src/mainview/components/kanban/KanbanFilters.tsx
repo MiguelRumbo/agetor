@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { IDENTIFIER_INPUT_PROPS } from "@/lib/identifier-input";
 import { taskTypeIcon } from "@/lib/task-type-icon";
 import { COLUMNS, TASK_TYPES, type ColumnId, type Harness, type Project, type TaskType } from "../../../shared/types.ts";
+import { t, tColumn } from "@/lib/i18n";
 
 export type ArchivedView = "active" | "all" | "archived";
 
@@ -66,7 +67,7 @@ export function KanbanFilters({
     label: p.name || basename(p.path) || p.path,
     hint: p.path,
   }));
-  const statusItems = COLUMNS.map((c) => ({ value: c.id, label: c.label } as const));
+  const statusItems = COLUMNS.map((c) => ({ value: c.id, label: tColumn(c.label) } as const));
   // Order: enabled harnesses first, then disabled (marked with a hint), then
   // orphan ids referenced by tasks but no longer registered as a harness — so
   // historical runs of a removed harness stay filterable.
@@ -109,7 +110,7 @@ export function KanbanFilters({
         onChange={onHarnessFilterChange}
         items={harnessItems}
         emptyLabel="All harnesses"
-        placeholder="Search harnesses…"
+        placeholder={t("Search harnesses…")}
         leadingIcon={<Cpu className="size-3.5" />}
         className="w-48"
       />
@@ -120,8 +121,8 @@ export function KanbanFilters({
           ref={searchInputRef}
           value={textQuery}
           onChange={(e) => onTextQueryChange(e.target.value)}
-          placeholder="Search title, prompt, workdir, branch…"
-          aria-label="Search tasks"
+          placeholder={t("Search title, prompt, workdir, branch…")}
+          aria-label={t("Search tasks")}
           className="pl-8"
           onKeyDown={(e) => {
             // Owner decision: Escape leaves the field but keeps the query
@@ -150,7 +151,7 @@ export function KanbanFilters({
         onChange={onRepoFilterChange}
         items={repoItems}
         emptyLabel="All repos"
-        placeholder="Search projects…"
+        placeholder={t("Search projects…")}
         leadingIcon={<Folder className="size-3.5" />}
         className="w-56"
       />
@@ -159,7 +160,7 @@ export function KanbanFilters({
         onChange={onStatusFilterChange}
         items={statusItems}
         emptyLabel="All statuses"
-        placeholder="Search statuses…"
+        placeholder={t("Search statuses…")}
         leadingIcon={<Tag className="size-3.5" />}
         className="w-48"
       />
@@ -168,7 +169,7 @@ export function KanbanFilters({
         onChange={onTypeFilterChange}
         items={typeItems}
         emptyLabel="All types"
-        placeholder="Search types…"
+        placeholder={t("Search types…")}
         leadingIcon={<Shapes className="size-3.5" />}
         className="w-44"
       />
@@ -176,11 +177,11 @@ export function KanbanFilters({
         value={archivedView}
         onChange={(e) => onArchivedViewChange(e.target.value as ArchivedView)}
         className="w-36"
-        title="Filter by archive state"
+        title={t("Filter by archive state")}
       >
-        <option value="active">Active only</option>
-        <option value="all">All</option>
-        <option value="archived">Archived only</option>
+        <option value="active">{t("Active only")}</option>
+        <option value="all">{t("All")}</option>
+        <option value="archived">{t("Archived only")}</option>
       </Select>
       {anyActive && (
         <Button
@@ -195,7 +196,7 @@ export function KanbanFilters({
             onTypeFilterChange([]);
           }}
         >
-          Clear
+          {t("Clear")}
         </Button>
       )}
     </div>

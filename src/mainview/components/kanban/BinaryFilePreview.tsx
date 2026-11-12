@@ -9,6 +9,7 @@ import { useAuthedObjectUrl } from "@/lib/authed-blob";
 import { loadPdfDocument, isRenderCancelledError, type PdfDoc } from "@/lib/pdf";
 import { MAX_BLOB_PREVIEW_BYTES } from "../../../shared/attachments.ts";
 import type { DiffFile } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 export type BinaryPreviewFileStatus = DiffFile["status"];
 
@@ -450,7 +451,7 @@ export function BinaryFilePreview({ kind, status, oldUrl, newUrl, fetchBytes, fi
             disabled={page <= 1}
             onMouseDown={stopMouseDown}
             onClick={goPrev}
-            aria-label="Previous page"
+            aria-label={t("Previous page")}
           >
             <ChevronLeft className="size-3.5" />
           </Button>
@@ -465,7 +466,7 @@ export function BinaryFilePreview({ kind, status, oldUrl, newUrl, fetchBytes, fi
             disabled={page >= totalPages}
             onMouseDown={stopMouseDown}
             onClick={goNext}
-            aria-label="Next page"
+            aria-label={t("Next page")}
           >
             <ChevronRight className="size-3.5" />
           </Button>

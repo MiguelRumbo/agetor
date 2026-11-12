@@ -11,6 +11,7 @@
 - [ADRs](adr/) — decisiones estructurales del fork
 - [Planes](plans/) — planes de implementación (heredados del upstream y nuevos)
 - [Seguridad](architecture/security.md) — tokens, política de rutas, spawn, lecturas sin seguir symlinks
+- [Traducción de la UI (español)](i18n.md) — cómo funciona `t()`, el selector de idioma y qué queda pendiente
 - [Inventario de textos para traducir](traduccion-inventario.md) — UI, CLI, mensajes y documentación visibles para el usuario
 - [QA](qa/) y [specs](specs/) — heredados del upstream
 

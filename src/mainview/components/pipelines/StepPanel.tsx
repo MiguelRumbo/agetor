@@ -13,6 +13,7 @@ import { PIPELINE_LIMITS } from "../../../shared/types.ts";
 import type { AgentProfile, Harness, PipelineGraph, PipelineStep } from "../../../shared/types.ts";
 import { AgentProfilePicker } from "../kanban/AgentProfilePicker";
 import { AgentProfileFormDialog } from "../kanban/AgentProfileFormDialog";
+import { t } from "@/lib/i18n";
 
 interface StepPanelProps {
   step: PipelineStep;
@@ -81,8 +82,8 @@ export function StepPanel({
   const handleDelete = async () => {
     const ok = await confirm({
       title: `Delete step "${step.name}"?`,
-      description: "This removes the step and every connection to or from it. This can't be undone.",
-      confirmLabel: "Delete step",
+      description: t("This removes the step and every connection to or from it. This can't be undone."),
+      confirmLabel: t("Delete step"),
       variant: "destructive",
     });
     if (ok) onDelete();
@@ -91,26 +92,26 @@ export function StepPanel({
   return (
     <div data-testid="pipeline-step-panel" className={cn("flex h-full flex-col gap-4 overflow-y-auto p-4", className)}>
       <div>
-        <span className="text-xs font-medium text-muted-foreground">Step type</span>
+        <span className="text-xs font-medium text-muted-foreground">{t("Step type")}</span>
         <div data-testid="pipeline-step-type" role="radiogroup" className="mt-1 flex flex-col gap-1.5">
           <RadioRow
             testId="pipeline-step-type-agent"
             checked={!human}
             onSelect={() => setType("agent")}
-            label="Agent — runs an agent profile"
+            label={t("Agent — runs an agent profile")}
           />
           <RadioRow
             testId="pipeline-step-type-human"
             checked={human}
             onSelect={() => setType("human")}
-            label="Human — pauses for your review"
+            label={t("Human — pauses for your review")}
           />
         </div>
       </div>
 
       <div>
         <label className="text-xs font-medium text-muted-foreground" htmlFor="pipeline-step-name-input">
-          Step name
+          {t("Step name")}
         </label>
         <Input
           id="pipeline-step-name-input"
@@ -140,7 +141,7 @@ export function StepPanel({
       {!human && (
         <div>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Agent</span>
+            <span className="text-xs font-medium text-muted-foreground">{t("Agent")}</span>
             <Button
               type="button"
               variant="ghost"
@@ -175,14 +176,14 @@ export function StepPanel({
 
       {!human && (
         <div>
-          <span className="text-xs font-medium text-muted-foreground">Subagents this step may delegate to</span>
+          <span className="text-xs font-medium text-muted-foreground">{t("Subagents this step may delegate to")}</span>
           <div data-testid="pipeline-step-subagents" className="mt-1">
             <MultiSearchSelect
               values={step.subagents.profileIds}
               onChange={(profileIds) => onChange({ ...step, subagents: { ...step.subagents, profileIds } })}
               items={subagentItems}
               emptyLabel="No subagents allowed"
-              placeholder="Search agents…"
+              placeholder={t("Search agents…")}
             />
           </div>
           <div className="mt-2 flex items-center gap-2">
@@ -193,7 +194,7 @@ export function StepPanel({
                 onChange({ ...step, subagents: { ...step.subagents, cap: checked ? null : 1 } })
               }
             />
-            <span className="text-xs text-muted-foreground">No limit</span>
+            <span className="text-xs text-muted-foreground">{t("No limit")}</span>
             {!capUnlimited && (
               <Input
                 type="number"
@@ -215,7 +216,7 @@ export function StepPanel({
       )}
 
       <div>
-        <span className="text-xs font-medium text-muted-foreground">After this step</span>
+        <span className="text-xs font-medium text-muted-foreground">{t("After this step")}</span>
         <div data-testid="pipeline-step-transition" role="radiogroup" className="mt-1 flex flex-col gap-1.5">
           <RadioRow
             testId="pipeline-step-transition-choose"
@@ -227,44 +228,44 @@ export function StepPanel({
             testId="pipeline-step-transition-all"
             checked={step.transition === "all"}
             onSelect={() => onChange({ ...step, transition: "all" })}
-            label="Run all next steps in parallel"
+            label={t("Run all next steps in parallel")}
           />
         </div>
         {step.transition === "all" && (
           <p className="mt-1 text-xs text-warning">
-            Parallel steps share this pipeline's worktree — keep their scopes disjoint.
+            {t("Parallel steps share this pipeline's worktree — keep their scopes disjoint.")}
           </p>
         )}
       </div>
 
       {!human && (
         <div>
-          <span className="text-xs font-medium text-muted-foreground">Start when</span>
+          <span className="text-xs font-medium text-muted-foreground">{t("Start when")}</span>
           <div data-testid="pipeline-step-join" role="radiogroup" className="mt-1 flex flex-col gap-1.5">
             <RadioRow
               testId="pipeline-step-join-any"
               checked={step.join === "any"}
               onSelect={() => onChange({ ...step, join: "any" })}
-              label="Any incoming step finishes"
+              label={t("Any incoming step finishes")}
             />
             <RadioRow
               testId="pipeline-step-join-all"
               checked={step.join === "all"}
               onSelect={() => onChange({ ...step, join: "all" })}
-              label="All incoming steps have finished"
+              label={t("All incoming steps have finished")}
             />
           </div>
         </div>
       )}
 
       <div>
-        <span className="text-xs font-medium text-muted-foreground">Connect to…</span>
+        <span className="text-xs font-medium text-muted-foreground">{t("Connect to…")}</span>
         <div data-testid="pipeline-step-connect" className="mt-1">
           <SearchSelect
             value=""
             onChange={(toId) => onConnect(toId)}
             items={connectItems}
-            placeholder="Pick a step to connect to"
+            placeholder={t("Pick a step to connect to")}
             emptyLabel="Connect to another step…"
           />
         </div>
@@ -285,7 +286,7 @@ export function StepPanel({
                 />
                 <button
                   type="button"
-                  title="Remove connection"
+                  title={t("Remove connection")}
                   data-testid="pipeline-step-edge-remove"
                   onClick={() => onRemoveEdge(edge.id)}
                   className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-accent/40 hover:text-danger"
@@ -317,7 +318,7 @@ export function StepPanel({
           data-testid="pipeline-step-delete"
           onClick={handleDelete}
         >
-          Delete step
+          {t("Delete step")}
         </Button>
       </div>
     </div>

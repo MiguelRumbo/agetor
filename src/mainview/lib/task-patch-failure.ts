@@ -12,6 +12,7 @@
  * surfaces the server's own error message.
  */
 import { ApiTransitError } from "./net-retry.ts";
+import { t } from "@/lib/i18n";
 
 export interface TaskPatchFailureToast {
   title: string;
@@ -28,13 +29,13 @@ export function taskPatchFailureToast(
     // The PATCH is not retried after a transit failure, so it MAY have
     // landed; the next task poll shows which account the task is on.
     return {
-      title: "Couldn't confirm the account switch",
-      description: "The connection dropped before agetor answered — the switch may have gone through.",
+      title: t("Couldn't confirm the account switch"),
+      description: t("The connection dropped before agetor answered — the switch may have gone through."),
     };
   }
   const message = error instanceof Error ? error.message : String(error);
   return {
-    title: "Couldn't switch account",
+    title: t("Couldn't switch account"),
     description: message.trim() === "" ? "agetor refused the switch." : message,
   };
 }

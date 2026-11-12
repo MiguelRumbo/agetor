@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { TMUX_MISSING_REASON, type AgentStatus } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 interface Props {
   /** True when at least one claude-code harness reports tmux as missing. */
@@ -41,7 +42,7 @@ export function TmuxMissingBanner({ show, onResolve }: Props) {
       <span className="min-w-0 flex-1">
         <span className="font-medium text-foreground">tmux not installed.</span>{" "}
         <span className="text-muted-foreground">
-          Claude Code tasks need tmux to run.
+          {t("Claude Code tasks need tmux to run.")}
         </span>
       </span>
       <Button
@@ -50,12 +51,12 @@ export function TmuxMissingBanner({ show, onResolve }: Props) {
         onClick={onResolve}
         className="h-7 border-warning/40 bg-warning/10 text-warning hover:bg-warning/20"
       >
-        Resolve
+        {t("Resolve")}
       </Button>
       <button
         type="button"
         onClick={() => setDismissed(true)}
-        aria-label="Dismiss"
+        aria-label={t("Dismiss")}
         className="rounded p-0.5 text-muted-foreground hover:bg-warning/10 hover:text-warning"
       >
         <X className="size-3.5" />

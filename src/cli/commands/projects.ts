@@ -3,6 +3,7 @@ import { getClient, type Flags } from "../context.ts";
 import { c, out, printJson, table } from "../output.ts";
 import { flagValue } from "../args.ts";
 import { usageError } from "../usage.ts";
+import { ct } from "../i18n.ts";
 
 export async function cmdProjects(args: string[], flags: Flags): Promise<void> {
   const sub = args[0] ?? "ls";
@@ -31,7 +32,7 @@ export async function cmdProjects(args: string[], flags: Flags): Promise<void> {
       }
       const project = await client.addProject(path.resolve(target), name);
       if (flags.json) return printJson(project);
-      out(`${c.green("✓")} registered ${c.bold(project.name)} ${c.dim(project.path)}`);
+      out(`${c.green("✓")} ${ct("registered")} ${c.bold(project.name)} ${c.dim(project.path)}`);
       return;
     }
     case "rm":
@@ -60,6 +61,6 @@ export async function cmdProjects(args: string[], flags: Flags): Promise<void> {
       return;
     }
     default:
-      throw new Error(`unknown projects subcommand: ${sub} (use ls | add | rm | branches)`);
+      throw new Error(`${ct("unknown projects subcommand:")} ${sub} ${ct("(use ls | add | rm | branches)")}`);
   }
 }

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import type { SubagentSatellite } from "@/lib/pipelines";
 import type { AgentProfile, AgentProfileSnapshot, Subagent } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 const TITLE_ID = "subagent-details-title";
 
@@ -91,33 +92,33 @@ export function SubagentDetailsDialog({
               {statusText}
             </p>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label={t("Close")}>
             <X className="size-4" />
           </Button>
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           <dl className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1.5 text-xs">
-            <dt className="text-muted-foreground">Delegated by</dt>
+            <dt className="text-muted-foreground">{t("Delegated by")}</dt>
             <dd className="min-w-0">
               <span className="font-medium">{stepName}</span>
               <span className="text-muted-foreground"> · {cap == null ? "no limit on subagents" : `at most ${cap} subagent${cap === 1 ? "" : "s"}`}</span>
             </dd>
             {!isLive && (
               <>
-                <dt className="text-muted-foreground">Harness</dt>
+                <dt className="text-muted-foreground">{t("Harness")}</dt>
                 <dd className="min-w-0">{harnessLabel ?? "—"}</dd>
-                <dt className="text-muted-foreground">Model</dt>
+                <dt className="text-muted-foreground">{t("Model")}</dt>
                 <dd className="min-w-0">{profile?.model ?? "—"}</dd>
-                <dt className="text-muted-foreground">Effort</dt>
+                <dt className="text-muted-foreground">{t("Effort")}</dt>
                 <dd className="min-w-0">{profile?.effort ?? "default"}</dd>
-                <dt className="text-muted-foreground">Mode</dt>
+                <dt className="text-muted-foreground">{t("Mode")}</dt>
                 <dd className="min-w-0">{profile?.mode ?? "default"}</dd>
-                <dt className="text-muted-foreground">Instructions</dt>
+                <dt className="text-muted-foreground">{t("Instructions")}</dt>
                 <dd className="min-w-0 whitespace-pre-wrap" data-testid="subagent-details-instructions">
                   {instructions || <span className="text-muted-foreground">—</span>}
                 </dd>
-                <dt className="text-muted-foreground">Skills</dt>
+                <dt className="text-muted-foreground">{t("Skills")}</dt>
                 <dd className="flex min-w-0 flex-wrap gap-1">
                   {skills.length === 0 ? (
                     <span className="text-muted-foreground">—</span>
@@ -136,11 +137,11 @@ export function SubagentDetailsDialog({
           {onOpenTranscript && (
             <div className="mt-3">
               <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                Helpers in this execution
+                {t("Helpers in this execution")}
               </div>
               {instances.length === 0 ? (
                 <p className="text-xs text-muted-foreground" data-testid="subagent-details-none">
-                  None spawned yet.
+                  {t("None spawned yet.")}
                 </p>
               ) : (
                 <ul className="flex flex-col gap-1.5" data-testid="subagent-details-instances">
@@ -153,9 +154,9 @@ export function SubagentDetailsDialog({
                       className="flex items-center gap-2 rounded-md border border-border/60 px-2 py-1.5 text-xs"
                     >
                       {s.status === "running" ? (
-                        <Loader2 className="size-3.5 shrink-0 animate-spin text-info" aria-label="Running" />
+                        <Loader2 className="size-3.5 shrink-0 animate-spin text-info" aria-label={t("Running")} />
                       ) : (
-                        <Check className="size-3.5 shrink-0 text-success" aria-label="Finished" />
+                        <Check className="size-3.5 shrink-0 text-success" aria-label={t("Finished")} />
                       )}
                       <span className="min-w-0 flex-1">
                         <span className="block truncate">{s.description ?? s.agentType ?? "Subagent"}</span>
@@ -186,7 +187,7 @@ export function SubagentDetailsDialog({
         <footer className="flex items-center justify-end gap-2 border-t border-border/60 p-3">
           {onOpenStep && (
             <Button size="sm" variant="outline" data-testid="subagent-details-open-step" onClick={onOpenStep}>
-              Open step
+              {t("Open step")}
             </Button>
           )}
           {onOpenSettingsAgents && !isLive && profile && !profileDeleted && (
@@ -205,7 +206,7 @@ export function SubagentDetailsDialog({
             </Button>
           )}
           <Button size="sm" data-testid="subagent-details-close" onClick={onClose}>
-            Close
+            {t("Close")}
           </Button>
         </footer>
       </div>

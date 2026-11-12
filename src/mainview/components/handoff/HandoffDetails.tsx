@@ -11,6 +11,7 @@ import { ASSISTANT_MD_COMPONENTS, MD_URL_TRANSFORM } from "@/components/kanban/m
 import { classifyHandoffArtifact } from "@/lib/handoff-artifacts";
 import { HandoffArtifactChips } from "./HandoffArtifactChips";
 import { useHandoffView } from "./handoff-context";
+import { t } from "@/lib/i18n";
 
 function Section({ title, count, children }: { title: string; count?: number; children: React.ReactNode }) {
   return (
@@ -40,17 +41,17 @@ export const HandoffDetails = memo(function HandoffDetails({ handoff }: { handof
     () => handoff.artifacts.map((entry) => classifyHandoffArtifact(entry, { roots, homeDir })),
     [handoff.artifacts, roots, homeDir],
   );
-  const empty = <p className="text-xs italic text-muted-foreground">None</p>;
+  const empty = <p className="text-xs italic text-muted-foreground">{t("None")}</p>;
 
   return (
     <div className="space-y-4">
-      <Section title="Purpose">{handoff.purpose.trim() ? <Markdown text={handoff.purpose} /> : empty}</Section>
-      <Section title="Summary">{handoff.summary.trim() ? <Markdown text={handoff.summary} /> : empty}</Section>
-      <Section title="Reason">{handoff.reason.trim() ? <Markdown text={handoff.reason} /> : empty}</Section>
-      <Section title="Artifacts" count={artifacts.length}>
+      <Section title={t("Purpose")}>{handoff.purpose.trim() ? <Markdown text={handoff.purpose} /> : empty}</Section>
+      <Section title={t("Summary")}>{handoff.summary.trim() ? <Markdown text={handoff.summary} /> : empty}</Section>
+      <Section title={t("Reason")}>{handoff.reason.trim() ? <Markdown text={handoff.reason} /> : empty}</Section>
+      <Section title={t("Artifacts")} count={artifacts.length}>
         {artifacts.length > 0 ? <HandoffArtifactChips variant="list" artifacts={artifacts} /> : empty}
       </Section>
-      <Section title="Open questions" count={handoff.openQuestions.length}>
+      <Section title={t("Open questions")} count={handoff.openQuestions.length}>
         {handoff.openQuestions.length > 0 ? (
           <ol data-testid="handoff-dialog-questions" className="list-decimal space-y-1 pl-5 text-sm">
             {handoff.openQuestions.map((q, i) => (

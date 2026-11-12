@@ -8,6 +8,7 @@ import { AwaitingGlow } from "@/components/ui/awaiting-glow";
 import type { PipelineStep } from "../../../shared/types.ts";
 import { AgentProfileCard } from "../kanban/AgentProfileCard";
 import { usePipelineCanvasContext } from "./pipeline-canvas-context";
+import { t } from "@/lib/i18n";
 
 /** Node `data` shape for the pipelines canvas's custom `"step"` node type —
  *  everything {@link StepNode} needs to render one step, EXCEPT the agent
@@ -98,7 +99,7 @@ function StepNodeImpl({ data, selected }: NodeProps<StepFlowNodeType>) {
         </span>
         {isStart && (
           <span
-            title="Start step"
+            title={t("Start step")}
             data-testid="pipeline-step-start-badge"
             className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-info/15 px-1.5 py-0.5 text-[10px] font-medium text-info"
           >
@@ -108,7 +109,7 @@ function StepNodeImpl({ data, selected }: NodeProps<StepFlowNodeType>) {
         )}
         {human && (
           <span
-            title="Human review gate — the pipeline pauses here for you"
+            title={t("Human review gate — the pipeline pauses here for you")}
             data-testid="pipeline-step-human-badge"
             className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-info/15 px-1.5 py-0.5 text-[10px] font-medium text-info"
           >
@@ -117,15 +118,15 @@ function StepNodeImpl({ data, selected }: NodeProps<StepFlowNodeType>) {
           </span>
         )}
         {step.transition === "all" && (
-          <Split className="size-3.5 shrink-0 text-muted-foreground" aria-label="Fans out to all next steps" />
+          <Split className="size-3.5 shrink-0 text-muted-foreground" aria-label={t("Fans out to all next steps")} />
         )}
         {step.join === "all" && (
-          <Merge className="size-3.5 shrink-0 text-muted-foreground" aria-label="Waits for every incoming step" />
+          <Merge className="size-3.5 shrink-0 text-muted-foreground" aria-label={t("Waits for every incoming step")} />
         )}
         {visual === "active" && reminded && (
           <span
             data-testid="pipeline-step-reminded"
-            title="Reminder sent — waiting for the handoff"
+            title={t("Reminder sent — waiting for the handoff")}
             className="inline-flex shrink-0 items-center text-warning"
           >
             <RefreshCw className="size-3.5" aria-hidden />
@@ -149,22 +150,22 @@ function StepNodeImpl({ data, selected }: NodeProps<StepFlowNodeType>) {
       <div className="mt-1.5 min-w-0">
         {human ? (
           <span data-testid="pipeline-step-human-hint" className="text-xs text-info">
-            Pauses for your review
+            {t("Pauses for your review")}
           </span>
         ) : profile ? (
           <AgentProfileCard profile={profile} variant="chip" deleted={profileDeleted} className="max-w-full" />
         ) : profileDeleted ? (
           <span data-testid="pipeline-step-profile-deleted" className="text-xs text-danger">
-            Deleted agent
+            {t("Deleted agent")}
           </span>
         ) : (
-          <span className="text-xs text-warning">No agent</span>
+          <span className="text-xs text-warning">{t("No agent")}</span>
         )}
       </div>
 
       {parallelWarning && (
         <p className="mt-1.5 text-[10px] leading-tight text-warning">
-          Shares the worktree with parallel siblings
+          {t("Shares the worktree with parallel siblings")}
         </p>
       )}
 
@@ -194,7 +195,7 @@ function StepNodeImpl({ data, selected }: NodeProps<StepFlowNodeType>) {
         <button
           type="button"
           data-testid="pipeline-step-append"
-          title="Add a connected step"
+          title={t("Add a connected step")}
           onClick={() => onAppend(step.id)}
           className="absolute -right-9 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm hover:bg-accent hover:text-foreground"
         >

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
 import { api, type UpdateSnapshot } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 interface Props {
   snapshot: UpdateSnapshot | null;
@@ -38,7 +39,7 @@ export function UpdateBanner({ snapshot, onChange }: Props) {
         : "Restart and update Agetor?",
       description:
         "Any running agents will be interrupted. Their work is preserved in the task history — you can pick up from where they stopped after the restart.",
-      confirmLabel: "Restart now",
+      confirmLabel: t("Restart now"),
       variant: "default",
     });
     if (!ok) return;
@@ -72,7 +73,7 @@ export function UpdateBanner({ snapshot, onChange }: Props) {
             ? `Agetor v${snapshot.version} is ready to install.`
             : "An update is ready to install."}
         </span>{" "}
-        <span className="text-muted-foreground">Restart Agetor to apply.</span>
+        <span className="text-muted-foreground">{t("Restart Agetor to apply.")}</span>
       </span>
       <Button
         variant="outline"
@@ -89,7 +90,7 @@ export function UpdateBanner({ snapshot, onChange }: Props) {
       <button
         type="button"
         onClick={() => setDismissedVersion(snapshot.version ?? "")}
-        aria-label="Dismiss"
+        aria-label={t("Dismiss")}
         className="rounded p-0.5 text-muted-foreground hover:bg-success/10 hover:text-success"
       >
         <X className="size-3.5" />

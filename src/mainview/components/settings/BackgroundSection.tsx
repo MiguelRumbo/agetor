@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useConfirm } from "@/components/ui/confirm";
 import { backgroundCopy, subscribeBackgroundStatus } from "@/lib/background";
+import { t } from "@/lib/i18n";
 
 /** How often the section re-reads `GET /background` while mounted. The
  *  `background_changed` event covers most changes; this catches the ones no
@@ -90,9 +91,9 @@ export function BackgroundSection() {
     if (!status) return;
     if (!on && status.remoteAccess) {
       const ok = await confirm({
-        title: "Turn off background mode?",
-        description: "This also turns off remote access.",
-        confirmLabel: "Turn off",
+        title: t("Turn off background mode?"),
+        description: t("This also turns off remote access."),
+        confirmLabel: t("Turn off"),
         cancelLabel: "Keep on",
         variant: "destructive",
       });
@@ -108,7 +109,7 @@ export function BackgroundSection() {
     <section className="space-y-1" data-testid="background-section">
       <div className="flex items-center justify-between gap-4">
         <label htmlFor="background-toggle" className="text-xs text-muted-foreground">
-          Keep Agetor running in the background
+          {t("Keep Agetor running in the background")}
         </label>
         <Switch
           id="background-toggle"
@@ -116,11 +117,11 @@ export function BackgroundSection() {
           checked={copy?.toggleChecked ?? false}
           disabled={!copy || !copy.toggleEnabled || busy}
           onCheckedChange={(on) => { void onToggle(on); }}
-          aria-label="Keep Agetor running in the background"
+          aria-label={t("Keep Agetor running in the background")}
         />
       </div>
       <p className="text-[11px] text-muted-foreground">
-        Tasks keep running after you quit the app. Agetor adds itself to your Login Items so a small background core can take over.
+        {t("Tasks keep running after you quit the app. Agetor adds itself to your Login Items so a small background core can take over.")}
       </p>
 
       <p
@@ -150,7 +151,7 @@ export function BackgroundSection() {
               disabled={busy}
               onClick={() => { void mutate(async () => { await api.openLoginItems(); }); }}
             >
-              Open Login Items
+              {t("Open Login Items")}
             </Button>
           )}
           {copy.actions.includes("start-now") && (
@@ -161,7 +162,7 @@ export function BackgroundSection() {
               disabled={busy}
               onClick={() => { void mutate(() => api.startBackground()); }}
             >
-              Start now
+              {t("Start now")}
             </Button>
           )}
         </div>
@@ -175,7 +176,7 @@ export function BackgroundSection() {
       {status && (
         <div className="mt-2 flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2">
           <div className="space-y-0.5">
-            <div className="text-xs text-muted-foreground">Remote access (preview)</div>
+            <div className="text-xs text-muted-foreground">{t("Remote access (preview)")}</div>
             <div
               data-testid="remote-access-state"
               data-enabled={status.remoteAccess ? "true" : "false"}
@@ -194,7 +195,7 @@ export function BackgroundSection() {
               disabled={busy}
               onClick={() => { void mutate(() => api.turnOffRemoteAccess().then(() => api.getBackground({ fresh: true }))); }}
             >
-              Turn off
+              {t("Turn off")}
             </Button>
           )}
         </div>

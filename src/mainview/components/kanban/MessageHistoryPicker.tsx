@@ -3,6 +3,7 @@ import { History } from "lucide-react";
 import { api, type SentMessageItem } from "@/lib/api";
 import { cleanMessageText } from "@/lib/message-history";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 /** Server-side fetch clamp is 200 (see `api.fetchMessageHistory`); the list
  *  itself displays only the most recent `DISPLAY_LIMIT` after cleaning, since
@@ -133,8 +134,8 @@ export function MessageHistoryPicker({ taskId, disabled, onPick, className }: Pr
         data-testid="message-history-trigger"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        title="Insert a past message"
-        aria-label="Insert a past message"
+        title={t("Insert a past message")}
+        aria-label={t("Insert a past message")}
         aria-haspopup="listbox"
         aria-expanded={open}
         className={cn(
@@ -160,14 +161,14 @@ export function MessageHistoryPicker({ taskId, disabled, onPick, className }: Pr
           className="absolute bottom-full right-0 z-50 mb-1 w-80 max-h-64 overflow-y-auto rounded-md border border-border bg-card text-card-foreground shadow-xl"
         >
           {loading && (
-            <p className="px-3 py-2 text-xs text-muted-foreground">Loading…</p>
+            <p className="px-3 py-2 text-xs text-muted-foreground">{t("Loading…")}</p>
           )}
           {!loading && error && (
             <p className="px-3 py-2 text-xs text-destructive">{error}</p>
           )}
           {!loading && !error && items !== null && items.length === 0 && (
             <p className="px-3 py-2 text-xs text-muted-foreground">
-              No past messages yet.
+              {t("No past messages yet.")}
             </p>
           )}
           {!loading && !error && items !== null && items.length > 0 && (

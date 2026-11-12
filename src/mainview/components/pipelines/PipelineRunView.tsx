@@ -74,6 +74,7 @@ import { StepNode } from "./StepNode";
 import { SubagentDetailsDialog } from "./SubagentDetailsDialog";
 import { SubagentEdge } from "./SubagentEdge";
 import { SubagentNode } from "./SubagentNode";
+import { t } from "@/lib/i18n";
 
 const NODE_TYPES = { step: StepNode, subagent: SubagentNode };
 const EDGE_TYPES = { step: StepEdge, subagent: SubagentEdge };
@@ -814,11 +815,11 @@ export function PipelineRunView({ taskId, onOpenTask, onBack, onOpenSettingsAgen
 
   const handleStop = useCallback(async () => {
     const ok = await confirm({
-      title: "Stop this run?",
+      title: t("Stop this run?"),
       description: pendingGates.length > 0
         ? "Live steps will be cancelled and the pending review dismissed. History is kept."
         : "Live steps will be cancelled. History is kept.",
-      confirmLabel: "Stop",
+      confirmLabel: t("Stop"),
       variant: "destructive",
     });
     if (!ok) return;
@@ -880,9 +881,9 @@ export function PipelineRunView({ taskId, onOpenTask, onBack, onOpenSettingsAgen
 
   const handleRestart = useCallback(async () => {
     const ok = await confirm({
-      title: "Restart this pipeline?",
-      description: "This starts a fresh run from the start step. Previous run history will be cleared.",
-      confirmLabel: "Restart",
+      title: t("Restart this pipeline?"),
+      description: t("This starts a fresh run from the start step. Previous run history will be cleared."),
+      confirmLabel: t("Restart"),
       variant: "destructive",
     });
     if (!ok) return;
@@ -927,7 +928,7 @@ export function PipelineRunView({ taskId, onOpenTask, onBack, onOpenSettingsAgen
       <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-sm text-danger">
         <p>{loadError}</p>
         <Button type="button" variant="outline" size="sm" onClick={onBack}>
-          Back to board
+          {t("Back to board")}
         </Button>
       </div>
     );
@@ -936,7 +937,7 @@ export function PipelineRunView({ taskId, onOpenTask, onBack, onOpenSettingsAgen
   if (!task || !run) {
     return (
       <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
-        Loading pipeline run…
+        {t("Loading pipeline run…")}
       </div>
     );
   }
@@ -1133,7 +1134,7 @@ export function PipelineRunView({ taskId, onOpenTask, onBack, onOpenSettingsAgen
 
           {pendingGates.length > 0 && (
             <div data-testid="pipeline-run-human-review" className="mb-3 flex flex-col gap-2">
-              <p className="text-xs font-medium text-muted-foreground">Human review</p>
+              <p className="text-xs font-medium text-muted-foreground">{t("Human review")}</p>
               <AnimatePresence initial={false}>
                 {pendingGates.map((g) => {
                   const name = effectiveGraph ? stepNameById(effectiveGraph, g.stepId) : g.stepId;
@@ -1159,7 +1160,7 @@ export function PipelineRunView({ taskId, onOpenTask, onBack, onOpenSettingsAgen
                           className="h-7 text-xs"
                           onClick={() => setHumanPanelGateKey(`${g.stepId}:${g.seq}`)}
                         >
-                          Open review
+                          {t("Open review")}
                         </Button>
                       </div>
                     </motion.div>
@@ -1201,7 +1202,7 @@ export function PipelineRunView({ taskId, onOpenTask, onBack, onOpenSettingsAgen
                             onClick={() => onOpenTask(stepTask)}
                             className="h-7 text-xs"
                           >
-                            Open step
+                            {t("Open step")}
                           </Button>
                         )}
                         {RETRY_BLOCK_KINDS.includes(entry.kind) && (
@@ -1214,7 +1215,7 @@ export function PipelineRunView({ taskId, onOpenTask, onBack, onOpenSettingsAgen
                             onClick={() => void handleRetry(entry.taskId ?? undefined)}
                             className="h-7 text-xs"
                           >
-                            Retry
+                            {t("Retry")}
                           </Button>
                         )}
                       </div>
@@ -1235,7 +1236,7 @@ export function PipelineRunView({ taskId, onOpenTask, onBack, onOpenSettingsAgen
 
           {reviewActive.length > 0 && (
             <div data-testid="pipeline-run-review" className="mb-3 flex flex-col gap-2">
-              <p className="text-xs font-medium text-muted-foreground">Awaiting review</p>
+              <p className="text-xs font-medium text-muted-foreground">{t("Awaiting review")}</p>
               <AnimatePresence initial={false}>
                 {reviewActive.map(({ active, task: stepTask }) => {
                   const stepName = effectiveGraph ? stepNameById(effectiveGraph, active.stepId) : active.stepId;
@@ -1257,7 +1258,7 @@ export function PipelineRunView({ taskId, onOpenTask, onBack, onOpenSettingsAgen
                           onClick={() => onOpenTask(stepTask)}
                           className="h-7 text-xs"
                         >
-                          Open step
+                          {t("Open step")}
                         </Button>
                       </div>
                       <AdvanceForm
@@ -1273,9 +1274,9 @@ export function PipelineRunView({ taskId, onOpenTask, onBack, onOpenSettingsAgen
           )}
 
           <div>
-            <p className="mb-1.5 text-xs font-medium text-muted-foreground">History</p>
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">{t("History")}</p>
             {run.history.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No steps have run yet.</p>
+              <p className="text-xs text-muted-foreground">{t("No steps have run yet.")}</p>
             ) : (
               <ul data-testid="pipeline-run-history" className="flex flex-col gap-1.5">
                 {[...run.history].reverse().map((record) => {
@@ -1354,19 +1355,19 @@ function AdvanceForm({
           onChange={setSelected}
           items={items}
           emptyLabel="Pick next step(s)…"
-          placeholder="Search steps…"
+          placeholder={t("Search steps…")}
         />
       )}
       <Textarea
         value={purpose}
         onChange={(e) => setPurpose(e.target.value)}
-        placeholder="Purpose (optional)"
+        placeholder={t("Purpose (optional)")}
         className="min-h-[44px] text-xs"
       />
       <Textarea
         value={summary}
         onChange={(e) => setSummary(e.target.value)}
-        placeholder="Summary (optional)"
+        placeholder={t("Summary (optional)")}
         className="min-h-[44px] text-xs"
       />
       <Button
@@ -1376,7 +1377,7 @@ function AdvanceForm({
         disabled={busy || (!finishHere && selected.length === 0)}
         onClick={submit}
       >
-        Advance
+        {t("Advance")}
       </Button>
     </div>
   );

@@ -173,6 +173,7 @@ import { AssistantHandoffMessage, UserHandoffMarkdown } from "@/components/hando
 import { handoffCardsEnabled, handoffUsage, indexLastHandoffEventByRun } from "@/lib/handoff-view";
 import { SpeedPicker } from "./SpeedPicker";
 import { importedSessionOf } from "../../../shared/imported-session.ts";
+import { t } from "@/lib/i18n";
 
 /**
  * Resolve a task's harness id to its underlying kind. Falls back to
@@ -573,7 +574,7 @@ export function RunPanel({ task, stickyUserMessages, agents, harnesses, stacks =
     <>
       <button
         type="button"
-        aria-label="Close task panel"
+        aria-label={t("Close task panel")}
         onClick={onClose}
         className={cn(
           // Deliberately NO backdrop blur utility: a full-window backdrop filter makes
@@ -600,7 +601,7 @@ export function RunPanel({ task, stickyUserMessages, agents, harnesses, stacks =
         <div
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize task panel"
+          aria-label={t("Resize task panel")}
           aria-valuenow={width}
           aria-valuemin={RUN_PANEL_MIN_WIDTH}
           tabIndex={0}
@@ -611,7 +612,7 @@ export function RunPanel({ task, stickyUserMessages, agents, harnesses, stacks =
           onPointerCancel={onResizePointerEnd}
           onDoubleClick={() => commitWidth(clampPanelWidth(RUN_PANEL_DEFAULT_WIDTH, window.innerWidth))}
           onKeyDown={onResizeKeyDown}
-          title="Drag to resize · double-click to reset"
+          title={t("Drag to resize · double-click to reset")}
           className={cn(
             "absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize touch-none select-none outline-none transition-colors",
             "hover:bg-primary/40 focus-visible:bg-primary/40",
@@ -3988,13 +3989,13 @@ function RunPanelBody({
               subpage directly; otherwise (an unrecognized provider URL
               shape) fall back to the plain external link, as before. */}
           {prUrl && (
-            <Tooltip align="end" label="Open the pull request created for this task">
+            <Tooltip align="end" label={t("Open the pull request created for this task")}>
               {parsePullNumber(prUrl) != null ? (
                 <Button
                   size="icon"
                   variant="outline"
                   onClick={() => onViewPullRequest({ projectPath: task.workdir, prUrl })}
-                  aria-label="View PR"
+                  aria-label={t("View PR")}
                 >
                   <GitPullRequest className="size-4" />
                 </Button>
@@ -4002,7 +4003,7 @@ function RunPanelBody({
                 <ExternalLink
                   href={prUrl}
                   className={cn(buttonVariants({ variant: "outline", size: "icon" }), "text-foreground no-underline hover:no-underline")}
-                  aria-label="View PR"
+                  aria-label={t("View PR")}
                 >
                   <GitPullRequest className="size-4" />
                 </ExternalLink>
@@ -4014,13 +4015,13 @@ function RunPanelBody({
               in-app-detail-vs-external-link branch, keyed on whether
               `issueUrl` parses to a recognized provider issue URL. */}
           {issueUrl && (
-            <Tooltip align="end" label="Open the issue this task was created from">
+            <Tooltip align="end" label={t("Open the issue this task was created from")}>
               {parseIssueUrl(issueUrl) != null ? (
                 <Button
                   size="icon"
                   variant="outline"
                   onClick={() => onViewIssue({ projectPath: task.workdir, issueUrl })}
-                  aria-label="View issue"
+                  aria-label={t("View issue")}
                   data-testid="view-issue"
                 >
                   <CircleDot className="size-4" />
@@ -4029,7 +4030,7 @@ function RunPanelBody({
                 <ExternalLink
                   href={issueUrl}
                   className={cn(buttonVariants({ variant: "outline", size: "icon" }), "text-foreground no-underline hover:no-underline")}
-                  aria-label="View issue"
+                  aria-label={t("View issue")}
                   data-testid="view-issue"
                 >
                   <CircleDot className="size-4" />
@@ -4052,12 +4053,12 @@ function RunPanelBody({
               </Button>
             </Tooltip>
           )}
-          <Tooltip align="end" label="View this task's changes (git diff)">
+          <Tooltip align="end" label={t("View this task's changes (git diff)")}>
             <Button
               size="icon"
               variant="outline"
               onClick={() => onShowDiff(task)}
-              aria-label="View diff"
+              aria-label={t("View diff")}
             >
               <GitCompare className="size-4" />
             </Button>
@@ -4079,7 +4080,7 @@ function RunPanelBody({
                   taskId: task.id,
                 }).catch(() => { /* swallowed — openPath failures are best-effort */ })
               }
-              aria-label="Open working folder"
+              aria-label={t("Open working folder")}
             >
               <FolderOpen className="size-4" />
             </Button>
@@ -4088,8 +4089,8 @@ function RunPanelBody({
               background-agent tab so the control doesn't read as "stop this
               agent" — switch back to Main to stop the task. */}
           {!archived && canControl && activeStream === "main" && (
-            <Tooltip align="end" label="Stop">
-              <Button size="icon" variant="destructive" onClick={stop} aria-label="Stop">
+            <Tooltip align="end" label={t("Stop")}>
+              <Button size="icon" variant="destructive" onClick={stop} aria-label={t("Stop")}>
                 <Square className="size-4" />
               </Button>
             </Tooltip>
@@ -4111,17 +4112,17 @@ function RunPanelBody({
             </Tooltip>
           )}
           {!task.pipelineParentId && archived && (
-            <Tooltip align="end" label="Unarchive task">
-              <Button size="icon" variant="outline" onClick={() => onUnarchive(task)} aria-label="Unarchive">
+            <Tooltip align="end" label={t("Unarchive task")}>
+              <Button size="icon" variant="outline" onClick={() => onUnarchive(task)} aria-label={t("Unarchive")}>
                 <ArchiveRestore className="size-4" />
               </Button>
             </Tooltip>
           )}
-          <Tooltip align="end" label="Search messages">
+          <Tooltip align="end" label={t("Search messages")}>
             <Button
               size="icon"
               variant="ghost"
-              aria-label="Search messages"
+              aria-label={t("Search messages")}
               aria-expanded={searchOpen}
               onClick={() => {
                 if (searchOpen) {
@@ -4138,8 +4139,8 @@ function RunPanelBody({
               <Search className="size-4" />
             </Button>
           </Tooltip>
-          <Tooltip align="end" label="Close task details">
-            <Button size="icon" variant="ghost" onClick={onClose} aria-label="Close task details">
+          <Tooltip align="end" label={t("Close task details")}>
+            <Button size="icon" variant="ghost" onClick={onClose} aria-label={t("Close task details")}>
               <X className="size-4" />
             </Button>
           </Tooltip>
@@ -4186,7 +4187,7 @@ function RunPanelBody({
                   disabled={importRetryBusy}
                   onClick={() => { void retryImportedHistory(); }}
                 >
-                  Retry
+                  {t("Retry")}
                 </button>
               </p>
             )}
@@ -4292,7 +4293,7 @@ function RunPanelBody({
               onOpenPipeline(task.pipelineParentId!);
             }}
           >
-            Open pipeline
+            {t("Open pipeline")}
           </Button>
         </div>
       ) : task.pipelineId ? (
@@ -4302,7 +4303,7 @@ function RunPanelBody({
         >
           <span className="flex min-w-0 items-center gap-1.5">
             <Workflow className="size-3.5 shrink-0" aria-hidden />
-            <span className="truncate">Pipeline task — open the pipeline view</span>
+            <span className="truncate">{t("Pipeline task — open the pipeline view")}</span>
           </span>
           <Button
             size="sm"
@@ -4315,7 +4316,7 @@ function RunPanelBody({
               onOpenPipeline(task.id);
             }}
           >
-            Open pipeline
+            {t("Open pipeline")}
           </Button>
         </div>
       ) : null}
@@ -4327,7 +4328,7 @@ function RunPanelBody({
             <Input
               ref={searchInputRef}
               {...IDENTIFIER_INPUT_PROPS}
-              aria-label="Search messages"
+              aria-label={t("Search messages")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -4340,39 +4341,39 @@ function RunPanelBody({
                   closeSearch();
                 }
               }}
-              placeholder="Search messages…"
+              placeholder={t("Search messages…")}
               className="h-8 pl-8 text-xs"
             />
           </div>
           <span aria-live="polite" className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
             {matches.length === 0 ? "0/0" : `${activeMatchPosition + 1}/${matches.length}`}
           </span>
-          <Tooltip align="end" label="Previous match">
+          <Tooltip align="end" label={t("Previous match")}>
             <Button
               size="icon"
               variant="ghost"
               className="size-7"
               disabled={matches.length === 0}
               onClick={() => stepSearch(-1)}
-              aria-label="Previous match"
+              aria-label={t("Previous match")}
             >
               <ChevronUp className="size-3.5" />
             </Button>
           </Tooltip>
-          <Tooltip align="end" label="Next match">
+          <Tooltip align="end" label={t("Next match")}>
             <Button
               size="icon"
               variant="ghost"
               className="size-7"
               disabled={matches.length === 0}
               onClick={() => stepSearch(1)}
-              aria-label="Next match"
+              aria-label={t("Next match")}
             >
               <ChevronDown className="size-3.5" />
             </Button>
           </Tooltip>
-          <Tooltip align="end" label="Close search">
-            <Button size="icon" variant="ghost" className="size-7" onClick={closeSearch} aria-label="Close search">
+          <Tooltip align="end" label={t("Close search")}>
+            <Button size="icon" variant="ghost" className="size-7" onClick={closeSearch} aria-label={t("Close search")}>
               <X className="size-3.5" />
             </Button>
           </Tooltip>
@@ -4538,11 +4539,11 @@ function RunPanelBody({
             // slower `listRuns` response arrives. Showing the skeleton on
             // `!runsLoaded` alone would hide those already-rendered events
             // behind "Loading messages…" until `listRuns` finally resolves.
-            <div className="text-muted-foreground" data-testid="transcript-loading">Loading messages…</div>
+            <div className="text-muted-foreground" data-testid="transcript-loading">{t("Loading messages…")}</div>
           ) : runsLoaded && runs.length === 0 ? (
             <div className="text-muted-foreground">(no runs yet — press Run to start the agent)</div>
           ) : runsLoaded && displayedEvents.length === 0 ? (
-            <div className="text-muted-foreground">Waiting for the first event…</div>
+            <div className="text-muted-foreground">{t("Waiting for the first event…")}</div>
           ) : (
             <>
               <div className="mb-2 flex items-center justify-between gap-2">
@@ -4552,7 +4553,7 @@ function RunPanelBody({
                     onClick={() => void rebuildFromJsonl()}
                     disabled={rebuildBusy}
                     className="rounded-md border border-border/60 bg-card px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground hover:bg-accent/40 disabled:opacity-50"
-                    title="Re-parse the latest run's events from claude's on-disk session JSONL. Useful when the stored events were truncated by an older agetor version."
+                    title={t("Re-parse the latest run's events from claude's on-disk session JSONL. Useful when the stored events were truncated by an older agetor version.")}
                   >
                     {rebuildBusy
                       ? "Reloading…"
@@ -4654,11 +4655,11 @@ function RunPanelBody({
           talk to regardless of column/archived state. */}
       {task.pipelineId ? (
         <div className="shrink-0 border-t border-border/60 p-3 text-[11px] text-muted-foreground">
-          This is a pipeline task — open the pipeline view to talk to its steps.
+          {t("This is a pipeline task — open the pipeline view to talk to its steps.")}
         </div>
       ) : archived && !canSend ? (
         <div className="shrink-0 border-t border-border/60 p-3 text-[11px] text-muted-foreground">
-          This task is archived. Unarchive it to interact.
+          {t("This task is archived. Unarchive it to interact.")}
         </div>
       ) : activeStream !== "main" ? (
         // Background-agent streams are read-only — you can watch them but not
@@ -4672,7 +4673,7 @@ function RunPanelBody({
               onClick={() => setActiveStream("main")}
               className="text-foreground underline underline-offset-2 hover:no-underline"
             >
-              Back to Main
+              {t("Back to Main")}
             </button>{" "}
             to send a message.
           </span>
@@ -4733,7 +4734,7 @@ function RunPanelBody({
                     variant="ghost"
                     onClick={() => void saveForLater()}
                     disabled={sending || backlogBusy}
-                    title="Save this message to the backlog to send later — without sending it now."
+                    title={t("Save this message to the backlog to send later — without sending it now.")}
                   >
                     <BookmarkPlus className="mr-1 size-3" /> Save for later
                   </Button>
@@ -4748,7 +4749,7 @@ function RunPanelBody({
                     size="sm"
                     variant="secondary"
                     onClick={() => void sendCommitPush()}
-                    title="Ask the agent to commit the working-tree changes, push the current branch to origin, and reply with the link to open a PR plus a PR title and description in copyable code blocks."
+                    title={t("Ask the agent to commit the working-tree changes, push the current branch to origin, and reply with the link to open a PR plus a PR title and description in copyable code blocks.")}
                   >
                     <GitCommit className="mr-1 size-3" /> Commit &amp; push
                   </Button>
@@ -4778,7 +4779,7 @@ function RunPanelBody({
                         taskId: task.id,
                       });
                     }}
-                    title="Create a pull request for this task's branch — prefilled from the agent's summary when available"
+                    title={t("Create a pull request for this task's branch — prefilled from the agent's summary when available")}
                   >
                     <GitPullRequest className="mr-1 size-3" /> Create PR
                   </Button>
@@ -4824,7 +4825,7 @@ function RunPanelBody({
             notice={
               archived && (
                 <p className="text-[10px] text-muted-foreground">
-                  Sending will unarchive this task and restore its worktree.
+                  {t("Sending will unarchive this task and restore its worktree.")}
                 </p>
               )
             }
@@ -4877,7 +4878,7 @@ function RunPanelBody({
                   size="icon"
                   onClick={() => void send()}
                   disabled={!canSend || sending || backlogBusy || modalPending || (!input.trim() && sendRefs.length === 0)}
-                  aria-label="Send"
+                  aria-label={t("Send")}
                   className="h-16 w-12 shrink-0"
                 >
                   <Send className="size-4" />
@@ -5106,7 +5107,7 @@ function BacklogTray({
           aria-hidden
         />
         <ClipboardList className="size-3.5 shrink-0" />
-        <span className="shrink-0">Backlog</span>
+        <span className="shrink-0">{t("Backlog")}</span>
         <span className="shrink-0 rounded bg-muted px-1 text-[10px]">{items.length}</span>
         <span id={hintId} className="ml-1 min-w-0 truncate font-normal text-muted-foreground/70">
           {collapseBlocked
@@ -5267,7 +5268,7 @@ function BacklogItemRow({
         />
         <div ref={actionsRef} className="flex items-center justify-end gap-1.5">
           <Button size="sm" variant="ghost" onClick={onCancelEdit}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             size="sm"
@@ -5309,34 +5310,34 @@ function BacklogItemRow({
       </div>
       {!readOnly && (
         <div className="flex shrink-0 items-center gap-0.5 opacity-60 transition-opacity group-hover:opacity-100">
-          <Tooltip align="end" side="top" label="Move up">
+          <Tooltip align="end" side="top" label={t("Move up")}>
             <button
               type="button"
               className={BACKLOG_ICON_BTN}
               disabled={index === 0 || busy}
               onClick={() => onMove(-1)}
-              aria-label="Move up"
+              aria-label={t("Move up")}
             >
               <ArrowUp className="size-3.5" />
             </button>
           </Tooltip>
-          <Tooltip align="end" side="top" label="Move down">
+          <Tooltip align="end" side="top" label={t("Move down")}>
             <button
               type="button"
               className={BACKLOG_ICON_BTN}
               disabled={index === total - 1 || busy}
               onClick={() => onMove(1)}
-              aria-label="Move down"
+              aria-label={t("Move down")}
             >
               <ArrowDown className="size-3.5" />
             </button>
           </Tooltip>
-          <Tooltip align="end" side="top" label="Edit">
+          <Tooltip align="end" side="top" label={t("Edit")}>
             <button
               type="button"
               className={BACKLOG_ICON_BTN}
               onClick={onStartEdit}
-              aria-label="Edit"
+              aria-label={t("Edit")}
             >
               <FilePenLine className="size-3.5" />
             </button>
@@ -5358,18 +5359,18 @@ function BacklogItemRow({
               className={BACKLOG_ICON_BTN}
               disabled={!canSend || busy}
               onClick={onSend}
-              aria-label="Send now"
+              aria-label={t("Send now")}
             >
               <Send className="size-3.5" />
             </button>
           </Tooltip>
-          <Tooltip align="end" side="top" label="Delete">
+          <Tooltip align="end" side="top" label={t("Delete")}>
             <button
               type="button"
               className={cn(BACKLOG_ICON_BTN, "hover:bg-destructive/10 hover:text-destructive")}
               disabled={busy}
               onClick={onDelete}
-              aria-label="Delete"
+              aria-label={t("Delete")}
             >
               <Trash2 className="size-3.5" />
             </button>
@@ -5465,7 +5466,7 @@ function SubagentTabs({
   return (
     <div
       role="tablist"
-      aria-label="Agent streams"
+      aria-label={t("Agent streams")}
       className={cn(
         "flex shrink-0 items-center gap-1 border-b border-border/60 bg-card/40 px-2 py-1.5",
         expanded ? "flex-wrap" : "overflow-x-auto",
@@ -5584,7 +5585,7 @@ function RunsList({
     if (!runsLoaded) return null;
     return (
       <div className="border-b border-border/60 px-3 py-2 text-xs text-muted-foreground">
-        No runs yet for this task.
+        {t("No runs yet for this task.")}
       </div>
     );
   }
@@ -5626,7 +5627,7 @@ function RunsList({
               data-testid="run-origin-imported"
               className="shrink-0 px-1.5 py-0 text-[9px] uppercase text-muted-foreground"
             >
-              Imported
+              {t("Imported")}
             </Badge>
           )}
           {latest.origin === "agent" && (
@@ -5636,7 +5637,7 @@ function RunsList({
               className="shrink-0 px-1.5 py-0 text-[9px] uppercase text-muted-foreground"
               title={AGENT_ORIGIN_BADGE_TITLE}
             >
-              Started by OpenCode
+              {t("Started by OpenCode")}
             </Badge>
           )}
           <span className="truncate">
@@ -5662,7 +5663,7 @@ function RunsList({
         </span>
       </button>
       {open && canExpand && (
-        <ul className="border-t border-border/40 bg-card/50" aria-label="Run history">
+        <ul className="border-t border-border/40 bg-card/50" aria-label={t("Run history")}>
           {runs.slice(1).map((r) => (
             <li
               key={r.id}
@@ -5686,7 +5687,7 @@ function RunsList({
                     variant="secondary"
                     className="shrink-0 px-1.5 py-0 text-[9px] uppercase text-muted-foreground"
                   >
-                    Imported
+                    {t("Imported")}
                   </Badge>
                 )}
                 {r.origin === "agent" && (
@@ -5695,7 +5696,7 @@ function RunsList({
                     className="shrink-0 px-1.5 py-0 text-[9px] uppercase text-muted-foreground"
                     title={AGENT_ORIGIN_BADGE_TITLE}
                   >
-                    Started by OpenCode
+                    {t("Started by OpenCode")}
                   </Badge>
                 )}
                 <span className="truncate text-muted-foreground">
@@ -6337,7 +6338,7 @@ function RunningIndicator() {
         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success/60 opacity-75" />
         <span className="relative inline-flex size-2 rounded-full bg-success" />
       </span>
-      <span>Agent is working…</span>
+      <span>{t("Agent is working…")}</span>
     </div>
   );
 }
@@ -6463,7 +6464,7 @@ function PausedRecoveryNotice({
             onClick={onResume}
             className="h-6 shrink-0 px-2 text-[11px]"
           >
-            Resume
+            {t("Resume")}
           </Button>
         )}
       </div>
@@ -6486,7 +6487,7 @@ function PausedRecoveryNotice({
             onClick={onCancelAuto}
             className="h-6 shrink-0 px-2 text-[11px] text-danger hover:text-danger"
           >
-            Cancel
+            {t("Cancel")}
           </Button>
         </div>
       )}
@@ -7027,7 +7028,7 @@ function HarnessStackBanner({
           variant="outline"
           className="h-6 border-warning/40 px-2 text-[11px] text-warning hover:bg-warning/10"
           data-testid="harness-stack-run-now"
-          title="Run now on a cooling account and reset the retry cap"
+          title={t("Run now on a cooling account and reset the retry cap")}
           onClick={() => onRunTask(task)}
         >
           <Play className="mr-1 size-3" /> Run now
@@ -8085,11 +8086,11 @@ function TaskDetails({
     <>
       <details className="border-b border-border/60 px-3 py-2 text-xs">
         <summary className="cursor-pointer text-muted-foreground">
-          <span className="text-[10px] uppercase tracking-wide">Task details</span>
+          <span className="text-[10px] uppercase tracking-wide">{t("Task details")}</span>
         </summary>
         <div className="mt-2 space-y-2">
           <div>
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Prompt</div>
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("Prompt")}</div>
             <p className="max-h-48 overflow-y-auto whitespace-pre-wrap text-[11px] leading-snug">{task.prompt}</p>
           </div>
 
@@ -8107,7 +8108,7 @@ function TaskDetails({
           )}
 
           <dl className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 text-[11px]">
-            <dt className="text-muted-foreground">Agent</dt>
+            <dt className="text-muted-foreground">{t("Agent")}</dt>
             <dd className="min-w-0">
               {showAgentProfileActions ? (
                 <div className="flex flex-wrap items-center gap-2">
@@ -8117,7 +8118,7 @@ function TaskDetails({
                       data-testid="task-agent-profile-open"
                       aria-haspopup="dialog"
                       aria-expanded={profileDialogOpen}
-                      aria-label="View agent details"
+                      aria-label={t("View agent details")}
                       onClick={() => setProfileDialogOpen(true)}
                       className="min-w-0 max-w-full rounded-full transition-opacity hover:opacity-80"
                     >
@@ -8130,7 +8131,7 @@ function TaskDetails({
                     </button>
                   ) : (
                     <span data-testid="task-agent-profile-unknown" className="text-warning">
-                      Unknown agent
+                      {t("Unknown agent")}
                     </span>
                   )}
                   {/* A step task's profile is frozen — the parent pipeline
@@ -8147,7 +8148,7 @@ function TaskDetails({
                       disabled={runningLock || detaching}
                       onClick={() => void detachProfile()}
                     >
-                      Detach
+                      {t("Detach")}
                     </Button>
                   )}
                   <button
@@ -8156,17 +8157,17 @@ function TaskDetails({
                     onClick={() => onOpenSettingsAgents()}
                     className="text-[10px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
                   >
-                    Manage agents…
+                    {t("Manage agents…")}
                   </button>
                 </div>
               ) : (
                 <span data-testid="task-agent-profile-none" className="text-muted-foreground">
-                  None
+                  {t("None")}
                 </span>
               )}
             </dd>
 
-            <dt className="text-muted-foreground">Harness</dt>
+            <dt className="text-muted-foreground">{t("Harness")}</dt>
             <dd className="min-w-0">
               {editable ? (
                 <AgentSelect
@@ -8182,7 +8183,7 @@ function TaskDetails({
               )}
             </dd>
 
-            <dt className="text-muted-foreground">Mode</dt>
+            <dt className="text-muted-foreground">{t("Mode")}</dt>
             <dd className="min-w-0">
               {editable ? (
                 <CompactSelect
@@ -8198,10 +8199,10 @@ function TaskDetails({
             <dt className="flex items-center gap-1 text-muted-foreground">
               Model
               {editable && (
-                <Tooltip label="Refresh model list">
+                <Tooltip label={t("Refresh model list")}>
                   <button
                     type="button"
-                    aria-label="Refresh model list"
+                    aria-label={t("Refresh model list")}
                     data-testid="refresh-models-details"
                     disabled={refreshingModels}
                     className={cn(
@@ -8236,7 +8237,7 @@ function TaskDetails({
               )}
             </dd>
 
-            <dt className="text-muted-foreground">Effort</dt>
+            <dt className="text-muted-foreground">{t("Effort")}</dt>
             <dd className="min-w-0">
               {editable ? (
                 <CompactSelect
@@ -8253,14 +8254,14 @@ function TaskDetails({
 
             {kind === "cursor" && (maxModeAvailable || task.maxMode) && (
               <>
-                <dt className="text-muted-foreground">Max Mode</dt>
+                <dt className="text-muted-foreground">{t("Max Mode")}</dt>
                 <dd className="min-w-0">
                   {editable ? (
                     <Switch
                       checked={task.maxMode}
                       onCheckedChange={(maxMode) => void save({ maxMode })}
                       disabled={!maxModeAvailable}
-                      aria-label="Use Cursor Max Mode context"
+                      aria-label={t("Use Cursor Max Mode context")}
                     />
                   ) : (
                     <span>{task.maxMode ? "on" : "off"}</span>
@@ -8271,7 +8272,7 @@ function TaskDetails({
 
             {(speedOptions.length > 1 || task.speed !== "off") && (
               <>
-                <dt className="text-muted-foreground">Speed</dt>
+                <dt className="text-muted-foreground">{t("Speed")}</dt>
                 <dd className="min-w-0">
                   <SpeedPicker
                     testId="task-speed"
@@ -8284,12 +8285,12 @@ function TaskDetails({
               </>
             )}
 
-            <dt className="text-muted-foreground">Project</dt>
+            <dt className="text-muted-foreground">{t("Project")}</dt>
             <dd className="min-w-0 truncate font-mono" title={task.workdir}>
               {abbreviateHome(task.workdir, homeDir)}
             </dd>
 
-            <dt className="text-muted-foreground">Isolation</dt>
+            <dt className="text-muted-foreground">{t("Isolation")}</dt>
             <dd className="min-w-0">{task.isolation}</dd>
 
             {task.branch && (() => {
@@ -8297,14 +8298,14 @@ function TaskDetails({
               if (!drift.drifted) {
                 return (
                   <>
-                    <dt className="text-muted-foreground">Branch</dt>
+                    <dt className="text-muted-foreground">{t("Branch")}</dt>
                     <dd className="min-w-0 truncate font-mono">{task.branch}</dd>
                   </>
                 );
               }
               return (
                 <>
-                  <dt className="text-muted-foreground">Checked out</dt>
+                  <dt className="text-muted-foreground">{t("Checked out")}</dt>
                   <dd
                     data-testid="task-details-checkout-branch"
                     className={cn(
@@ -8315,14 +8316,14 @@ function TaskDetails({
                   >
                     {drift.live}
                   </dd>
-                  <dt className="text-muted-foreground">Task branch</dt>
+                  <dt className="text-muted-foreground">{t("Task branch")}</dt>
                   <dd data-testid="task-details-task-branch" className="min-w-0 truncate font-mono">{task.branch}</dd>
                 </>
               );
             })()}
             {task.baseRef && (
               <>
-                <dt className="text-muted-foreground">Base</dt>
+                <dt className="text-muted-foreground">{t("Base")}</dt>
                 <dd className="min-w-0 truncate font-mono">{task.baseRef.slice(0, 12)}</dd>
               </>
             )}
@@ -8352,7 +8353,7 @@ function TaskDetails({
             )}
             {task.references.length > 0 && (
               <>
-                <dt className="text-muted-foreground self-start">Files</dt>
+                <dt className="text-muted-foreground self-start">{t("Files")}</dt>
                 <dd className="min-w-0">
                   <details open>
                     <summary className="cursor-pointer text-muted-foreground">
@@ -8764,7 +8765,7 @@ function AskQuestionsCard({
               </Button>
               {cursor && (
                 <Button variant="ghost" size="sm" data-testid="ask-questions-skip" onClick={() => void skip()} disabled={submitting}>
-                  Skip
+                  {t("Skip")}
                 </Button>
               )}
             </div>
@@ -8838,30 +8839,30 @@ function AskQuestionsCard({
           {opencode && req.allowReason === true && (
             <div className="mt-3 rounded-md border border-border/40 bg-muted/20 p-2">
               <label className="text-[11px] text-muted-foreground" htmlFor={`ask-skip-reason-${req.id}`}>
-                Reason (optional)
+                {t("Reason (optional)")}
               </label>
               <Textarea
                 id={`ask-skip-reason-${req.id}`}
                 value={skipReason}
                 onChange={(e) => setSkipReason(e.target.value)}
                 data-testid="ask-questions-skip-reason"
-                placeholder="Why you are skipping"
+                placeholder={t("Why you are skipping")}
                 rows={2}
                 className="mt-1 text-[12px]"
               />
               <p className="mt-1 text-[11px] text-muted-foreground">
-                Skip — the agent continues without an answer. A reason you type is sent along with it.
+                {t("Skip — the agent continues without an answer. A reason you type is sent along with it.")}
               </p>
             </div>
           )}
           <div className="mt-3 flex items-center justify-between">
             {cursor || opencode ? (
               <Button variant="ghost" size="sm" data-testid="ask-questions-skip" onClick={() => void skip()} disabled={submitting}>
-                Skip
+                {t("Skip")}
               </Button>
             ) : <span />}
             <Button onClick={() => setPhase("review")} disabled={!canSubmit || submitting} size="sm">
-              Review answers →
+              {t("Review answers →")}
             </Button>
           </div>
         </>
@@ -9049,7 +9050,7 @@ function TmuxPromptCard({
           </Button>
         </div>
         <p className="mt-2 text-[11px] text-muted-foreground">
-          Answering the prompt in the terminal resolves this card automatically.
+          {t("Answering the prompt in the terminal resolves this card automatically.")}
         </p>
         {openError && (
           <p className="mt-2 text-right text-[11px] text-destructive">{openError}</p>
@@ -9213,14 +9214,14 @@ function FxPermissionCard({
       {opencode && req.allowReason === true && (
         <div className="mt-3">
           <label className="text-[11px] text-muted-foreground" htmlFor={`perm-reason-${req.id}`}>
-            Reason (optional)
+            {t("Reason (optional)")}
           </label>
           <Textarea
             id={`perm-reason-${req.id}`}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             data-testid="permission-reason"
-            placeholder="Why you are rejecting this"
+            placeholder={t("Why you are rejecting this")}
             rows={2}
             className="mt-1 text-[12px]"
           />

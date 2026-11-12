@@ -5,6 +5,7 @@ import { ApiError, type AgetorClient } from "../api-client.ts";
 import { usageError } from "../usage.ts";
 import { escapeControlChars } from "../../shared/terminal-text.ts";
 import type { DbStats } from "../../shared/types.ts";
+import { ct } from "../i18n.ts";
 
 /**
  * `agetor compact [--yes|-y] [--json]` — reclaim disk space by `VACUUM`ing the
@@ -140,7 +141,7 @@ export async function cmdCompact(
   // Consent is needed before anything is written: a terminal asks, a script
   // must say --yes. `--json` alone is the read-only report (never prompts).
   if (!f.yes && !flags.json && !interactive && !deps.confirm) {
-    throw new Error("compact needs confirmation — pass --yes to compact without asking (usage: agetor compact [--yes|-y] [--json])");
+    throw new Error(ct("compact needs confirmation — pass --yes to compact without asking (usage: agetor compact [--yes|-y] [--json])"));
   }
   const api = client ?? (await getClient(flags));
 
@@ -149,7 +150,7 @@ export async function cmdCompact(
     stats = await api.dbStats();
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) {
-      throw new Error("the running agetor core is older than this CLI — update it to use `agetor compact`");
+      throw new Error(ct("the running agetor core is older than this CLI — update it to use `agetor compact`"));
     }
     throw e;
   }

@@ -69,6 +69,7 @@ import {
   type ThemePreference,
   CLAUDE_SESSIONS_LAUNCH_SCAN_PREF,
 } from "../../../shared/types.ts";
+import { t as tr, LOCALES, getLocale, setLocale, type Locale } from "@/lib/i18n";
 
 // Computed once at module load, same convention as `isMacPlatform()` in
 // `lib/platform.ts` (the single sniff) — the Settings → General font-size
@@ -458,7 +459,7 @@ export function SettingsDialog({ open, onClose, stickyUserMessages, onStickyUser
       description: stack
         ? `It is in the stack "${stack.label}"; deleting it removes it from that stack and stops its failover. Tasks already using it will fail to start until reassigned.`
         : "The alias will be removed. Tasks already using it will fail to start until reassigned.",
-      confirmLabel: "Delete",
+      confirmLabel: tr("Delete"),
       variant: "destructive",
     });
     if (!ok) return;
@@ -523,7 +524,7 @@ export function SettingsDialog({ open, onClose, stickyUserMessages, onStickyUser
       const ok = await confirm({
         title: `Disable "${h.label}"?`,
         description,
-        confirmLabel: "Disable",
+        confirmLabel: tr("Disable"),
         variant: "destructive",
       });
       if (!ok) {
@@ -607,12 +608,12 @@ export function SettingsDialog({ open, onClose, stickyUserMessages, onStickyUser
       let ok = false;
       try {
         ok = await confirm({
-          title: "Discard unsaved changes?",
+          title: tr("Discard unsaved changes?"),
           description:
             current.kind === "agent-editor"
               ? "Your edits to this agent will be lost."
               : "Your edits to this harness will be lost.",
-          confirmLabel: "Discard",
+          confirmLabel: tr("Discard"),
           variant: "destructive",
         });
       } finally {
@@ -648,7 +649,7 @@ export function SettingsDialog({ open, onClose, stickyUserMessages, onStickyUser
               variant="ghost"
               size="icon"
               onClick={() => void leaveSubpage(() => setView(backFromSubview(viewRef.current)))}
-              aria-label="Back"
+              aria-label={tr("Back")}
             >
               <ChevronLeft className="size-4" />
             </Button>
@@ -667,7 +668,7 @@ export function SettingsDialog({ open, onClose, stickyUserMessages, onStickyUser
             variant="ghost"
             size="icon"
             onClick={() => void leaveSubpage(closeModal)}
-            aria-label="Close"
+            aria-label={tr("Close")}
           >
             <X className="size-4" />
           </Button>
@@ -676,7 +677,7 @@ export function SettingsDialog({ open, onClose, stickyUserMessages, onStickyUser
 
       <div className="flex min-h-0 flex-1">
         <nav
-          aria-label="Settings sections"
+          aria-label={tr("Settings sections")}
           className="flex w-44 shrink-0 flex-col gap-1 overflow-y-auto border-r border-border/60 p-2"
         >
           {SETTINGS_SECTIONS.map((s) => {
@@ -1042,7 +1043,7 @@ function ArchivedHistorySection() {
     if (!mountedRef.current) return;
     const estimateSec = Math.max(1, Math.round(fresh?.compactEstimateSec ?? 0));
     const ok = await confirm({
-      title: "Compact the database?",
+      title: tr("Compact the database?"),
       description: (
         <>
           Rewrites the database file to give back unused space
@@ -1050,7 +1051,7 @@ function ArchivedHistorySection() {
           and Agetor won't respond while it runs. Compacting is refused while any task is running.
         </>
       ),
-      confirmLabel: "Compact",
+      confirmLabel: tr("Compact"),
     });
     if (!ok || !mountedRef.current) return;
     setCompacting({ estimateSec });
@@ -1072,7 +1073,7 @@ function ArchivedHistorySection() {
   return (
     <section className="space-y-1" data-testid="settings-archived-history">
       <label htmlFor="archived-history-retention" className="text-xs text-muted-foreground">
-        Archived task history
+        {tr("Archived task history")}
       </label>
       <Select
         id="archived-history-retention"
@@ -1106,9 +1107,9 @@ function ArchivedHistorySection() {
           disabled={compacting !== null}
           onClick={() => { void onCompact(); }}
         >
-          Compact database
+          {tr("Compact database")}
         </Button>
-        <span className="text-[11px] text-muted-foreground">Reclaims unused space; pauses Agetor briefly.</span>
+        <span className="text-[11px] text-muted-foreground">{tr("Reclaims unused space; pauses Agetor briefly.")}</span>
       </div>
       {compactResult && (
         <p className="text-[11px] text-success" data-testid="settings-db-compact-result">
@@ -1132,7 +1133,7 @@ function ArchivedHistorySection() {
                 Compacting… ~{compacting?.estimateSec ?? 0} s
               </h2>
               <p className="text-xs text-muted-foreground">
-                Agetor won't respond until this finishes. Please don't quit.
+                {tr("Agetor won't respond until this finishes. Please don't quit.")}
               </p>
             </div>
           </div>
@@ -1232,7 +1233,7 @@ function GeneralSection({
   return (
     <div className="space-y-4 pt-3 text-sm">
       <section className="space-y-1">
-        <label className="text-xs text-muted-foreground">Default harness for new tasks</label>
+        <label className="text-xs text-muted-foreground">{tr("Default harness for new tasks")}</label>
         <Select value={defaultHarness} onChange={(e) => onPickDefault(e.target.value)}>
           {enabledHarnesses.map((h) => (
             <option key={h.id} value={h.id}>
@@ -1249,7 +1250,7 @@ function GeneralSection({
           value={tmuxSource}
           onChange={(e) => onPickTmuxSource(e.target.value as "system" | "bundled")}
         >
-          <option value="system">System tmux (from PATH)</option>
+          <option value="system">{tr("System tmux (from PATH)")}</option>
           <option value="bundled" disabled={!bundledTmuxAvailable}>
             {bundledTmuxAvailable
               ? "Bundled tmux (shipped with Agetor)"
@@ -1257,43 +1258,64 @@ function GeneralSection({
           </option>
         </Select>
         <p className="text-[11px] text-muted-foreground">
-          Claude Code runs through a tmux session per task. Switch to the bundled
-          binary if you don't want to install tmux system-wide.
+          {tr("Claude Code runs through a tmux session per task. Switch to the bundled binary if you don't want to install tmux system-wide.")}
         </p>
       </section>
 
       <section className="space-y-1">
-        <label className="text-xs text-muted-foreground">Theme</label>
+        <label className="text-xs text-muted-foreground">{tr("Language")}</label>
+        <div className="grid grid-cols-2 gap-1" role="group" aria-label={tr("Language")}>
+          {LOCALES.map((l) => (
+            <Button
+              key={l.id}
+              size="sm"
+              variant={getLocale() === l.id ? "default" : "outline"}
+              onClick={() => {
+                // Se guarda también en el core (preferencia `locale`) para que sus mensajes y el CLI usen el mismo idioma.
+                void api.setPreference("locale", l.id).catch(() => {}).finally(() => setLocale(l.id as Locale));
+              }}
+              className="justify-start"
+              data-testid={`language-${l.id}`}
+            >
+              {l.label}
+            </Button>
+          ))}
+        </div>
+        <p className="text-[11px] text-muted-foreground">{tr("The interface language. Changing it reloads the app.")}</p>
+      </section>
+
+      <section className="space-y-1">
+        <label className="text-xs text-muted-foreground">{tr("Theme")}</label>
         <div className="grid grid-cols-3 gap-1">
-          {THEME_PREFERENCES.map((t) => {
-            const Icon = THEME_PREFERENCE_ICON[t.id];
+          {THEME_PREFERENCES.map((th) => {
+            const Icon = THEME_PREFERENCE_ICON[th.id];
             return (
               <Button
-                key={t.id}
+                key={th.id}
                 size="sm"
-                variant={themePreference === t.id ? "default" : "outline"}
-                onClick={() => setThemePreference(t.id)}
+                variant={themePreference === th.id ? "default" : "outline"}
+                onClick={() => setThemePreference(th.id)}
                 className="justify-start"
               >
                 <Icon className="mr-1.5 size-3.5" />
-                {t.label}
+                {tr(th.label)}
               </Button>
             );
           })}
         </div>
         <p className="text-[11px] text-muted-foreground">
-          Auto follows your system's appearance and switches live if it changes.
+          {tr("Auto follows your system's appearance and switches live if it changes.")}
         </p>
       </section>
 
       <section className="space-y-1">
-        <label className="text-xs text-muted-foreground">Font size</label>
-        <div role="group" aria-label="Font size" className="flex items-center gap-1.5">
+        <label className="text-xs text-muted-foreground">{tr("Font size")}</label>
+        <div role="group" aria-label={tr("Font size")} className="flex items-center gap-1.5">
           <Button
             size="sm"
             variant="outline"
             className="w-8 px-0 aria-disabled:cursor-default aria-disabled:opacity-50"
-            aria-label="Decrease font size"
+            aria-label={tr("Decrease font size")}
             aria-disabled={!canDecreaseFontSize}
             onClick={() => {
               if (!canDecreaseFontSize) return;
@@ -1309,7 +1331,7 @@ function GeneralSection({
             size="sm"
             variant="outline"
             className="w-8 px-0 aria-disabled:cursor-default aria-disabled:opacity-50"
-            aria-label="Increase font size"
+            aria-label={tr("Increase font size")}
             aria-disabled={!canIncreaseFontSize}
             onClick={() => {
               if (!canIncreaseFontSize) return;
@@ -1322,14 +1344,14 @@ function GeneralSection({
             size="sm"
             variant="ghost"
             className="aria-disabled:cursor-default aria-disabled:opacity-50"
-            aria-label="Reset font size"
+            aria-label={tr("Reset font size")}
             aria-disabled={!canResetFontSize}
             onClick={() => {
               if (!canResetFontSize) return;
               resetFontSize({ silent: true });
             }}
           >
-            Reset
+            {tr("Reset")}
           </Button>
         </div>
         <p className="text-[11px] text-muted-foreground">{FONT_SIZE_HINT}</p>
@@ -1340,49 +1362,49 @@ function GeneralSection({
       <section className="space-y-1">
         <div className="flex items-center justify-between gap-4">
           <label htmlFor="claude-sessions-launch-scan" className="text-xs text-muted-foreground">
-            Look for Claude Code and OpenCode sessions on launch
+            {tr("Look for Claude Code and OpenCode sessions on launch")}
           </label>
           <Switch
             id="claude-sessions-launch-scan"
             data-testid="claude-sessions-launch-scan"
             checked={launchScan}
             onCheckedChange={setLaunchScanPref}
-            aria-label="Look for Claude Code and OpenCode sessions on launch"
+            aria-label={tr("Look for Claude Code and OpenCode sessions on launch")}
           />
         </div>
         <p className="text-[11px] text-muted-foreground">
-          On startup, notice Claude Code and OpenCode sessions that were started outside Agetor so you can import them.
+          {tr("On startup, notice Claude Code and OpenCode sessions that were started outside Agetor so you can import them.")}
         </p>
       </section>
 
       <section className="space-y-1">
         <div className="flex items-center justify-between gap-4">
           <label htmlFor="sticky-user-messages" className="text-xs text-muted-foreground">
-            Sticky user messages
+            {tr("Sticky user messages")}
           </label>
           <Switch
             id="sticky-user-messages"
             checked={stickyUserMessages}
             onCheckedChange={onStickyUserMessagesChange}
-            aria-label="Sticky user messages"
+            aria-label={tr("Sticky user messages")}
           />
         </div>
         <p className="text-[11px] text-muted-foreground">
-          Keep your latest sent message visible while its response scrolls. Turn this off for a standard chat list.
+          {tr("Keep your latest sent message visible while its response scrolls. Turn this off for a standard chat list.")}
         </p>
       </section>
 
       <section className="space-y-1">
         <div className="flex items-center justify-between gap-4">
           <label htmlFor="disclaim-spawned-agents" className="text-xs text-muted-foreground">
-            Keep Agetor's macOS permissions away from agents (macOS)
+            {tr("Keep Agetor's macOS permissions away from agents (macOS)")}
           </label>
           <Switch
             id="disclaim-spawned-agents"
             checked={disclaimSpawnedAgents}
             // keep in sync with DISCLAIM_PREF_KEY in src/bun/disclaim.ts
             onCheckedChange={onDisclaimSpawnedAgentsChange}
-            aria-label="Keep Agetor's macOS permissions away from agents (macOS)"
+            aria-label={tr("Keep Agetor's macOS permissions away from agents (macOS)")}
           />
         </div>
         <p className="text-[11px] text-muted-foreground">
@@ -1395,14 +1417,14 @@ function GeneralSection({
       <section className="space-y-1">
         <div className="flex items-center justify-between gap-4">
           <label htmlFor="fx-auto-resume" className="text-xs text-muted-foreground">
-            Auto-resume fx after a rate limit
+            {tr("Auto-resume fx after a rate limit")}
           </label>
           <Switch
             id="fx-auto-resume"
             data-testid="settings-fx-auto-resume"
             checked={fxAutoResume.enabled}
             onCheckedChange={(enabled) => onFxAutoResumeChange({ ...fxAutoResume, enabled })}
-            aria-label="Auto-resume fx after a rate limit"
+            aria-label={tr("Auto-resume fx after a rate limit")}
           />
         </div>
         <p className="text-[11px] text-muted-foreground">
@@ -1410,7 +1432,7 @@ function GeneralSection({
         </p>
         <div className="flex items-center justify-between gap-4 pt-1">
           <label htmlFor="fx-auto-resume-delay" className="text-xs text-muted-foreground">
-            Auto-resume delay (seconds)
+            {tr("Auto-resume delay (seconds)")}
           </label>
           <Input
             id="fx-auto-resume-delay"
@@ -1437,7 +1459,7 @@ function GeneralSection({
       <ArchivedHistorySection />
 
       <section className="space-y-1">
-        <label className="text-xs text-muted-foreground">Getting started</label>
+        <label className="text-xs text-muted-foreground">{tr("Getting started")}</label>
         <div>
           <Button
             variant="outline"
@@ -1460,11 +1482,11 @@ function GeneralSection({
               onClose();
             }}
           >
-            Show getting started guide
+            {tr("Show getting started guide")}
           </Button>
         </div>
         <p className="text-[11px] text-muted-foreground">
-          Bring back the onboarding checklist.
+          {tr("Bring back the onboarding checklist.")}
         </p>
       </section>
     </div>
@@ -1522,7 +1544,7 @@ function HarnessesSection({
     <div className="space-y-4 pt-3 text-sm">
       <section className="space-y-2">
         <div className="flex items-center justify-between">
-          <label className="text-xs text-muted-foreground">Harnesses</label>
+          <label className="text-xs text-muted-foreground">{tr("Harnesses")}</label>
           <Button
             variant="outline"
             size="sm"
@@ -1578,7 +1600,7 @@ function HarnessesSection({
                       <span
                         data-testid="harness-stack-chip"
                         className="rounded border border-info/40 px-1.5 py-0.5 text-[10px] font-medium text-info"
-                        title="Harness account stack — fails over to the next account at its limit"
+                        title={tr("Harness account stack — fails over to the next account at its limit")}
                       >
                         {stackAt.text}
                       </span>
@@ -1636,7 +1658,7 @@ function HarnessesSection({
                     onClick={() => setUsageOpenFor((cur) => (cur === h.id ? null : h.id))}
                     aria-label={`${usageOpenFor === h.id ? "Hide" : "Show"} token usage for ${h.label}`}
                     aria-expanded={usageOpenFor === h.id}
-                    title="Token usage — this account's local 30-day rollup"
+                    title={tr("Token usage — this account's local 30-day rollup")}
                   >
                     <BarChart3 className="size-4" />
                   </Button>
@@ -1646,14 +1668,14 @@ function HarnessesSection({
                   variant="ghost"
                   onClick={() => onOpenTerminal(h)}
                   aria-label={`Open ${h.label} in Terminal`}
-                  title="Open in Terminal — load this harness's env to log in or inspect it"
+                  title={tr("Open in Terminal — load this harness's env to log in or inspect it")}
                 >
                   <Terminal className="size-4" />
                 </Button>
                 {!h.isBuiltin && (
                   <>
                     <Button size="sm" variant="ghost" onClick={() => onEdit(h)}>
-                      Edit
+                      {tr("Edit")}
                     </Button>
                     <Button
                       size="icon"
@@ -1669,10 +1691,9 @@ function HarnessesSection({
               {h.kind === "fx" && (
                 <div className="flex items-start gap-2 pl-6">
                   <div className="min-w-0 flex-1">
-                    <div className="text-xs">Load profile MCP servers</div>
+                    <div className="text-xs">{tr("Load profile MCP servers")}</div>
                     <div className="text-[11px] text-muted-foreground">
-                      Loads the MCP servers from your own fx profile into each
-                      task's session (fx 0.0.13 or later).
+                      {tr("Loads the MCP servers from your own fx profile into each task's session (fx 0.0.13 or later).")}
                     </div>
                   </div>
                   <Switch
@@ -1726,12 +1747,12 @@ function AccountUsageTable({ harnessId }: { harnessId: string }) {
     return <p className="px-1 text-[11px] text-danger">{error}</p>;
   }
   if (days === null) {
-    return <p className="px-1 text-[11px] text-muted-foreground">Loading usage…</p>;
+    return <p className="px-1 text-[11px] text-muted-foreground">{tr("Loading usage…")}</p>;
   }
   if (days.length === 0) {
     return (
       <p className="px-1 text-[11px] text-muted-foreground">
-        No local usage history for this account (last 30 days).
+        {tr("No local usage history for this account (last 30 days).")}
       </p>
     );
   }
@@ -1740,12 +1761,12 @@ function AccountUsageTable({ harnessId }: { harnessId: string }) {
       <table className="w-full text-[11px]">
         <thead className="sticky top-0 bg-muted/80 text-muted-foreground">
           <tr>
-            <th className="px-2 py-1 text-left font-medium">Day</th>
-            <th className="px-2 py-1 text-left font-medium">Model</th>
-            <th className="px-2 py-1 text-right font-medium">In</th>
-            <th className="px-2 py-1 text-right font-medium">Out</th>
+            <th className="px-2 py-1 text-left font-medium">{tr("Day")}</th>
+            <th className="px-2 py-1 text-left font-medium">{tr("Model")}</th>
+            <th className="px-2 py-1 text-right font-medium">{tr("In")}</th>
+            <th className="px-2 py-1 text-right font-medium">{tr("Out")}</th>
             <th className="px-2 py-1 text-right font-medium">Cache w/r</th>
-            <th className="px-2 py-1 text-right font-medium">Msgs</th>
+            <th className="px-2 py-1 text-right font-medium">{tr("Msgs")}</th>
           </tr>
         </thead>
         <tbody>
@@ -1797,12 +1818,12 @@ function TemplatePicker({ onPick }: { onPick: (t: HarnessTemplate) => void }) {
   return (
     <div className="space-y-2 pt-3">
       <p className="text-xs text-muted-foreground">
-        Pick a starting point. You can edit every field before saving.
+        {tr("Pick a starting point. You can edit every field before saving.")}
       </p>
       {discovered.length > 0 && (
         <div className="space-y-1.5">
           <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Detected accounts
+            {tr("Detected accounts")}
           </p>
           {discovered.map((a) => (
             <button
@@ -1844,7 +1865,7 @@ function TemplatePicker({ onPick }: { onPick: (t: HarnessTemplate) => void }) {
             >
               {experimental && (
                 <span className="mt-0.5 rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-warning">
-                  Experimental
+                  {tr("Experimental")}
                 </span>
               )}
               <AgentIcon kind={t.kind} className="mt-0.5 size-4 shrink-0" />
@@ -1986,7 +2007,7 @@ function Editor({
           />
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">Label</label>
+          <label className="text-xs text-muted-foreground">{tr("Label")}</label>
           <Input
             value={label}
             onChange={(e) => setLabel(e.target.value)}
@@ -1996,7 +2017,7 @@ function Editor({
         </div>
       </div>
       <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">Harness type</label>
+        <label className="text-xs text-muted-foreground">{tr("Harness type")}</label>
         <div className="grid grid-cols-3 gap-1 sm:grid-cols-8">
           {(["claude-code", "codex", "cursor", "gemini", "antigravity", "fx", "opencode", "copilot"] as AgentKind[]).map((k) => {
             const experimental = isExperimentalKind(k);
@@ -2042,7 +2063,7 @@ function Editor({
         </p>
       </div>
       <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">Bin override (absolute path; optional)</label>
+        <label className="text-xs text-muted-foreground">{tr("Bin override (absolute path; optional)")}</label>
         <Input
           {...IDENTIFIER_INPUT_PROPS}
           value={bin}
@@ -2052,7 +2073,7 @@ function Editor({
         />
       </div>
       <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">Env vars (one KEY=value per line)</label>
+        <label className="text-xs text-muted-foreground">{tr("Env vars (one KEY=value per line)")}</label>
         <Textarea
           value={envText}
           onChange={(e) => setEnvText(e.target.value)}
@@ -2075,7 +2096,7 @@ function Editor({
 
       <div className="flex justify-end gap-2 border-t border-border/60 pt-3">
         <Button variant="outline" onClick={onCancel} disabled={busy}>
-          Cancel
+          {tr("Cancel")}
         </Button>
         <Button onClick={submit} disabled={busy}>
           {isEdit ? "Save" : "Add harness"}

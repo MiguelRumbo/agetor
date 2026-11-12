@@ -3,6 +3,7 @@ import { ArrowDownToLine, ArrowDownUp, GitBranch, RefreshCw } from "lucide-react
 import { api, type BranchInfo } from "@/lib/api";
 import { SearchSelect } from "@/components/ui/search-select";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 interface Props {
   /** Workdir whose branches to list. Empty = no project picked yet. */
@@ -294,7 +295,7 @@ export function BranchPicker({ workdir, value, onChange, onAutoSelect, className
         placement={placement}
         disabled={disabled}
         title={title ?? (error ? `Couldn't list branches: ${error}` : undefined)}
-        placeholder="Search branches…"
+        placeholder={t("Search branches…")}
         emptyLabel="HEAD"
         leadingIcon={<GitBranch className="size-3.5" />}
         displayValue={(v) => (v === HEAD_VALUE ? "HEAD" : v)}

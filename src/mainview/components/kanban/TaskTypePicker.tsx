@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { taskTypeIcon } from "@/lib/task-type-icon";
 import { TASK_TYPES, type TaskType } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 /**
  * The Type grid — Task / Bug / Spike buttons, each with its icon and hint
@@ -21,7 +22,7 @@ export function TaskTypePicker({
 }) {
   return (
     <div className={cn("space-y-1", className)} data-testid="task-type-picker">
-      <label className="text-muted-foreground">Type</label>
+      <label className="text-muted-foreground">{t("Type")}</label>
       <div className="grid grid-cols-3 gap-1">
         {TASK_TYPES.map((t) => {
           const Icon = taskTypeIcon(t.icon);

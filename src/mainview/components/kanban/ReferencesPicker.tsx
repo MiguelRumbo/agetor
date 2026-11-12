@@ -8,6 +8,7 @@ import { captureDroppedOrPastedItems } from "@/lib/capture-refs";
 import type { CaptureResult } from "@/lib/capture-refs";
 import { api } from "@/lib/api";
 import type { TaskReference } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 export { captureDroppedOrPastedItems, type CapturedItem, type CaptureResult } from "@/lib/capture-refs";
 
@@ -153,7 +154,7 @@ export function ReferencesPicker({
               onClick={() => remove(r.path)}
               data-testid="refs-remove"
               className="-mr-0.5 ml-0.5 rounded-sm p-0.5 text-muted-foreground hover:text-foreground hover:bg-accent/40"
-              title="Remove"
+              title={t("Remove")}
             >
               <X className="size-3" />
             </button>
@@ -196,7 +197,7 @@ export function ReferencesPicker({
 
   const dropOverlay = dragging && (
     <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-primary/10 text-xs font-medium text-primary">
-      Drop files or folders to attach
+      {t("Drop files or folders to attach")}
     </div>
   );
 
@@ -253,8 +254,8 @@ export function ReferencesPicker({
           {label}{" "}
           {refs.length > 0 && <span className="font-mono">({refs.length})</span>}
           <InfoTip
-            text="Attach files or folders with the buttons or drag from Finder. Absolute paths are inlined into the prompt as text."
-            label="About files and folders"
+            text={t("Attach files or folders with the buttons or drag from Finder. Absolute paths are inlined into the prompt as text.")}
+            label={t("About files and folders")}
             align="left"
           />
         </span>
@@ -263,7 +264,7 @@ export function ReferencesPicker({
       <div className="mt-1.5 space-y-1">
         {refs.length > 0
           ? chips
-          : <p className="text-[10px] text-muted-foreground">No files attached yet.</p>}
+          : <p className="text-[10px] text-muted-foreground">{t("No files attached yet.")}</p>}
         {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
       </div>
       {dropOverlay}

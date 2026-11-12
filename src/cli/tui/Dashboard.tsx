@@ -41,6 +41,7 @@ import { trimmedResultNote } from "../commands/logs.ts";
 import { isHiddenToolEvent } from "../../shared/tool-visibility.ts";
 import { cursorAskFromToolUse, cursorAskPlainLines } from "../../shared/cursor-ask.ts";
 import { supersededToolUseIndexes } from "../../shared/tool-use-revisions.ts";
+import { ct } from "../i18n.ts";
 
 type Mode = "nav" | "compose" | "answer";
 
@@ -297,7 +298,7 @@ export function Dashboard({
 
   const sendMessage = (task: Task, text: string, okLabel = "→ sent") => {
     if (task.pendingInteractionCount > 0) {
-      setStatus("answer the pending question first (g)");
+      setStatus(ct("answer the pending question first (g)"));
       return;
     }
     void (async () => {
@@ -307,7 +308,7 @@ export function Dashboard({
         const runs = task.runId ? [] : await client.getRuns(task.id);
         const runId = resumableRunId(task, runs);
         if (!runId) {
-          setStatus("no run yet — press s to start");
+          setStatus(ct("no run yet — press s to start"));
           return;
         }
         const res = await client.sendInput(runId, text);
@@ -346,7 +347,7 @@ export function Dashboard({
         setTargetId(selected.id);
         return setMode("answer");
       }
-      setStatus("nothing to answer");
+      setStatus(ct("nothing to answer"));
       return;
     }
     if (input === "c" && selected) {
@@ -377,7 +378,7 @@ export function Dashboard({
         const parentIdx = sorted.findIndex((t) => t.id === parentId);
         if (parentIdx >= 0) setSel(parentIdx);
       } else {
-        setStatus("not a pipeline task");
+        setStatus(ct("not a pipeline task"));
       }
       return;
     }
@@ -398,7 +399,7 @@ export function Dashboard({
         return;
       }
       if (runControl(selected) === "stop") {
-        setStatus("running — x stops");
+        setStatus(ct("running — x stops"));
         return;
       }
       void client
@@ -434,7 +435,7 @@ export function Dashboard({
           }
         })();
       } else if (ctrl === "stop") {
-        setStatus("already running — press x to stop");
+        setStatus(ct("already running — press x to stop"));
       } else {
         setStatus(`finished — continue with: agetor send ${sid}`);
       }
@@ -467,7 +468,7 @@ export function Dashboard({
           .then(() => setStatus(`■ auto-resume cancelled ${sid}`))
           .catch((e) => setStatus(`! ${e.message}`));
       } else {
-        setStatus("task is not running");
+        setStatus(ct("task is not running"));
       }
     }
     // Continue an fx response the Vercel AI Gateway (or another recoverable
@@ -512,7 +513,7 @@ export function Dashboard({
           overflow="hidden"
         >
           {sorted.length === 0 ? (
-            <Text dimColor>no tasks — run 'agetor add'</Text>
+            <Text dimColor>{ct("no tasks — run 'agetor add'")}</Text>
           ) : (
             boardRows.map((r, i) => (
               <TaskRow
@@ -547,7 +548,7 @@ export function Dashboard({
             <Box flexDirection="column">
               <Logo maxWidth={detailWidth} />
               <Box marginTop={1}>
-                <Text dimColor>select a task to watch its conversation</Text>
+                <Text dimColor>{ct("select a task to watch its conversation")}</Text>
               </Box>
             </Box>
           )}
@@ -742,7 +743,7 @@ function Detail({
         <Text color={columnColor(task.column)}>{task.column}</Text>
         {account ? <Text dimColor> · {escapeControlChars(account)}</Text> : null}
         {task.pendingInteractionCount > 0 ? (
-          <Text color="yellow"> · ! press g to answer</Text>
+          <Text color="yellow"> {ct("· ! press g to answer")}</Text>
         ) : null}
         {showResumeHint ? (
           autoResume ? (
@@ -752,7 +753,7 @@ function Detail({
               x cancels
             </Text>
           ) : (
-            <Text color="yellow"> · ⚠ paused — press r to resume</Text>
+            <Text color="yellow"> {ct("· ⚠ paused — press r to resume")}</Text>
           )
         ) : null}
       </Text>
@@ -769,7 +770,7 @@ function Detail({
               : "press p to list its step tasks, then select one to watch its transcript"}
           </Text>
         ) : events.length === 0 ? (
-          <Text dimColor>no events yet</Text>
+          <Text dimColor>{ct("no events yet")}</Text>
         ) : (
           events.map((e, i) => (
             supersededToolUses.has(i) ? null : (
@@ -1119,7 +1120,7 @@ const EventLine = memo(function EventLine({
         </Text>
       );
     case "interaction_resolved":
-      return <Text dimColor>✓ answered</Text>;
+      return <Text dimColor>{ct("✓ answered")}</Text>;
     default:
       return <Text wrap="truncate-end">{e.data}</Text>;
   }
@@ -1168,10 +1169,10 @@ function Footer({
 }) {
   const hint =
     mode === "compose"
-      ? "type a message · enter send · esc cancel"
+      ? ct("type a message · enter send · esc cancel")
       : mode === "answer"
-        ? "↑/↓ move · space toggle · enter submit · esc cancel"
-        : `↑/↓ select · s run · x stop · m msg · c commit · g answer · ${pipelineSelected ? "p steps" : "r resume"} · q quit`;
+        ? ct("↑/↓ move · space toggle · enter submit · esc cancel")
+        : `${ct("↑/↓ select · s run · x stop · m msg · c commit · g answer")} · ${pipelineSelected ? ct("p steps") : ct("r resume")} · ${ct("q quit")}`;
   return (
     <Box justifyContent="space-between" paddingX={1}>
       <Text dimColor>{hint}</Text>

@@ -5,6 +5,7 @@ import { SearchSelect } from "@/components/ui/search-select";
 import { CloneProjectDialog } from "@/components/kanban/CloneProjectDialog";
 import { ImportSessionsDialog } from "@/components/kanban/ImportSessionsDialog";
 import type { Project } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 interface Props {
   value: string;
@@ -128,7 +129,7 @@ export function ProjectPicker({
         disabled={disabled}
         title={title}
         placement={placement}
-        placeholder="Search projects…"
+        placeholder={t("Search projects…")}
         emptyLabel={emptyLabel ?? "Select project…"}
         leadingIcon={<Folder className="size-3.5" />}
         displayValue={(v) => basename(v) || v}

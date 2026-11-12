@@ -22,6 +22,7 @@ import {
 } from "../../../shared/types.ts";
 import { buildDeleteConfirmCopy, triageDeleteOutcome } from "./worktree-delete-intent.ts";
 import { driftOf, driftTitle } from "@/lib/branch-drift";
+import { t, tColumn } from "@/lib/i18n";
 
 interface Props {
   open: boolean;
@@ -87,7 +88,7 @@ function statusValue(w: WorktreeInfo): string {
 
 function statusLabel(w: WorktreeInfo): string {
   if (w.column == null) return "";
-  return COLUMNS.find((c) => c.id === w.column)?.label ?? w.column;
+  return COLUMNS.find((c) => c.id === w.column)?.label ? tColumn(COLUMNS.find((c) => c.id === w.column)!.label) : w.column;
 }
 
 type SortField = "updated" | "project" | "status" | "branch";
@@ -212,7 +213,7 @@ export function WorktreesDialog({ open, onClose, tasks, projects, onOpenTask, ho
   }, [worktrees, projectValue, projectLabel]);
 
   const statusItems = useMemo(
-    () => [...COLUMNS.map((c) => ({ value: c.id as string, label: c.label })), { value: "archived", label: "Archived" }],
+    () => [...COLUMNS.map((c) => ({ value: c.id as string, label: tColumn(c.label) })), { value: "archived", label: t("Archived") }],
     [],
   );
 
@@ -306,7 +307,7 @@ export function WorktreesDialog({ open, onClose, tasks, projects, onOpenTask, ho
             )}
             {copy.showDirtyWarning && (
               <div className="mt-2 font-medium text-danger">
-                This worktree has uncommitted changes — they will be permanently discarded.
+                {t("This worktree has uncommitted changes — they will be permanently discarded.")}
               </div>
             )}
             {copy.unknown && (
@@ -345,9 +346,9 @@ export function WorktreesDialog({ open, onClose, tasks, projects, onOpenTask, ho
 
   const deleteOrphan = async (w: WorktreeInfo) => {
     const ok = await confirm({
-      title: "Delete orphaned worktree?",
-      description: "No ticket owns this directory; it will be permanently removed.",
-      confirmLabel: "Delete",
+      title: t("Delete orphaned worktree?"),
+      description: t("No ticket owns this directory; it will be permanently removed."),
+      confirmLabel: t("Delete"),
       variant: "destructive",
     });
     if (!ok) return;
@@ -384,14 +385,14 @@ export function WorktreesDialog({ open, onClose, tasks, projects, onOpenTask, ho
           <Button
             size="icon"
             variant="ghost"
-            title="Refresh"
-            aria-label="Refresh"
+            title={t("Refresh")}
+            aria-label={t("Refresh")}
             disabled={refreshing}
             onClick={() => { void refresh(true, true); }}
           >
             {refreshing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
           </Button>
-          <Button variant="ghost" size="icon" title="Close" aria-label="Close" onClick={onClose}>
+          <Button variant="ghost" size="icon" title={t("Close")} aria-label={t("Close")} onClick={onClose}>
             <X className="size-4" />
           </Button>
         </div>
@@ -404,7 +405,7 @@ export function WorktreesDialog({ open, onClose, tasks, projects, onOpenTask, ho
             {...IDENTIFIER_INPUT_PROPS}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search title, branch, project, path…"
+            placeholder={t("Search title, branch, project, path…")}
             className="pl-8"
           />
         </div>
@@ -413,7 +414,7 @@ export function WorktreesDialog({ open, onClose, tasks, projects, onOpenTask, ho
           onChange={setProjectFilter}
           items={projectItems}
           emptyLabel="All projects"
-          placeholder="Search projects…"
+          placeholder={t("Search projects…")}
           className="w-48"
         />
         <MultiSearchSelect
@@ -421,35 +422,35 @@ export function WorktreesDialog({ open, onClose, tasks, projects, onOpenTask, ho
           onChange={setStatusFilter}
           items={statusItems}
           emptyLabel="All statuses"
-          placeholder="Search statuses…"
+          placeholder={t("Search statuses…")}
           className="w-44"
         />
         <Select
           value={staleFilter}
           onChange={(e) => setStaleFilter(e.target.value as StaleFilter)}
           className="w-36"
-          title="Filter by staleness"
+          title={t("Filter by staleness")}
         >
-          <option value="all">All</option>
-          <option value="stale">Stale only</option>
-          <option value="fresh">Fresh only</option>
+          <option value="all">{t("All")}</option>
+          <option value="stale">{t("Stale only")}</option>
+          <option value="fresh">{t("Fresh only")}</option>
         </Select>
         <Select
           value={sortField}
           onChange={(e) => setSortField(e.target.value as SortField)}
           className="w-32"
-          title="Sort field"
+          title={t("Sort field")}
         >
-          <option value="updated">Updated</option>
-          <option value="project">Project</option>
-          <option value="status">Status</option>
-          <option value="branch">Branch</option>
+          <option value="updated">{t("Updated")}</option>
+          <option value="project">{t("Project")}</option>
+          <option value="status">{t("Status")}</option>
+          <option value="branch">{t("Branch")}</option>
         </Select>
         <Button
           size="icon"
           variant="outline"
           title={sortDir === "asc" ? "Ascending" : "Descending"}
-          aria-label="Toggle sort direction"
+          aria-label={t("Toggle sort direction")}
           onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
         >
           {sortDir === "asc" ? <ArrowUp className="size-4" /> : <ArrowDown className="size-4" />}
@@ -465,7 +466,7 @@ export function WorktreesDialog({ open, onClose, tasks, projects, onOpenTask, ho
               setStaleFilter("all");
             }}
           >
-            Clear
+            {t("Clear")}
           </Button>
         )}
       </div>
@@ -513,7 +514,7 @@ export function WorktreesDialog({ open, onClose, tasks, projects, onOpenTask, ho
                           type="button"
                           className="min-w-0 truncate text-left text-sm font-medium hover:underline"
                           onClick={() => onOpenTask(task)}
-                          title="Open task"
+                          title={t("Open task")}
                         >
                           {task.title}
                         </button>
@@ -527,13 +528,13 @@ export function WorktreesDialog({ open, onClose, tasks, projects, onOpenTask, ho
                       {w.column != null && (
                         <Badge variant="outline">{statusLabel(w)}</Badge>
                       )}
-                      {w.archivedAt != null && <Badge variant="secondary">Archived</Badge>}
+                      {w.archivedAt != null && <Badge variant="secondary">{t("Archived")}</Badge>}
                       {w.stale && (
                         <Badge
                           variant="destructive"
                           title={w.staleReasons.map((r) => STALE_REASON_LABEL[r]).join(", ")}
                         >
-                          Stale
+                          {t("Stale")}
                         </Badge>
                       )}
                     </div>
@@ -565,12 +566,12 @@ export function WorktreesDialog({ open, onClose, tasks, projects, onOpenTask, ho
                         <span className="text-success">agents working</span>
                       )}
                       {status === "loading" && (
-                        <Loader2 className="size-3 animate-spin text-muted-foreground" aria-label="Loading git status" />
+                        <Loader2 className="size-3 animate-spin text-muted-foreground" aria-label={t("Loading git status")} />
                       )}
                       {status && status !== "loading" && !status.ignored && (
                         <>
                           {status.dirty && (
-                            <span className="text-warning" title="Has uncommitted changes">
+                            <span className="text-warning" title={t("Has uncommitted changes")}>
                               uncommitted
                             </span>
                           )}
@@ -612,7 +613,7 @@ export function WorktreesDialog({ open, onClose, tasks, projects, onOpenTask, ho
                         ? (w.taskId ? "Stop the running agent and delete worktree" : "Stop the run first")
                         : "Delete worktree"
                     }
-                    aria-label="Delete worktree"
+                    aria-label={t("Delete worktree")}
                     disabled={(w.runActive && !w.taskId) || busy}
                     onClick={() => { void (w.taskId ? deleteTaskBacked(w) : deleteOrphan(w)); }}
                   >

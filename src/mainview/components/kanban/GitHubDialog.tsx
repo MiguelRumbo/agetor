@@ -130,6 +130,7 @@ import {
   providerTargetKey,
   type BoundProvider,
 } from "../../lib/provider-caps.ts";
+import { t } from "@/lib/i18n";
 
 // Hoisted ReactMarkdown `components` map for GitHub markdown bodies (PR/issue
 // descriptions, comments, list previews). Module scope keeps the prop identity
@@ -410,7 +411,7 @@ function LabelAssigneeMilestoneFields({
       {showLabels && (repoLabels.length > 0 ? (
         <div
           className="flex h-8 flex-wrap items-center gap-1 overflow-y-auto rounded-md border border-input bg-transparent px-1.5 py-1"
-          title="Labels"
+          title={t("Labels")}
         >
           {labelNames.map((name) => (
             <button
@@ -429,7 +430,7 @@ function LabelAssigneeMilestoneFields({
           {...IDENTIFIER_INPUT_PROPS}
           value={labelDraft}
           onChange={(e) => onLabelDraftChange(e.target.value)}
-          placeholder="Labels, comma separated"
+          placeholder={t("Labels, comma separated")}
           className="h-8 text-xs"
           disabled={disabled}
         />
@@ -437,7 +438,7 @@ function LabelAssigneeMilestoneFields({
       {repoAssignees.length > 0 ? (
         <div
           className="flex h-8 flex-wrap items-center gap-1 overflow-y-auto rounded-md border border-input bg-transparent px-1.5 py-1"
-          title="Assignees"
+          title={t("Assignees")}
         >
           {assigneeLogins.map((login) => (
             <button
@@ -456,7 +457,7 @@ function LabelAssigneeMilestoneFields({
           {...IDENTIFIER_INPUT_PROPS}
           value={assigneeDraft}
           onChange={(e) => onAssigneeDraftChange(e.target.value)}
-          placeholder="Assignees, comma separated"
+          placeholder={t("Assignees, comma separated")}
           className="h-8 text-xs"
           disabled={disabled}
         />
@@ -467,7 +468,7 @@ function LabelAssigneeMilestoneFields({
           onChange={(e) => onMilestoneDraftChange(e.target.value)}
           className="h-8 text-xs"
           disabled={disabled}
-          aria-label="Milestone"
+          aria-label={t("Milestone")}
         >
           <option value="">— none —</option>
           {milestoneOptions.map((o) => (
@@ -481,7 +482,7 @@ function LabelAssigneeMilestoneFields({
           {...IDENTIFIER_INPUT_PROPS}
           value={milestoneDraft}
           onChange={(e) => onMilestoneDraftChange(e.target.value)}
-          placeholder="Milestone number"
+          placeholder={t("Milestone number")}
           className="h-8 text-xs"
           disabled={disabled}
         />
@@ -1360,7 +1361,7 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
     }
     // "All repositories" (G8/F15) always leads the list — the backend filters
     // the candidate paths down to the ones with a GitHub remote.
-    opts.unshift({ path: AGGREGATE_PROJECT_PATH, label: "All repositories" });
+    opts.unshift({ path: AGGREGATE_PROJECT_PATH, label: t("All repositories") });
     return opts;
   }, [projects, projectPath]);
 
@@ -3420,8 +3421,8 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
             <Button
               size="icon"
               variant="ghost"
-              aria-label="Back"
-              title="Back to list"
+              aria-label={t("Back")}
+              title={t("Back to list")}
               onClick={closeDetail}
             >
               <ChevronLeft className="size-4" />
@@ -3432,7 +3433,7 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
                 {isAggregate && repoLabelFor(expandedItem) && (
                   <span
                     className="rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground"
-                    title="Repository this item belongs to"
+                    title={t("Repository this item belongs to")}
                   >
                     {repoLabelFor(expandedItem)}
                   </span>
@@ -3446,8 +3447,8 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
             <Button
               size="icon"
               variant="ghost"
-              aria-label="Back"
-              title="Back to list"
+              aria-label={t("Back")}
+              title={t("Back to list")}
               onClick={closeDetail}
             >
               <ChevronLeft className="size-4" />
@@ -3466,8 +3467,8 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
             <Button
               size="icon"
               variant="ghost"
-              aria-label="Back"
-              title="Back to list"
+              aria-label={t("Back")}
+              title={t("Back to list")}
               onClick={exitCompose}
             >
               <ChevronLeft className="size-4" />
@@ -3531,7 +3532,7 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
               size="icon"
               variant={labelManagerOpen ? "secondary" : "ghost"}
               title={isAggregate ? AGGREGATE_DISABLED_TITLE : "Manage labels"}
-              aria-label="Manage labels"
+              aria-label={t("Manage labels")}
               disabled={!projectPath || isAggregate}
               onClick={() => setView((cur) => togglePanel(cur, "labels"))}
             >
@@ -3543,7 +3544,7 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
               size="icon"
               variant={milestoneManagerOpen ? "secondary" : "ghost"}
               title={isAggregate ? AGGREGATE_DISABLED_TITLE : "Manage milestones"}
-              aria-label="Manage milestones"
+              aria-label={t("Manage milestones")}
               disabled={!projectPath || isAggregate}
               onClick={() => setView((cur) => togglePanel(cur, "milestones"))}
             >
@@ -3555,7 +3556,7 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
               size="icon"
               variant={releaseManagerOpen ? "secondary" : "ghost"}
               title={isAggregate ? AGGREGATE_DISABLED_TITLE : "Manage releases"}
-              aria-label="Manage releases"
+              aria-label={t("Manage releases")}
               disabled={!projectPath || isAggregate}
               onClick={() => setView((cur) => togglePanel(cur, "releases"))}
             >
@@ -3567,7 +3568,7 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
               size="icon"
               variant={notificationsOpen ? "secondary" : "ghost"}
               title={isAggregate ? AGGREGATE_DISABLED_TITLE : "Notifications"}
-              aria-label="Notifications"
+              aria-label={t("Notifications")}
               disabled={!projectPath || isAggregate}
               onClick={() => setView((cur) => togglePanel(cur, "notifications"))}
             >
@@ -3579,7 +3580,7 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
               size="icon"
               variant={actionsManagerOpen ? "secondary" : "ghost"}
               title={isAggregate ? AGGREGATE_DISABLED_TITLE : "Actions"}
-              aria-label="Actions"
+              aria-label={t("Actions")}
               disabled={!projectPath || isAggregate}
               onClick={() => setView((cur) => togglePanel(cur, "actions"))}
             >
@@ -3591,7 +3592,7 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
               size="icon"
               variant={projectsManagerOpen ? "secondary" : "ghost"}
               title={isAggregate ? AGGREGATE_DISABLED_TITLE : "Projects"}
-              aria-label="Projects"
+              aria-label={t("Projects")}
               disabled={!projectPath || isAggregate}
               onClick={() => setView((cur) => togglePanel(cur, "projects"))}
             >
@@ -3603,7 +3604,7 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
               size="icon"
               variant={discussionsManagerOpen ? "secondary" : "ghost"}
               title={isAggregate ? AGGREGATE_DISABLED_TITLE : "Discussions"}
-              aria-label="Discussions"
+              aria-label={t("Discussions")}
               disabled={!projectPath || isAggregate}
               onClick={() => setView((cur) => togglePanel(cur, "discussions"))}
             >
@@ -3630,8 +3631,8 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
           <Button
             size="icon"
             variant="ghost"
-            title="Refresh"
-            aria-label="Refresh GitHub items"
+            title={t("Refresh")}
+            aria-label={t("Refresh GitHub items")}
             disabled={!projectPath || loading}
             onClick={() => { void load(); }}
           >
@@ -3641,8 +3642,8 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
           <Button
             variant="ghost"
             size="icon"
-            title="Close"
-            aria-label="Close"
+            title={t("Close")}
+            aria-label={t("Close")}
             disabled={isComposeView && (newPullSubmitting || newIssueSubmitting)}
             onClick={onClose}
           >
@@ -3659,10 +3660,10 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
         <Select
           value={projectPath}
           onChange={(e) => setProjectPath(e.target.value)}
-          title="Project"
-          aria-label="Project"
+          title={t("Project")}
+          aria-label={t("Project")}
         >
-          {projectOptions.length === 0 && <option value="">No projects</option>}
+          {projectOptions.length === 0 && <option value="">{t("No projects")}</option>}
           {projectOptions.map((p) => (
             <option key={p.path} value={p.path}>
               {p.label}
@@ -3684,19 +3685,19 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
             className="h-7"
             onClick={() => setKind("issues")}
           >
-            Issues
+            {t("Issues")}
           </Button>
         </div>
         <Select
           value={state}
           onChange={(e) => setState(e.target.value as GitHubItemState)}
-          title="State"
-          aria-label="State"
+          title={t("State")}
+          aria-label={t("State")}
           className="h-8 text-xs"
         >
-          <option value="open">Open</option>
-          <option value="closed">Closed</option>
-          <option value="all">All</option>
+          <option value="open">{t("Open")}</option>
+          <option value="closed">{t("Closed")}</option>
+          <option value="all">{t("All")}</option>
         </Select>
         <div className="relative md:col-span-2">
           <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -3741,7 +3742,7 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
             autoComplete={undefined}
             value={labels}
             onChange={(e) => setLabels(e.target.value)}
-            placeholder="Labels, comma separated"
+            placeholder={t("Labels, comma separated")}
             className="h-8 text-xs"
             list="github-dialog-labels"
           />
@@ -3750,29 +3751,29 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
           {...IDENTIFIER_INPUT_PROPS}
           value={assignee}
           onChange={(e) => setAssignee(e.target.value)}
-          placeholder="Assignee"
+          placeholder={t("Assignee")}
           className="h-8 text-xs"
         />
         <div className="flex items-center gap-1.5 md:col-span-2">
-          <span className="text-[11px] text-muted-foreground">Sort:</span>
+          <span className="text-[11px] text-muted-foreground">{t("Sort:")}</span>
           <Select
             value={sortField}
             onChange={(e) => setSortField(e.target.value as "best-match" | "created" | "updated" | "comments")}
-            title="Sort by"
-            aria-label="Sort by"
+            title={t("Sort by")}
+            aria-label={t("Sort by")}
             className="h-8 w-32 text-xs"
           >
-            <option value="best-match">Best match</option>
-            <option value="created">Created</option>
-            <option value="updated">Updated</option>
-            {caps.commentSort && <option value="comments">Comments</option>}
+            <option value="best-match">{t("Best match")}</option>
+            <option value="created">{t("Created")}</option>
+            <option value="updated">{t("Updated")}</option>
+            {caps.commentSort && <option value="comments">{t("Comments")}</option>}
           </Select>
           <Button
             size="icon"
             variant="ghost"
             className="size-8"
             title={sortDirection === "desc" ? "Descending — click for ascending" : "Ascending — click for descending"}
-            aria-label="Toggle sort direction"
+            aria-label={t("Toggle sort direction")}
             onClick={() => setSortDirection((d) => (d === "desc" ? "asc" : "desc"))}
           >
             {sortDirection === "desc" ? <ArrowDownWideNarrow className="size-3.5" /> : <ArrowUpWideNarrow className="size-3.5" />}
@@ -3782,7 +3783,7 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
           {availableLabels.map((label) => <option key={label} value={label} />)}
         </datalist>
         <div className="col-span-full flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-muted-foreground">Mine:</span>
+          <span className="text-[11px] text-muted-foreground">{t("Mine:")}</span>
           {(() => {
             const unauth = result?.auth === "none";
             const hint = unauth ? "Sign in to GitHub to filter by your own involvement" : undefined;
@@ -3796,7 +3797,7 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
                   title={hint}
                   onClick={() => setCreatedByMe((v) => !v)}
                 >
-                  Created
+                  {t("Created")}
                 </Button>
                 <Button
                   size="sm"
@@ -3806,7 +3807,7 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
                   title={hint}
                   onClick={() => setAssignedToMe((v) => !v)}
                 >
-                  Assigned
+                  {t("Assigned")}
                 </Button>
                 {kind === "pulls" && (
                   <Button
@@ -3817,7 +3818,7 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
                     title={hint}
                     onClick={() => setReviewRequested((v) => !v)}
                   >
-                    Review requested
+                    {t("Review requested")}
                   </Button>
                 )}
               </>
@@ -4227,10 +4228,10 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
             </span>
             <div className="flex shrink-0 items-center gap-2">
               <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => { void api.openExternal(transferNotice.url); }}>
-                Open
+                {t("Open")}
               </Button>
               <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => setTransferNotice(null)}>
-                Dismiss
+                {t("Dismiss")}
               </Button>
             </div>
           </div>
@@ -4254,14 +4255,14 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
                 <KeyRound className="size-4 text-warning" />
                 Can&apos;t reach this repository
               </div>
-              <p className="text-xs text-muted-foreground">This is usually a missing or invalid credential.</p>
+              <p className="text-xs text-muted-foreground">{t("This is usually a missing or invalid credential.")}</p>
               <p className="text-xs text-muted-foreground">{error}</p>
               <div className="rounded-md border border-border/50 bg-background/40 p-3">
-                <div className="mb-1.5 text-[11px] font-medium text-muted-foreground">If the repository is private:</div>
+                <div className="mb-1.5 text-[11px] font-medium text-muted-foreground">{t("If the repository is private:")}</div>
                 <ol className="list-decimal space-y-1 pl-4 text-xs text-muted-foreground">
                   <li>{credentialSetupStep1(provider)}</li>
                   <li>In Settings → {GIT_HOST_TOKENS_SECTION}, save it for the host named above.</li>
-                  <li>Reopen this dialog. The Setup guide button inside the Settings section walks through each provider step by step.</li>
+                  <li>{t("Reopen this dialog. The Setup guide button inside the Settings section walks through each provider step by step.")}</li>
                 </ol>
               </div>
               {onOpenSettings && (
@@ -4321,7 +4322,7 @@ export function GitHubDialog({ open, projects, initialProjectPath, pullPrefill, 
             )}
             {result.hasMore && isAggregate && (
               <div className="px-1 text-[11px] text-muted-foreground">
-                Some repositories have more results than shown here — switch to a single project to see them all.
+                {t("Some repositories have more results than shown here — switch to a single project to see them all.")}
               </div>
             )}
           </div>
@@ -4400,7 +4401,7 @@ function PullComposer({
         <Input
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
-          placeholder="Title"
+          placeholder={t("Title")}
           className="h-8 text-sm"
           disabled={submitting}
         />
@@ -4409,7 +4410,7 @@ function PullComposer({
             {...IDENTIFIER_INPUT_PROPS}
             value={head}
             onChange={(e) => onHeadChange(e.target.value)}
-            placeholder="Head branch"
+            placeholder={t("Head branch")}
             className="h-8 text-xs"
             disabled={submitting}
           />
@@ -4417,7 +4418,7 @@ function PullComposer({
             {...IDENTIFIER_INPUT_PROPS}
             value={base}
             onChange={(e) => onBaseChange(e.target.value)}
-            placeholder="Base branch"
+            placeholder={t("Base branch")}
             className="h-8 text-xs"
             disabled={submitting}
           />
@@ -4425,7 +4426,7 @@ function PullComposer({
         <Textarea
           value={body}
           onChange={(e) => onBodyChange(e.target.value)}
-          placeholder="Markdown body..."
+          placeholder={t("Markdown body...")}
           className="min-h-24 resize-y text-sm"
           disabled={submitting}
         />
@@ -4433,7 +4434,7 @@ function PullComposer({
           {...IDENTIFIER_INPUT_PROPS}
           value={reviewers}
           onChange={(e) => onReviewersChange(e.target.value)}
-          placeholder="Reviewers, comma separated"
+          placeholder={t("Reviewers, comma separated")}
           className="h-8 text-xs"
           disabled={submitting}
         />
@@ -4477,7 +4478,7 @@ function PullComposer({
         </label>
         <div className="flex justify-end gap-2">
           <Button size="sm" variant="ghost" disabled={submitting} onClick={onCancel}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button size="sm" disabled={submitting || !title.trim() || !head.trim() || !base.trim()} onClick={onSubmit}>
             {submitting ? <Loader2 className="mr-2 size-3.5 animate-spin" /> : <Plus className="mr-2 size-3.5" />}
@@ -4544,14 +4545,14 @@ function IssueComposer({
         <Input
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
-          placeholder="Title"
+          placeholder={t("Title")}
           className="h-8 text-sm"
           disabled={submitting}
         />
         <Textarea
           value={body}
           onChange={(e) => onBodyChange(e.target.value)}
-          placeholder="Markdown body..."
+          placeholder={t("Markdown body...")}
           className="min-h-24 resize-y text-sm"
           disabled={submitting}
         />
@@ -4560,7 +4561,7 @@ function IssueComposer({
             {...IDENTIFIER_INPUT_PROPS}
             value={labels}
             onChange={(e) => onLabelsChange(e.target.value)}
-            placeholder="Labels, comma separated"
+            placeholder={t("Labels, comma separated")}
             className="h-8 text-xs"
             disabled={submitting}
           />
@@ -4570,7 +4571,7 @@ function IssueComposer({
             {...IDENTIFIER_INPUT_PROPS}
             value={assignees}
             onChange={(e) => onAssigneesChange(e.target.value)}
-            placeholder="Assignees, comma separated"
+            placeholder={t("Assignees, comma separated")}
             className="h-8 text-xs"
             disabled={submitting}
           />
@@ -4579,7 +4580,7 @@ function IssueComposer({
               {...IDENTIFIER_INPUT_PROPS}
               value={milestone}
               onChange={(e) => onMilestoneChange(e.target.value)}
-              placeholder="Milestone number"
+              placeholder={t("Milestone number")}
               className="h-8 text-xs"
               disabled={submitting}
             />
@@ -4588,7 +4589,7 @@ function IssueComposer({
       </div>
       <div className="mt-3 flex justify-end gap-2">
         <Button size="sm" variant="ghost" disabled={submitting} onClick={onCancel}>
-          Cancel
+          {t("Cancel")}
         </Button>
         <Button size="sm" disabled={submitting || !title.trim()} onClick={onSubmit}>
           {submitting ? <Loader2 className="mr-2 size-3.5 animate-spin" /> : <Plus className="mr-2 size-3.5" />}
@@ -4654,21 +4655,21 @@ function LabelManager({
           Labels ({labels.length})
         </div>
         <div className="flex items-center gap-1">
-          <Button size="icon" variant="ghost" className="size-6" title="Refresh labels" aria-label="Refresh labels" onClick={onRefresh}>
+          <Button size="icon" variant="ghost" className="size-6" title={t("Refresh labels")} aria-label={t("Refresh labels")} onClick={onRefresh}>
             <RefreshCw className="size-3.5" />
           </Button>
           <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={onClose}>
-            Close
+            {t("Close")}
           </Button>
         </div>
       </div>
       <div className="mb-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.4fr)_auto]">
-        <Input {...IDENTIFIER_INPUT_PROPS} value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" className="h-8 text-xs" disabled={creating || !authenticated} />
+        <Input {...IDENTIFIER_INPUT_PROPS} value={name} onChange={(e) => setName(e.target.value)} placeholder={t("Name")} className="h-8 text-xs" disabled={creating || !authenticated} />
         <div className="flex items-center gap-1">
           <span className="size-4 shrink-0 rounded-full border border-border/60" style={{ backgroundColor: labelSwatch(color) }} />
           <Input {...IDENTIFIER_INPUT_PROPS} value={color} onChange={(e) => setColor(e.target.value)} placeholder="hex" className="h-8 w-20 text-xs" disabled={creating || !authenticated} />
         </div>
-        <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description (optional)" className="h-8 text-xs" disabled={creating || !authenticated} />
+        <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t("Description (optional)")} className="h-8 text-xs" disabled={creating || !authenticated} />
         <Button
           size="sm"
           disabled={creating || !name.trim() || !authenticated}
@@ -4687,7 +4688,7 @@ function LabelManager({
       )}
       <div className="max-h-56 space-y-1 overflow-y-auto">
         {labels.length === 0 ? (
-          <div className="px-1 py-2 text-[11px] text-muted-foreground">No labels in this repository.</div>
+          <div className="px-1 py-2 text-[11px] text-muted-foreground">{t("No labels in this repository.")}</div>
         ) : (
           labels.map((l) => <LabelRow key={l.name} label={l} authenticated={authenticated} onEdit={onEdit} onDelete={onDelete} />)
         )}
@@ -4753,7 +4754,7 @@ function LabelRow({
             <span className="size-4 shrink-0 rounded-full border border-border/60" style={{ backgroundColor: labelSwatch(color) }} />
             <Input {...IDENTIFIER_INPUT_PROPS} value={color} onChange={(e) => setColor(e.target.value)} placeholder="hex" className="h-7 w-20 text-xs" disabled={busy === "save"} />
           </div>
-          <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" className="h-7 text-xs" disabled={busy === "save"} />
+          <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t("Description")} className="h-7 text-xs" disabled={busy === "save"} />
         </div>
         {error && (
           <div className="mt-1 flex items-center gap-1 text-[11px] text-danger">
@@ -4763,7 +4764,7 @@ function LabelRow({
         )}
         <div className="mt-1 flex justify-end gap-2">
           <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" disabled={busy === "save"} onClick={() => { setEditing(false); reset(); }}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button size="sm" className="h-6 px-2 text-[11px]" disabled={busy === "save" || !name.trim()} onClick={() => { void save(); }}>
             {busy === "save" ? <Loader2 className="mr-1 size-3 animate-spin" /> : <FilePen className="mr-1 size-3" />}
@@ -4802,7 +4803,7 @@ function LabelRow({
               {busy === "delete" ? <Loader2 className="size-3 animate-spin" /> : "Confirm"}
             </Button>
             <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[11px]" disabled={busy === "delete"} onClick={() => setConfirm(false)}>
-              Cancel
+              {t("Cancel")}
             </Button>
           </>
         ) : (
@@ -4881,18 +4882,18 @@ function MilestoneManager({
           Milestones ({milestones.length})
         </div>
         <div className="flex items-center gap-1">
-          <Button size="icon" variant="ghost" className="size-6" title="Refresh milestones" aria-label="Refresh milestones" onClick={onRefresh}>
+          <Button size="icon" variant="ghost" className="size-6" title={t("Refresh milestones")} aria-label={t("Refresh milestones")} onClick={onRefresh}>
             <RefreshCw className="size-3.5" />
           </Button>
           <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={onClose}>
-            Close
+            {t("Close")}
           </Button>
         </div>
       </div>
       <div className="mb-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.4fr)_auto]">
-        <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" className="h-8 text-xs" disabled={creating || !authenticated} />
-        <Input type="date" value={dueOn} onChange={(e) => setDueOn(e.target.value)} title="Due date (optional)" className="h-8 w-36 text-xs" disabled={creating || !authenticated} />
-        <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description (optional)" className="h-8 text-xs" disabled={creating || !authenticated} />
+        <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("Title")} className="h-8 text-xs" disabled={creating || !authenticated} />
+        <Input type="date" value={dueOn} onChange={(e) => setDueOn(e.target.value)} title={t("Due date (optional)")} className="h-8 w-36 text-xs" disabled={creating || !authenticated} />
+        <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t("Description (optional)")} className="h-8 text-xs" disabled={creating || !authenticated} />
         <Button
           size="sm"
           disabled={creating || !title.trim() || !authenticated}
@@ -4911,7 +4912,7 @@ function MilestoneManager({
       )}
       <div className="max-h-56 space-y-1 overflow-y-auto">
         {milestones.length === 0 ? (
-          <div className="px-1 py-2 text-[11px] text-muted-foreground">No milestones in this repository.</div>
+          <div className="px-1 py-2 text-[11px] text-muted-foreground">{t("No milestones in this repository.")}</div>
         ) : (
           milestones.map((m) => <MilestoneRow key={m.number} milestone={m} authenticated={authenticated} onEdit={onEdit} onDelete={onDelete} />)
         )}
@@ -4996,8 +4997,8 @@ function MilestoneRow({
       <div className="rounded border border-border/60 p-2">
         <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.4fr)]">
           <Input value={title} onChange={(e) => setTitle(e.target.value)} className="h-7 text-xs" disabled={busy === "save"} />
-          <Input type="date" value={dueOn} onChange={(e) => setDueOn(e.target.value)} title="Due date" className="h-7 w-36 text-xs" disabled={busy === "save"} />
-          <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" className="h-7 text-xs" disabled={busy === "save"} />
+          <Input type="date" value={dueOn} onChange={(e) => setDueOn(e.target.value)} title={t("Due date")} className="h-7 w-36 text-xs" disabled={busy === "save"} />
+          <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t("Description")} className="h-7 text-xs" disabled={busy === "save"} />
         </div>
         {error && (
           <div className="mt-1 flex items-center gap-1 text-[11px] text-danger">
@@ -5007,7 +5008,7 @@ function MilestoneRow({
         )}
         <div className="mt-1 flex justify-end gap-2">
           <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" disabled={busy === "save"} onClick={() => { setEditing(false); reset(); }}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button size="sm" className="h-6 px-2 text-[11px]" disabled={busy === "save" || !title.trim()} onClick={() => { void save(); }}>
             {busy === "save" ? <Loader2 className="mr-1 size-3 animate-spin" /> : <FilePen className="mr-1 size-3" />}
@@ -5057,7 +5058,7 @@ function MilestoneRow({
               {busy === "delete" ? <Loader2 className="size-3 animate-spin" /> : "Confirm"}
             </Button>
             <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[11px]" disabled={busy === "delete"} onClick={() => setConfirm(false)}>
-              Cancel
+              {t("Cancel")}
             </Button>
           </>
         ) : (
@@ -5142,11 +5143,11 @@ function ReleasesManager({
           Releases ({releases.length})
         </div>
         <div className="flex items-center gap-1">
-          <Button size="icon" variant="ghost" className="size-6" title="Refresh releases" aria-label="Refresh releases" onClick={onRefresh}>
+          <Button size="icon" variant="ghost" className="size-6" title={t("Refresh releases")} aria-label={t("Refresh releases")} onClick={onRefresh}>
             <RefreshCw className="size-3.5" />
           </Button>
           <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={onClose}>
-            Close
+            {t("Close")}
           </Button>
         </div>
       </div>
@@ -5157,12 +5158,12 @@ function ReleasesManager({
           autoComplete={undefined}
           value={tagName}
           onChange={(e) => setTagName(e.target.value)}
-          placeholder="Tag name"
+          placeholder={t("Tag name")}
           className="h-8 text-xs"
           list="github-dialog-release-tags"
           disabled={creating || !authenticated}
         />
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Release title (optional)" className="h-8 text-xs" disabled={creating || !authenticated} />
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("Release title (optional)")} className="h-8 text-xs" disabled={creating || !authenticated} />
         <datalist id="github-dialog-release-tags">
           {tags.map((t) => <option key={t.name} value={t.name} />)}
         </datalist>
@@ -5170,7 +5171,7 @@ function ReleasesManager({
       <Textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        placeholder="Release notes (optional, markdown)"
+        placeholder={t("Release notes (optional, markdown)")}
         className="mb-2 min-h-16 resize-y text-xs"
         disabled={creating || !authenticated}
       />
@@ -5202,7 +5203,7 @@ function ReleasesManager({
       )}
       <div className="max-h-56 space-y-1 overflow-y-auto">
         {releases.length === 0 ? (
-          <div className="px-1 py-2 text-[11px] text-muted-foreground">No releases in this repository.</div>
+          <div className="px-1 py-2 text-[11px] text-muted-foreground">{t("No releases in this repository.")}</div>
         ) : (
           releases.map((r) => <ReleaseRow key={r.id} release={r} authenticated={authenticated} onEdit={onEdit} onDelete={onDelete} />)
         )}
@@ -5274,9 +5275,9 @@ function ReleaseRow({
       <div className="rounded border border-border/60 p-2">
         <div className="grid gap-2 md:grid-cols-[minmax(0,0.6fr)_minmax(0,1fr)]">
           <span className="flex items-center truncate rounded border border-border/60 px-2 text-[11px] text-muted-foreground">{release.tagName}</span>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Release title" className="h-7 text-xs" disabled={busy === "save"} />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("Release title")} className="h-7 text-xs" disabled={busy === "save"} />
         </div>
-        <Textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Release notes" className="mt-2 min-h-16 resize-y text-xs" disabled={busy === "save"} />
+        <Textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder={t("Release notes")} className="mt-2 min-h-16 resize-y text-xs" disabled={busy === "save"} />
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <label className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <input type="checkbox" checked={draft} disabled={busy === "save"} onChange={(e) => setDraft(e.target.checked)} />
@@ -5295,7 +5296,7 @@ function ReleaseRow({
         )}
         <div className="mt-1 flex justify-end gap-2">
           <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" disabled={busy === "save"} onClick={() => { setEditing(false); reset(); }}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button size="sm" className="h-6 px-2 text-[11px]" disabled={busy === "save"} onClick={() => { void save(); }}>
             {busy === "save" ? <Loader2 className="mr-1 size-3 animate-spin" /> : <FilePen className="mr-1 size-3" />}
@@ -5311,8 +5312,8 @@ function ReleaseRow({
       <Rocket className="size-3.5 shrink-0 text-success" />
       <span className="shrink-0 rounded border border-border/60 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">{release.tagName}</span>
       <span className="min-w-0 shrink truncate font-medium">{release.name || release.tagName}</span>
-      {release.draft && <span className="shrink-0 rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning">Draft</span>}
-      {release.prerelease && <span className="shrink-0 rounded bg-info/15 px-1.5 py-0.5 text-[10px] font-medium text-info">Pre-release</span>}
+      {release.draft && <span className="shrink-0 rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning">{t("Draft")}</span>}
+      {release.prerelease && <span className="shrink-0 rounded bg-info/15 px-1.5 py-0.5 text-[10px] font-medium text-info">{t("Pre-release")}</span>}
       <span className="shrink-0 text-[11px] text-muted-foreground">{releaseDateLabel(release)}</span>
       {error && <span className="truncate text-[11px] text-danger">{error}</span>}
       <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -5320,7 +5321,7 @@ function ReleaseRow({
           size="icon"
           variant="ghost"
           className="size-6"
-          title="Open release on GitHub"
+          title={t("Open release on GitHub")}
           aria-label={`Open ${release.tagName} on GitHub`}
           onClick={() => { void api.openExternal(release.htmlUrl); }}
         >
@@ -5343,7 +5344,7 @@ function ReleaseRow({
               {busy === "delete" ? <Loader2 className="size-3 animate-spin" /> : "Confirm"}
             </Button>
             <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[11px]" disabled={busy === "delete"} onClick={() => setConfirm(false)}>
-              Cancel
+              {t("Cancel")}
             </Button>
           </>
         ) : (
@@ -5411,7 +5412,7 @@ function NotificationsPanel({
               className="h-6 px-2 text-[11px]"
               onClick={() => { if (showAll) onToggleShowAll(); }}
             >
-              Unread
+              {t("Unread")}
             </Button>
             <Button
               size="sm"
@@ -5419,7 +5420,7 @@ function NotificationsPanel({
               className="h-6 px-2 text-[11px]"
               onClick={() => { if (!showAll) onToggleShowAll(); }}
             >
-              All
+              {t("All")}
             </Button>
           </div>
           <Button
@@ -5432,11 +5433,11 @@ function NotificationsPanel({
             {markAllBusy ? <Loader2 className="mr-1 size-3 animate-spin" /> : <Check className="mr-1 size-3" />}
             Mark all read
           </Button>
-          <Button size="icon" variant="ghost" className="size-6" title="Refresh notifications" aria-label="Refresh notifications" disabled={loading} onClick={onRefresh}>
+          <Button size="icon" variant="ghost" className="size-6" title={t("Refresh notifications")} aria-label={t("Refresh notifications")} disabled={loading} onClick={onRefresh}>
             {loading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
           </Button>
           <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={onClose}>
-            Close
+            {t("Close")}
           </Button>
         </div>
       </div>
@@ -5514,7 +5515,7 @@ function NotificationRow({
             size="icon"
             variant="ghost"
             className="size-6"
-            title="Mark as read"
+            title={t("Mark as read")}
             aria-label={`Mark ${notification.title} as read`}
             disabled={!!busy}
             onClick={onMarkRead}
@@ -5525,7 +5526,7 @@ function NotificationRow({
             size="sm"
             variant="ghost"
             className="h-6 px-1.5 text-[11px]"
-            title="Ignore this conversation"
+            title={t("Ignore this conversation")}
             disabled={!!busy}
             onClick={onIgnore}
           >
@@ -5536,7 +5537,7 @@ function NotificationRow({
             size="sm"
             variant="ghost"
             className="h-6 px-1.5 text-[11px]"
-            title="Unsubscribe from this thread"
+            title={t("Unsubscribe from this thread")}
             disabled={!!busy}
             onClick={onUnsubscribe}
           >
@@ -5645,11 +5646,11 @@ function ActionsPanel({
           Actions ({runs.length})
         </div>
         <div className="flex items-center gap-1">
-          <Button size="icon" variant="ghost" className="size-6" title="Refresh Actions" aria-label="Refresh Actions" disabled={loading} onClick={onRefresh}>
+          <Button size="icon" variant="ghost" className="size-6" title={t("Refresh Actions")} aria-label={t("Refresh Actions")} disabled={loading} onClick={onRefresh}>
             {loading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
           </Button>
           <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={onClose}>
-            Close
+            {t("Close")}
           </Button>
         </div>
       </div>
@@ -5689,12 +5690,12 @@ function ActionsPanel({
           <Select
             value={dispatchWorkflowId}
             onChange={(e) => onDispatchWorkflowIdChange(e.target.value)}
-            title="Workflow"
-            aria-label="Workflow"
+            title={t("Workflow")}
+            aria-label={t("Workflow")}
             className="h-8 text-xs"
             disabled={dispatchBusy || !authenticated}
           >
-            <option value="">Select a workflow…</option>
+            <option value="">{t("Select a workflow…")}</option>
             {activeWorkflows.map((w) => (
               <option key={w.id} value={String(w.id)}>{w.name}</option>
             ))}
@@ -5703,7 +5704,7 @@ function ActionsPanel({
             {...IDENTIFIER_INPUT_PROPS}
             value={dispatchRef}
             onChange={(e) => onDispatchRefChange(e.target.value)}
-            placeholder="Ref (branch, tag, or sha) — e.g. main"
+            placeholder={t("Ref (branch, tag, or sha) — e.g. main")}
             className="h-8 text-xs"
             disabled={dispatchBusy || !authenticated}
           />
@@ -5715,14 +5716,14 @@ function ActionsPanel({
                 {...IDENTIFIER_INPUT_PROPS}
                 value={row.key}
                 onChange={(e) => onUpdateDispatchInputRow(i, { key: e.target.value })}
-                placeholder="Input name"
+                placeholder={t("Input name")}
                 className="h-7 flex-1 text-xs"
                 disabled={dispatchBusy || !authenticated}
               />
               <Input
                 value={row.value}
                 onChange={(e) => onUpdateDispatchInputRow(i, { value: e.target.value })}
-                placeholder="Value"
+                placeholder={t("Value")}
                 className="h-7 flex-1 text-xs"
                 disabled={dispatchBusy || !authenticated}
               />
@@ -5730,7 +5731,7 @@ function ActionsPanel({
                 size="icon"
                 variant="ghost"
                 className="size-6 shrink-0"
-                title="Remove input"
+                title={t("Remove input")}
                 aria-label={`Remove input ${i + 1}`}
                 disabled={dispatchBusy || !authenticated}
                 onClick={() => onRemoveDispatchInputRow(i)}
@@ -5814,7 +5815,7 @@ function WorkflowRunRow({
             size="icon"
             variant="ghost"
             className="size-6"
-            title="Open run on GitHub"
+            title={t("Open run on GitHub")}
             aria-label={`Open run #${run.runNumber} on GitHub`}
             onClick={() => { void api.openExternal(run.htmlUrl); }}
           >
@@ -5939,11 +5940,11 @@ function ProjectsPanel({
           Projects{projects.length > 0 && ` (${projects.length})`}
         </div>
         <div className="flex items-center gap-1">
-          <Button size="icon" variant="ghost" className="size-6" title="Refresh projects" aria-label="Refresh projects" disabled={loading} onClick={onRefresh}>
+          <Button size="icon" variant="ghost" className="size-6" title={t("Refresh projects")} aria-label={t("Refresh projects")} disabled={loading} onClick={onRefresh}>
             {loading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
           </Button>
           <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={onClose}>
-            Close
+            {t("Close")}
           </Button>
         </div>
       </div>
@@ -5957,8 +5958,8 @@ function ProjectsPanel({
         <Select
           value={selectedProjectId}
           onChange={(e) => onSelectProject(e.target.value)}
-          title="Project"
-          aria-label="Project"
+          title={t("Project")}
+          aria-label={t("Project")}
           className="h-8 text-xs"
           disabled={loading || projects.length === 0}
         >
@@ -5981,15 +5982,15 @@ function ProjectsPanel({
                   size="icon"
                   variant="ghost"
                   className="size-6"
-                  title="Open project on GitHub"
-                  aria-label="Open project on GitHub"
+                  title={t("Open project on GitHub")}
+                  aria-label={t("Open project on GitHub")}
                   onClick={() => { void api.openExternal(selectedProject.url); }}
                 >
                   <ExternalLink className="size-3.5" />
                 </Button>
               )}
             </div>
-            <Button size="icon" variant="ghost" className="size-6" title="Refresh items" aria-label="Refresh items" disabled={itemsLoading} onClick={onRefreshItems}>
+            <Button size="icon" variant="ghost" className="size-6" title={t("Refresh items")} aria-label={t("Refresh items")} disabled={itemsLoading} onClick={onRefreshItems}>
               {itemsLoading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
             </Button>
           </div>
@@ -6029,12 +6030,12 @@ function ProjectsPanel({
               <Select
                 value={addKind}
                 onChange={(e) => onAddKindChange(e.target.value === "pr" ? "pr" : "issue")}
-                title="Content kind"
-                aria-label="Content kind"
+                title={t("Content kind")}
+                aria-label={t("Content kind")}
                 className="h-8 w-20 shrink-0 text-xs"
                 disabled={addBusy || !authenticated}
               >
-                <option value="issue">Issue</option>
+                <option value="issue">{t("Issue")}</option>
                 <option value="pr">PR</option>
               </Select>
               <Input
@@ -6116,7 +6117,7 @@ function ProjectItemRow({
               const option = statusField.options.find((o) => o.id === optionId);
               if (option) onSetStatus(option.id, option.name);
             }}
-            title="Status"
+            title={t("Status")}
             aria-label={`Status for ${label}`}
             className="h-6 w-28 shrink-0 text-[11px]"
             disabled={isBusy || !authenticated}
@@ -6253,11 +6254,11 @@ function DiscussionsPanel({
             <Plus className="mr-1 size-3.5" />
             New
           </Button>
-          <Button size="icon" variant="ghost" className="size-6" title="Refresh discussions" aria-label="Refresh discussions" disabled={loading} onClick={onRefresh}>
+          <Button size="icon" variant="ghost" className="size-6" title={t("Refresh discussions")} aria-label={t("Refresh discussions")} disabled={loading} onClick={onRefresh}>
             {loading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
           </Button>
           <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={onClose}>
-            Close
+            {t("Close")}
           </Button>
         </div>
       </div>
@@ -6274,12 +6275,12 @@ function DiscussionsPanel({
             <Select
               value={newCategoryId}
               onChange={(e) => onNewCategoryIdChange(e.target.value)}
-              title="Category"
-              aria-label="Category"
+              title={t("Category")}
+              aria-label={t("Category")}
               className="h-8 w-36 shrink-0 text-xs"
               disabled={createBusy || categories.length === 0}
             >
-              {categories.length === 0 && <option value="">No categories</option>}
+              {categories.length === 0 && <option value="">{t("No categories")}</option>}
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
@@ -6287,7 +6288,7 @@ function DiscussionsPanel({
             <Input
               value={newTitle}
               onChange={(e) => onNewTitleChange(e.target.value)}
-              placeholder="Title"
+              placeholder={t("Title")}
               className="h-8 flex-1 text-xs"
               disabled={createBusy}
             />
@@ -6295,7 +6296,7 @@ function DiscussionsPanel({
           <Textarea
             value={newBody}
             onChange={(e) => onNewBodyChange(e.target.value)}
-            placeholder="Write your discussion…"
+            placeholder={t("Write your discussion…")}
             className="min-h-20 resize-y text-xs"
             disabled={createBusy}
           />
@@ -6390,7 +6391,7 @@ function DiscussionRow({
           </span>
         )}
         {discussion.answered && (
-          <span title="Answered">
+          <span title={t("Answered")}>
             <CheckCircle2 className="size-3.5 shrink-0 text-success" />
           </span>
         )}
@@ -6399,7 +6400,7 @@ function DiscussionRow({
           size="icon"
           variant="ghost"
           className="size-6 shrink-0"
-          title="Open on GitHub"
+          title={t("Open on GitHub")}
           aria-label={`Open discussion #${discussion.number} on GitHub`}
           onClick={() => { void api.openExternal(discussion.url); }}
         >
@@ -6499,7 +6500,7 @@ function DiscussionDetailView({
           )}
           <div className="space-y-1.5">
             {detail.comments.length === 0 ? (
-              <div className="px-1 py-1.5 text-[11px] text-muted-foreground">No comments yet.</div>
+              <div className="px-1 py-1.5 text-[11px] text-muted-foreground">{t("No comments yet.")}</div>
             ) : (
               detail.comments.map((c) => (
                 <DiscussionCommentRow
@@ -6599,7 +6600,7 @@ function DiscussionCommentRow({
             variant="ghost"
             className="size-5 text-muted-foreground hover:text-danger"
             title={canDelete ? "Delete comment" : PUSH_ONLY_TITLE}
-            aria-label="Delete comment"
+            aria-label={t("Delete comment")}
             disabled={isBusy || !canDelete}
             onClick={onDelete}
           >
@@ -6659,19 +6660,19 @@ function GitHubItemRow({
               type="button"
               className="min-w-0 truncate text-left text-sm font-medium hover:underline"
               onClick={onToggle}
-              title="Open details"
+              title={t("Open details")}
             >
               #{item.number} {item.title}
             </button>
             {item.draft && (
               <span className="rounded border border-border/60 px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
-                Draft
+                {t("Draft")}
               </span>
             )}
             {repoBadge && (
               <span
                 className="rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground"
-                title="Repository this item belongs to"
+                title={t("Repository this item belongs to")}
               >
                 {repoBadge}
               </span>
@@ -6721,7 +6722,7 @@ function GitHubItemRow({
         <Button
           size="icon"
           variant="ghost"
-          title="Open details"
+          title={t("Open details")}
           aria-label={`Open details for #${item.number}`}
           onClick={onToggle}
         >
@@ -7045,7 +7046,7 @@ function GitHubItemDetail({
               {item.body}
             </ReactMarkdown>
           ) : (
-            <div className="text-sm italic text-muted-foreground">No description.</div>
+            <div className="text-sm italic text-muted-foreground">{t("No description.")}</div>
           )}
         </div>
       )}
@@ -7403,14 +7404,14 @@ function IssueActions({
             onChange={(e) => onLockReasonDraftChange(e.target.value)}
             className="h-8 w-40 text-xs"
             disabled={isBusy || item.locked || !canPush}
-            title="Lock reason (optional)"
-            aria-label="Lock reason"
+            title={t("Lock reason (optional)")}
+            aria-label={t("Lock reason")}
           >
-            <option value="">No reason</option>
-            <option value="off-topic">Off-topic</option>
-            <option value="too heated">Too heated</option>
-            <option value="resolved">Resolved</option>
-            <option value="spam">Spam</option>
+            <option value="">{t("No reason")}</option>
+            <option value="off-topic">{t("Off-topic")}</option>
+            <option value="too heated">{t("Too heated")}</option>
+            <option value="resolved">{t("Resolved")}</option>
+            <option value="spam">{t("Spam")}</option>
           </Select>
           <Button size="sm" variant="outline" disabled={pushDisabled} title={pushTitle} onClick={onToggleLock}>
             {busy === "lock" ? (
@@ -7433,7 +7434,7 @@ function IssueActions({
             {...IDENTIFIER_INPUT_PROPS}
             value={transferDraft}
             onChange={(e) => onTransferDraftChange(e.target.value)}
-            placeholder="Transfer to owner/repo"
+            placeholder={t("Transfer to owner/repo")}
             className="h-8 w-48 text-xs"
             disabled={isBusy || !canPush}
           />
@@ -7447,7 +7448,7 @@ function IssueActions({
                 Confirm transfer
               </Button>
               <Button size="sm" variant="ghost" disabled={isBusy} onClick={onCancelTransfer}>
-                Cancel
+                {t("Cancel")}
               </Button>
             </>
           ) : (
@@ -7618,12 +7619,12 @@ function SubIssues({ path, issueNumber, canPush }: { path: string; issueNumber: 
                 <AlertCircle className="size-3.5" /> {error}
               </span>
               <Button size="sm" variant="ghost" className="h-6 px-2" onClick={load}>
-                Retry
+                {t("Retry")}
               </Button>
             </div>
           )}
           {!loading && !error && items && items.length === 0 && (
-            <div className="text-xs italic text-muted-foreground">No sub-issues yet.</div>
+            <div className="text-xs italic text-muted-foreground">{t("No sub-issues yet.")}</div>
           )}
           {items && items.length > 0 && (
             <ul className="flex flex-col gap-1">
@@ -7659,7 +7660,7 @@ function SubIssues({ path, issueNumber, canPush }: { path: string; issueNumber: 
               {...IDENTIFIER_INPUT_PROPS}
               value={addDraft}
               onChange={(e) => setAddDraft(e.target.value)}
-              placeholder="Add by #number"
+              placeholder={t("Add by #number")}
               className="h-8 w-32 text-xs"
               disabled={busy === "add" || !canPush}
             />
@@ -7715,21 +7716,21 @@ function ItemEditor({
         <Input
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
-          placeholder="Title"
+          placeholder={t("Title")}
           className="h-8 text-sm"
           disabled={busy}
         />
         <Textarea
           value={body}
           onChange={(e) => onBodyChange(e.target.value)}
-          placeholder="Markdown body..."
+          placeholder={t("Markdown body...")}
           className="min-h-32 resize-y text-sm"
           disabled={busy}
         />
       </div>
       <div className="mt-3 flex justify-end gap-2">
         <Button size="sm" variant="ghost" disabled={busy} onClick={onCancel}>
-          Cancel
+          {t("Cancel")}
         </Button>
         <Button size="sm" disabled={busy || !title.trim() || !canSave} title={canSave ? undefined : PUSH_ONLY_TITLE} onClick={onSave}>
           {busy ? <Loader2 className="mr-2 size-3.5 animate-spin" /> : <FilePen className="mr-2 size-3.5" />}
@@ -8041,8 +8042,8 @@ function PullActions({
             size="icon"
             variant="ghost"
             className="size-6"
-            title="Refresh"
-            aria-label="Refresh"
+            title={t("Refresh")}
+            aria-label={t("Refresh")}
             disabled={refreshing}
             onClick={onRefresh}
           >
@@ -8288,14 +8289,14 @@ function PullActionGrid({
       </div>
 
       <div className="min-w-0">
-        <div className="mb-1 text-[11px] font-medium uppercase text-muted-foreground">Merge</div>
+        <div className="mb-1 text-[11px] font-medium uppercase text-muted-foreground">{t("Merge")}</div>
         <Select
           value={mergeMethod}
           onChange={(e) => onMergeMethodChange(e.target.value as GitHubPullMergeMethod)}
           className="h-8 text-xs"
           disabled={disabled}
-          title="Merge method"
-          aria-label="Merge method"
+          title={t("Merge method")}
+          aria-label={t("Merge method")}
         >
           {caps.mergeMethods.map((method) => (
             <option key={method} value={method}>
@@ -8342,11 +8343,11 @@ function PullActionGrid({
       </div>
 
       <div className="min-w-0">
-        <div className="mb-1 text-[11px] font-medium uppercase text-muted-foreground">Close</div>
+        <div className="mb-1 text-[11px] font-medium uppercase text-muted-foreground">{t("Close")}</div>
         <Textarea
           value={closeDraft}
           onChange={(e) => onCloseDraftChange(e.target.value)}
-          placeholder="Optional close comment..."
+          placeholder={t("Optional close comment...")}
           className="min-h-20 resize-y text-xs"
           disabled={disabled}
         />
@@ -8401,7 +8402,7 @@ function MergedPullCard({ item, justMerged }: { item: GitHubListItem; justMerged
       className="flex min-h-[7.5rem] flex-col items-center justify-center gap-2 rounded-md border border-merged/40 bg-merged/10 px-3 py-6 text-center"
     >
       <GitMerge className="size-6 text-merged" aria-hidden />
-      <span className="text-sm font-medium text-foreground">Pull request successfully merged</span>
+      <span className="text-sm font-medium text-foreground">{t("Pull request successfully merged")}</span>
       {/* Only render once `fmtRelativeDate` produces something — an
           unparsable `mergedAt` would otherwise leave a dangling "Merged ". */}
       {mergedWhen && <span className="text-xs text-muted-foreground">Merged {mergedWhen}</span>}
@@ -8414,7 +8415,7 @@ function MergedPullCard({ item, justMerged }: { item: GitHubListItem; justMerged
 function LinkedIssuesLine({ issues }: { issues: GitHubLinkedIssue[] }) {
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
-      <span className="font-medium text-foreground/80">Closes:</span>
+      <span className="font-medium text-foreground/80">{t("Closes:")}</span>
       {issues.map((issue) => (
         <button
           key={issue.number}
@@ -8475,13 +8476,13 @@ function PullCommits({
                 <AlertCircle className="size-4" /> {error}
               </div>
               <Button size="sm" variant="outline" onClick={onRetry}>
-                Retry
+                {t("Retry")}
               </Button>
             </div>
           )}
           {!loading && !error && commits && commits.length === 0 && (
             <div className="rounded-md border border-border/60 px-3 py-6 text-center text-sm text-muted-foreground">
-              No commits found for this pull request.
+              {t("No commits found for this pull request.")}
             </div>
           )}
           {!loading && !error && commits && commits.length > 0 && (
@@ -8491,7 +8492,7 @@ function PullCommits({
                   <button
                     type="button"
                     className="shrink-0 font-mono text-[11px] text-muted-foreground hover:underline"
-                    title="Open commit"
+                    title={t("Open commit")}
                     aria-label={`Open commit ${commit.sha.slice(0, 7)}`}
                     onClick={() => { void api.openExternal(commit.htmlUrl); }}
                   >
@@ -8542,8 +8543,8 @@ function CheckRuns({
             size="icon"
             variant="ghost"
             className="size-6"
-            title="Refresh checks"
-            aria-label="Refresh checks"
+            title={t("Refresh checks")}
+            aria-label={t("Refresh checks")}
             disabled={loading}
             onClick={onRefresh}
           >
@@ -8563,13 +8564,13 @@ function CheckRuns({
             <AlertCircle className="size-4" /> {error}
           </div>
           <Button size="sm" variant="outline" onClick={onRetry}>
-            Retry
+            {t("Retry")}
           </Button>
         </div>
       )}
       {!loading && !error && checks && checks.checkRuns.length === 0 && (
         <div className="rounded-md border border-border/60 px-3 py-6 text-center text-sm text-muted-foreground">
-          No check runs found for this pull request head.
+          {t("No check runs found for this pull request head.")}
         </div>
       )}
       {!loading && !error && checks && checks.checkRuns.length > 0 && (
@@ -8585,7 +8586,7 @@ function CheckRuns({
                 <Button
                   size="icon"
                   variant="ghost"
-                  title="Open check"
+                  title={t("Open check")}
                   aria-label={`Open ${run.name} check`}
                   onClick={() => { void api.openExternal(run.htmlUrl!); }}
                 >
@@ -8644,8 +8645,8 @@ function CommitStatus({
             size="icon"
             variant="ghost"
             className="size-6"
-            title="Refresh commit status"
-            aria-label="Refresh commit status"
+            title={t("Refresh commit status")}
+            aria-label={t("Refresh commit status")}
             disabled={loading}
             onClick={onRefresh}
           >
@@ -8665,7 +8666,7 @@ function CommitStatus({
             <AlertCircle className="size-4" /> {error}
           </div>
           <Button size="sm" variant="outline" onClick={onRetry}>
-            Retry
+            {t("Retry")}
           </Button>
         </div>
       )}
@@ -8681,7 +8682,7 @@ function CommitStatus({
                 <Button
                   size="icon"
                   variant="ghost"
-                  title="Open status target on GitHub"
+                  title={t("Open status target on GitHub")}
                   aria-label={`Open ${ctx.context} status on GitHub`}
                   onClick={() => { void api.openExternal(ctx.targetUrl!); }}
                 >
@@ -8760,8 +8761,8 @@ function PullDiff({
             size="icon"
             variant="ghost"
             className="size-6"
-            title="Refresh diff"
-            aria-label="Refresh diff"
+            title={t("Refresh diff")}
+            aria-label={t("Refresh diff")}
             disabled={loading}
             onClick={onRefresh}
           >
@@ -8781,7 +8782,7 @@ function PullDiff({
             <AlertCircle className="size-4" /> {error}
           </div>
           <Button size="sm" variant="outline" onClick={onRetry}>
-            Retry
+            {t("Retry")}
           </Button>
         </div>
       )}
@@ -8841,8 +8842,8 @@ function PendingReview({
                 size="icon"
                 variant="ghost"
                 className="ml-auto size-6"
-                title="Remove from review"
-                aria-label="Remove from review"
+                title={t("Remove from review")}
+                aria-label={t("Remove from review")}
                 onClick={() => onRemove(i)}
               >
                 <XCircle className="size-3.5" />
@@ -8853,7 +8854,7 @@ function PendingReview({
         ))}
       </div>
       <p className="mt-2 text-[11px] text-muted-foreground">
-        Submit these with Approve / Comment / Request in the Actions panel above.
+        {t("Submit these with Approve / Comment / Request in the Actions panel above.")}
       </p>
     </div>
   );
@@ -8963,13 +8964,13 @@ function ReviewComments({
             <AlertCircle className="size-4" /> {error}
           </div>
           <Button size="sm" variant="outline" onClick={onRetry}>
-            Retry
+            {t("Retry")}
           </Button>
         </div>
       )}
       {!loading && !error && comments && comments.length === 0 && (
         <div className="rounded-md border border-border/60 px-3 py-6 text-center text-sm text-muted-foreground">
-          No review comments yet.
+          {t("No review comments yet.")}
         </div>
       )}
       {!loading && !error && comments && comments.length > 0 && (
@@ -9039,7 +9040,7 @@ function ReviewComments({
                   <Textarea
                     value={draft}
                     onChange={(e) => onDraftChange(comment.id, e.target.value)}
-                    placeholder="Reply..."
+                    placeholder={t("Reply...")}
                     className="min-h-16 resize-y text-sm"
                     disabled={submitting}
                   />
@@ -9114,7 +9115,7 @@ function Conversation({
             <AlertCircle className="size-4" /> {error}
           </div>
           <Button size="sm" variant="outline" onClick={onRetry}>
-            Retry
+            {t("Retry")}
           </Button>
         </div>
       )}
@@ -9123,7 +9124,7 @@ function Conversation({
         <div className="flex flex-col gap-2">
           {comments.length === 0 ? (
             <div className="rounded-md border border-border/60 px-3 py-6 text-center text-sm text-muted-foreground">
-              No comments yet.
+              {t("No comments yet.")}
             </div>
           ) : (
             comments.map((comment) => (
@@ -9146,7 +9147,7 @@ function Conversation({
         <Textarea
           value={draft}
           onChange={(e) => onDraftChange(e.target.value)}
-          placeholder="Add a comment..."
+          placeholder={t("Add a comment...")}
           className="min-h-24 resize-y border-0 px-2 shadow-none focus-visible:ring-0"
           disabled={submitting}
         />
@@ -9274,7 +9275,7 @@ function EditableCommentBody({
         )}
         <div className="mt-2 flex justify-end gap-2">
           <Button size="sm" variant="ghost" disabled={busy === "save"} onClick={() => { setEditing(false); setDraft(body); setError(null); }}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button size="sm" disabled={busy === "save" || !draft.trim()} onClick={() => { void save(); }}>
             {busy === "save" ? <Loader2 className="mr-2 size-3.5 animate-spin" /> : <FilePen className="mr-2 size-3.5" />}
@@ -9334,7 +9335,7 @@ function EditableCommentBody({
           {body}
         </ReactMarkdown>
       ) : (
-        <span className="italic text-muted-foreground">Empty comment.</span>
+        <span className="italic text-muted-foreground">{t("Empty comment.")}</span>
       )}
       {error && (
         <div className="mt-2 flex items-center gap-1 text-xs text-danger">
@@ -9356,7 +9357,7 @@ function EditableCommentBody({
           </Button>
           {confirmDelete ? (
             <>
-              <span className="text-[11px] text-muted-foreground">Delete this comment?</span>
+              <span className="text-[11px] text-muted-foreground">{t("Delete this comment?")}</span>
               <Button
                 size="sm"
                 variant="ghost"
@@ -9374,7 +9375,7 @@ function EditableCommentBody({
                 disabled={busy === "delete"}
                 onClick={() => setConfirmDelete(false)}
               >
-                Cancel
+                {t("Cancel")}
               </Button>
             </>
           ) : (
@@ -9567,8 +9568,8 @@ function Reactions({
           size="icon"
           variant="ghost"
           className="size-6"
-          title="Add reaction"
-          aria-label="Add reaction"
+          title={t("Add reaction")}
+          aria-label={t("Add reaction")}
           disabled={!!busy || reactions === undefined}
           onClick={() => setPickerOpen((cur) => !cur)}
         >
@@ -9613,7 +9614,7 @@ function Reactions({
 function PullBinaryPreview({ blobCtx, file }: { blobCtx: { repoDir: string; number: number } | null; file: DiffFile }) {
   const kind = binaryPreviewKind(file.path);
   if (kind === null || !blobCtx) {
-    return <div className="px-3 py-2 text-xs italic text-muted-foreground">Binary file — no textual diff.</div>;
+    return <div className="px-3 py-2 text-xs italic text-muted-foreground">{t("Binary file — no textual diff.")}</div>;
   }
   const { oldUrl, newUrl } = binaryPreviewSides(file, (path, side) =>
     api.pullBlobUrl({ path: blobCtx.repoDir, number: blobCtx.number, filePath: path, side }));
@@ -9686,7 +9687,7 @@ function DiffFileBlock({
               <DiffBody file={file} hunks={file.hunks} onLineComment={onLineComment} onAddToReview={onAddToReview} queuedKeys={queuedKeys} allowBatchReview={allowBatchReview} />
               {file.truncated && (
                 <div className="border-t border-border/60 px-3 py-1.5 text-[11px] italic text-muted-foreground">
-                  Diff truncated because this file's changes are too large to display in full.
+                  {t("Diff truncated because this file's changes are too large to display in full.")}
                 </div>
               )}
             </>
@@ -9803,8 +9804,8 @@ function DiffBody({
                 <button
                   type="button"
                   className="sticky right-0 hidden shrink-0 items-center bg-card/90 px-1 text-muted-foreground hover:text-foreground group-hover:inline-flex"
-                  title="Comment on this line"
-                  aria-label="Comment on this line"
+                  title={t("Comment on this line")}
+                  aria-label={t("Comment on this line")}
                   onClick={() => {
                     setSelectedKey(selected ? null : rowKey);
                     setDraft("");
@@ -9869,14 +9870,14 @@ function DiffBody({
                       setSuggestMode(false);
                     }}
                   >
-                    Cancel
+                    {t("Cancel")}
                   </Button>
                   {allowBatchReview && (
                     <Button
                       size="sm"
                       variant="outline"
                       disabled={submitting || !draft.trim()}
-                      title="Queue this comment for a single review submission"
+                      title={t("Queue this comment for a single review submission")}
                       onClick={() => queue(target)}
                     >
                       <Plus className="mr-2 size-3.5" />

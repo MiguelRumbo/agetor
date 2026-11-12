@@ -12,6 +12,7 @@
 // via Escape/backdrop — a deliberate unification, not an accident.
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { t } from "@/lib/i18n";
 
 export const ATTACHMENT_NOT_FOUND_TITLE_ID = "attachment-not-found-title";
 export const ATTACHMENT_OPEN_ERROR_TITLE_ID = "attachment-open-error-title";
@@ -35,12 +36,12 @@ export function AttachmentNotFoundDialog({
       className="max-w-md"
     >
       <h2 id={ATTACHMENT_NOT_FOUND_TITLE_ID} className="text-sm font-semibold">
-        Attachment not found
+        {t("Attachment not found")}
       </h2>
       <p className="mt-2 break-all font-mono text-xs text-muted-foreground">{path}</p>
       <div className="mt-4 flex justify-end">
         <Button size="sm" variant="outline" onClick={onClose}>
-          Close
+          {t("Close")}
         </Button>
       </div>
     </Dialog>
@@ -66,13 +67,13 @@ export function AttachmentOpenErrorDialog({
       className="max-w-md"
     >
       <h2 id={ATTACHMENT_OPEN_ERROR_TITLE_ID} className="text-sm font-semibold">
-        Couldn't open attachment
+        {t("Couldn't open attachment")}
       </h2>
       <p className="mt-2 break-all font-mono text-xs text-muted-foreground">{path}</p>
       <p className="mt-2 text-xs text-muted-foreground">{message}</p>
       <div className="mt-4 flex justify-end">
         <Button size="sm" variant="outline" onClick={onClose}>
-          Close
+          {t("Close")}
         </Button>
       </div>
     </Dialog>

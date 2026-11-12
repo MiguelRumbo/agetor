@@ -8,6 +8,7 @@ import { OPENCODE_SESSION_ID_RE } from "../../shared/opencode.ts";
 import { escapeControlChars, escapeFreeText } from "../../shared/terminal-text.ts";
 import { CLAUDE_SESSIONS_LIVENESS_STALE_MS, type OpencodeSessionListItem } from "../../shared/types.ts";
 import type { AgetorClient, ClaudeSessionSummary } from "../api-client.ts";
+import { ct } from "../i18n.ts";
 
 /** Which importable session kinds a command covers (`--kind`). */
 export type SessionKind = "claude" | "opencode";
@@ -86,7 +87,7 @@ export function parseSessionsFlags(args: string[]): SessionsFlags {
     else if (arg === "--kind") {
       const v = flagValue(args, ++i, arg);
       if (!SESSION_KINDS.includes(v as SessionKind)) {
-        throw new Error(`'--kind' must be one of ${SESSION_KINDS.join(", ")} (got '${escapeControlChars(v)}')`);
+        throw new Error(`'--kind' must be one of ${SESSION_KINDS.join(", ")} ${ct("(got '")}${escapeControlChars(v)}')`);
       }
       f.kind = v as SessionKind;
     } else if (arg === "--harness") f.harness = flagValue(args, ++i, arg);
@@ -150,7 +151,7 @@ export async function cmdSessions(args: string[], flags: Flags): Promise<void> {
   const wantClaude = kind !== "opencode" && (ids.length === 0 || ids.some((id) => sessionIdKind(id) === "claude"));
   const wantOpencode = kind !== "claude" && (ids.length === 0 || ids.some((id) => sessionIdKind(id) === "opencode"));
   if (harness && ids.length > 0 && !ids.some((id) => sessionIdKind(id) === "opencode")) {
-    throw new Error("--harness applies to OpenCode sessions (ses_… ids) only");
+    throw new Error(ct("--harness applies to OpenCode sessions (ses_… ids) only"));
   }
   const claudeRows = wantClaude ? (await client.recheckClaudeSessions()).sessions : [];
   const opencodeRows = wantOpencode
@@ -197,7 +198,7 @@ export async function cmdSessions(args: string[], flags: Flags): Promise<void> {
   const claudeIds = importable.filter((s) => s.kind === "claude").map(sessionIdOf);
   const opencodeIds = importable.filter((s) => s.kind === "opencode").map(sessionIdOf);
   if (!yes && !dryRun) {
-    if (!isTTY) throw new Error("refusing to import without --yes");
+    if (!isTTY) throw new Error(ct("refusing to import without --yes"));
     const answer = await clackConfirm({ message: `Import ${importCountText(claudeIds.length, opencodeIds.length)}?`, initialValue: false });
     if (isCancel(answer) || answer !== true) return;
   }
@@ -208,10 +209,10 @@ export async function cmdSessions(args: string[], flags: Flags): Promise<void> {
   if (flags.json) return printJson({ results: [...results, ...skipped] });
   for (const result of results) {
     if (result.error) out(c.yellow(`${escapeControlChars(result.id)}: ${escapeFreeText(result.error)}`));
-    else out(`imported ${escapeControlChars(result.id)} → ${result.taskId}`);
+    else out(`${ct("imported")} ${escapeControlChars(result.id)} → ${result.taskId}`);
   }
   if (results.some((r) => r.error)) {
-    throw new Error("one or more sessions were not imported");
+    throw new Error(ct("one or more sessions were not imported"));
   }
 }
 

@@ -21,6 +21,7 @@ import type {
   PipelineRunState,
   Task,
 } from "../../shared/types.ts";
+import { ct } from "../i18n.ts";
 
 export async function cmdPipeline(args: string[], flags: Flags): Promise<void> {
   const sub = args[0] ?? "ls";
@@ -87,12 +88,12 @@ export async function cmdPipeline(args: string[], flags: Flags): Promise<void> {
       const task = await resolvePipelineTask(client, ref);
       let targetTaskId: string | undefined;
       if (f.from) {
-        if (!task.pipelineRun) throw new Error("pipeline has never run — nothing to retry");
+        if (!task.pipelineRun) throw new Error(ct("pipeline has never run — nothing to retry"));
         targetTaskId = resolveActiveStepRef(task.pipelineRun, f.from);
       }
       const updated = await client.retryPipeline(task.id, targetTaskId);
       if (flags.json) return printJson(updated);
-      out(`${c.cyan("↻")} retrying pipeline for ${c.dim(task.id.slice(0, 8))}`);
+      out(`${c.cyan("↻")} ${ct("retrying pipeline for")} ${c.dim(task.id.slice(0, 8))}`);
       return;
     }
 
@@ -103,7 +104,7 @@ export async function cmdPipeline(args: string[], flags: Flags): Promise<void> {
       // a bad invocation fails fast without a network round-trip (L-CLI7).
       const f = parseAdvanceFlags(args.slice(2));
       if (f.finish && f.next.length > 0) {
-        throw new Error("pipeline advance: --next and --finish are mutually exclusive");
+        throw new Error(ct("pipeline advance: --next and --finish are mutually exclusive"));
       }
       if (!f.finish && f.next.length === 0) throw usageError("pipeline advance");
       const task = await resolvePipelineTask(client, ref);
@@ -113,18 +114,18 @@ export async function cmdPipeline(args: string[], flags: Flags): Promise<void> {
         nextStepIds = null;
       } else {
         const graph = task.pipelineRun?.snapshot?.graph;
-        if (!graph) throw new Error("pipeline has no run snapshot yet — nothing to advance");
+        if (!graph) throw new Error(ct("pipeline has no run snapshot yet — nothing to advance"));
         nextStepIds = f.next.map((name) => resolveStepRef(graph, name));
       }
 
       const body: { nextStepIds: string[] | null; fromTaskId?: string } = { nextStepIds };
       if (f.from) {
-        if (!task.pipelineRun) throw new Error("pipeline has never run — nothing to advance");
+        if (!task.pipelineRun) throw new Error(ct("pipeline has never run — nothing to advance"));
         body.fromTaskId = resolveActiveStepRef(task.pipelineRun, f.from);
       }
       const updated = await client.advancePipeline(task.id, body);
       if (flags.json) return printJson(updated);
-      out(`${c.green("▸")} advanced pipeline for ${c.dim(task.id.slice(0, 8))}`);
+      out(`${c.green("▸")} ${ct("advanced pipeline for")} ${c.dim(task.id.slice(0, 8))}`);
       return;
     }
 
@@ -138,16 +139,16 @@ export async function cmdPipeline(args: string[], flags: Flags): Promise<void> {
       if (f.returnBack && (f.comment === undefined || f.comment.trim().length === 0)) {
         throw usageError("pipeline review");
       }
-      if (f.accept && f.mode !== undefined) throw new Error("--mode is only valid with --return");
-      if (f.returnBack && f.next.length > 0) throw new Error("--next is only valid with --accept");
+      if (f.accept && f.mode !== undefined) throw new Error(ct("--mode is only valid with --return"));
+      if (f.returnBack && f.next.length > 0) throw new Error(ct("--next is only valid with --accept"));
       const task = await resolvePipelineTask(client, ref);
-      if (!task.pipelineRun) throw new Error("pipeline has never run — nothing to review");
+      if (!task.pipelineRun) throw new Error(ct("pipeline has never run — nothing to review"));
       const graph = task.pipelineRun.snapshot?.graph ?? null;
       const gate = resolveHumanGateRef(task.pipelineRun, f.step);
 
       let nextStepIds: string[] | undefined;
       if (f.accept && f.next.length > 0) {
-        if (!graph) throw new Error("pipeline has no run snapshot yet — nothing to accept");
+        if (!graph) throw new Error(ct("pipeline has no run snapshot yet — nothing to accept"));
         nextStepIds = [...new Set(f.next.map((name) => resolveStepRef(graph, name)))];
       } else if (f.accept && graph) {
         // The server refuses a `choose` gate with several outgoing edges and
@@ -155,7 +156,7 @@ export async function cmdPipeline(args: string[], flags: Flags): Promise<void> {
         const step = graph.steps.find((s) => s.id === gate.stepId);
         const outgoing = step ? outgoingSteps(graph, step.id) : [];
         if (step && step.transition === "choose" && outgoing.length > 1) {
-          throw new Error("this review has several next steps — pick one with --next");
+          throw new Error(ct("this review has several next steps — pick one with --next"));
         }
       }
 
@@ -190,7 +191,7 @@ export async function cmdPipeline(args: string[], flags: Flags): Promise<void> {
             c.dim("(agent launch still in progress)"),
         );
       } else {
-        out(`${c.cyan("↻")} restarted pipeline for ${c.dim(task.id.slice(0, 8))} — run ${res.runId.slice(0, 8)}`);
+        out(`${c.cyan("↻")} ${ct("restarted pipeline for")} ${c.dim(task.id.slice(0, 8))} ${ct("— run")} ${res.runId.slice(0, 8)}`);
       }
       return;
     }
@@ -226,7 +227,7 @@ async function resolvePipelineTask(client: AgetorClient, ref: string): Promise<T
       `"${ref}" is a step task of pipeline task ${task.pipelineParentId.slice(0, 8)} — target that id instead`,
     );
   }
-  if (!task.pipelineId) throw new Error(`task "${ref}" is not a pipeline task`);
+  if (!task.pipelineId) throw new Error(`${ct("task \"")}${ref}" is not a pipeline task`);
   return task;
 }
 
@@ -330,7 +331,7 @@ export function resolveStepRef(graph: PipelineGraph, ref: string): string {
   const byName = graph.steps.filter((s) => s.name.trim().toLowerCase() === lower);
   if (byName.length === 1) return byName[0]!.id;
   if (byName.length > 1) {
-    throw new Error(`ambiguous step "${trimmed}": matches ${byName.map((s) => safe(s.name)).join(", ")}`);
+    throw new Error(`${ct("ambiguous step \"")}${trimmed}": matches ${byName.map((s) => safe(s.name)).join(", ")}`);
   }
 
   const byId = graph.steps.find((s) => s.id === trimmed);
@@ -343,12 +344,12 @@ export function resolveStepRef(graph: PipelineGraph, ref: string): string {
     if (targets.size === 1) return [...targets][0]!;
     if (targets.size > 1) {
       const names = [...targets].map((id) => stepLabel(graph, id)).join(", ");
-      throw new Error(`ambiguous edge label "${trimmed}": leads to ${names}`);
+      throw new Error(`${ct("ambiguous edge label \"")}${trimmed}": leads to ${names}`);
     }
   }
 
   const candidates = graph.steps.map((s) => safe(s.name)).join(", ") || "(none)";
-  throw new Error(`unknown step "${trimmed}" — steps: ${candidates}`);
+  throw new Error(`${ct("unknown step \"")}${trimmed}" — steps: ${candidates}`);
 }
 
 /**
@@ -368,7 +369,7 @@ export function resolveStepRef(graph: PipelineGraph, ref: string): string {
  */
 export function resolveActiveStepRef(run: PipelineRunState, ref: string): string {
   const trimmed = ref.trim();
-  if (!trimmed) throw new Error("--from requires a non-empty task id");
+  if (!trimmed) throw new Error(ct("--from requires a non-empty task id"));
   const exact = run.active.find((a) => a.taskId === trimmed);
   if (exact) return exact.taskId;
 
@@ -381,7 +382,7 @@ export function resolveActiveStepRef(run: PipelineRunState, ref: string): string
   if (matches.length > 1) {
     throw new Error(`"${trimmed}" is ambiguous among active executions — candidates: ${candidates}`);
   }
-  throw new Error(`no active execution matches "${trimmed}" — candidates: ${candidates}`);
+  throw new Error(`${ct("no active execution matches \"")}${trimmed}" — candidates: ${candidates}`);
 }
 
 /** Pure row formatter for `agetor pipeline ls`'s table: id (short), name,
@@ -439,7 +440,7 @@ export function parseReviewFlags(args: string[]): ReviewFlags {
     else if (a === "--step") f.step = flagValue(args, ++i, a);
     else if (a === "--mode") {
       const v = flagValue(args, ++i, a);
-      if (v !== "fresh" && v !== "resume") throw new Error("--mode must be fresh or resume");
+      if (v !== "fresh" && v !== "resume") throw new Error(ct("--mode must be fresh or resume"));
       f.mode = v;
     } else throw usageError("pipeline review");
   }
@@ -454,15 +455,15 @@ export function parseReviewFlags(args: string[]): ReviewFlags {
  */
 export function resolveHumanGateRef(run: PipelineRunState, ref: string | undefined): NonNullable<PipelineRunState["humanSteps"]>[number] {
   const gates = run.humanSteps ?? [];
-  if (gates.length === 0) throw new Error("no pending human review on this pipeline");
+  if (gates.length === 0) throw new Error(ct("no pending human review on this pipeline"));
   const graph = run.snapshot?.graph ?? null;
   if (ref === undefined) {
     if (gates.length === 1) return gates[0]!;
     const list = gates.map((g) => `${g.seq} (${graph ? stepLabel(graph, g.stepId) : safe(g.stepId)})`).join(", ");
-    throw new Error(`several reviews are pending — pick one with --step: ${list}`);
+    throw new Error(`${ct("several reviews are pending — pick one with --step:")} ${list}`);
   }
   const trimmed = ref.trim();
-  if (!trimmed) throw new Error("--step requires a non-empty step reference");
+  if (!trimmed) throw new Error(ct("--step requires a non-empty step reference"));
   if (/^\d+$/.test(trimmed)) {
     const bySeq = gates.find((g) => g.seq === Number(trimmed));
     if (bySeq) return bySeq;
@@ -480,7 +481,7 @@ export function resolveHumanGateRef(run: PipelineRunState, ref: string | undefin
     }
   }
   const list = gates.map((g) => `${g.seq} (${graph ? stepLabel(graph, g.stepId) : safe(g.stepId)})`).join(", ");
-  throw new Error(`no pending review matches "${trimmed}" — pending: ${list}`);
+  throw new Error(`${ct("no pending review matches \"")}${trimmed}" — pending: ${list}`);
 }
 
 /** Pure line-by-line renderer for `agetor pipeline show <ref>` — name/id,

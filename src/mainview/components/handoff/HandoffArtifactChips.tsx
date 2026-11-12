@@ -31,6 +31,7 @@ import {
 } from "@/lib/handoff-artifact-status";
 import { useArtifactStats } from "@/lib/use-artifact-stats";
 import { useHandoffView } from "./handoff-context";
+import { t } from "@/lib/i18n";
 
 type PathArtifact = Extract<HandoffArtifact, { kind: "path" }>;
 type UrlArtifact = Extract<HandoffArtifact, { kind: "url" }>;
@@ -144,14 +145,14 @@ function useArtifactActions(
     const a = menu.artifact;
     if (a.kind === "url") {
       return [
-        { id: "open-link", label: "Open link", onSelect: () => void openUrl(a) },
-        { id: "copy-link", label: "Copy link", onSelect: () => void copyText(a.url) },
+        { id: "open-link", label: t("Open link"), onSelect: () => void openUrl(a) },
+        { id: "copy-link", label: t("Copy link"), onSelect: () => void copyText(a.url) },
       ];
     }
     return [
-      { id: "open", label: "Open", onSelect: () => activate(a) },
-      { id: "reveal", label: "Reveal in Finder", onSelect: () => void runPath(a, "reveal") },
-      { id: "copy", label: "Copy path", onSelect: () => void copyText(artifactPrimaryPath(a, stats)) },
+      { id: "open", label: t("Open"), onSelect: () => activate(a) },
+      { id: "reveal", label: t("Reveal in Finder"), onSelect: () => void runPath(a, "reveal") },
+      { id: "copy", label: t("Copy path"), onSelect: () => void copyText(artifactPrimaryPath(a, stats)) },
     ];
   }, [menu, activate, openUrl, runPath, stats]);
 
@@ -163,7 +164,7 @@ function useArtifactActions(
         y={menu?.y ?? 0}
         items={menuItems}
         onClose={() => setMenu(null)}
-        label="Artifact actions"
+        label={t("Artifact actions")}
         testId="handoff-artifact-menu"
       />
       {(notFoundPath !== null || openError !== null) &&
@@ -260,7 +261,7 @@ export function HandoffArtifactChips({ variant, artifacts, hiddenCount = 0, onMo
               type="button"
               data-testid="handoff-card-more"
               aria-label={`Show ${hiddenCount} more ${hiddenCount === 1 ? "artifact" : "artifacts"}`}
-              title="Open the handoff to see every artifact"
+              title={t("Open the handoff to see every artifact")}
               onClick={onMore}
               className="inline-flex items-center rounded border border-border/60 bg-card px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground hover:bg-muted/60"
             >
@@ -309,7 +310,7 @@ export function HandoffArtifactChips({ variant, artifacts, hiddenCount = 0, onMo
               </button>
               <button
                 type="button"
-                aria-label="Artifact actions"
+                aria-label={t("Artifact actions")}
                 onClick={(e) => {
                   e.stopPropagation();
                   const rect = e.currentTarget.getBoundingClientRect();

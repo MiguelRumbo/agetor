@@ -18,6 +18,7 @@ import { ContextMenu, type ContextMenuItem } from "@/components/ui/context-menu"
 import { AttachmentNotFoundDialog, AttachmentOpenErrorDialog } from "@/components/kanban/AttachmentDialogs";
 import { HandoffDialog } from "./HandoffDialog";
 import { stepNameFor, useHandoffView } from "./handoff-context";
+import { t } from "@/lib/i18n";
 
 /** The history record a runner handoff file at `path` was written from, or
  *  `null` (not a handoff file of this pipeline, a different run generation,
@@ -114,8 +115,8 @@ export function HandoffFileChip({ path, taskId }: { path: string; taskId?: strin
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
   const items: ContextMenuItem[] = [
-    { id: "open", label: "Open file", onSelect: () => openFile(path) },
-    { id: "reveal", label: "Reveal in Finder", onSelect: () => revealFile(path) },
+    { id: "open", label: t("Open file"), onSelect: () => openFile(path) },
+    { id: "reveal", label: t("Reveal in Finder"), onSelect: () => revealFile(path) },
   ];
 
   return (
@@ -141,7 +142,7 @@ export function HandoffFileChip({ path, taskId }: { path: string; taskId?: strin
         y={menu?.y ?? 0}
         items={items}
         onClose={() => setMenu(null)}
-        label="Handoff file actions"
+        label={t("Handoff file actions")}
         testId="handoff-file-menu"
       />
       {modalOpen && record && (

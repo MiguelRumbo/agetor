@@ -7,6 +7,7 @@ import { api, ApiError } from "@/lib/api";
 import { BundleToolbar, useBundleList } from "@/components/bundle";
 import { cn } from "@/lib/utils";
 import type { Pipeline } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 interface Props {
   /** Navigate the app-level `view` to the pipelines page — `id: null` +
@@ -44,7 +45,7 @@ export function PipelinesSection({ onOpenPipelines, onImported }: Props) {
         n > 0
           ? `Used by ${n} task(s). Deleting it never affects tasks that already ran — they keep their frozen snapshot — but no new run can be started from it.`
           : "This can't be undone.",
-      confirmLabel: "Delete pipeline",
+      confirmLabel: t("Delete pipeline"),
       variant: "destructive",
     });
     if (!ok) return;
@@ -68,7 +69,7 @@ export function PipelinesSection({ onOpenPipelines, onImported }: Props) {
       {...bundle.dropProps}
     >
       <div className="flex items-center justify-between">
-        <label className="text-xs text-muted-foreground">Pipelines</label>
+        <label className="text-xs text-muted-foreground">{t("Pipelines")}</label>
         <div className="flex items-center gap-1.5">
           <Button
             variant="ghost"
@@ -96,11 +97,11 @@ export function PipelinesSection({ onOpenPipelines, onImported }: Props) {
       {loadError && <p className="text-xs text-danger">{loadError}</p>}
 
       {loading ? (
-        <p className="text-xs text-muted-foreground">Loading pipelines…</p>
+        <p className="text-xs text-muted-foreground">{t("Loading pipelines…")}</p>
       ) : pipelines.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border py-8 text-center">
           <Workflow className="size-5 text-muted-foreground" aria-hidden />
-          <p className="text-xs text-muted-foreground">No pipelines yet.</p>
+          <p className="text-xs text-muted-foreground">{t("No pipelines yet.")}</p>
         </div>
       ) : (
         <ul className="flex flex-col gap-2">
@@ -139,7 +140,7 @@ export function PipelinesSection({ onOpenPipelines, onImported }: Props) {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  title="Export"
+                  title={t("Export")}
                   aria-label={`Export ${p.name}`}
                   data-testid="bundle-row-export"
                   onClick={() => bundle.exportOne(p.id)}
@@ -151,7 +152,7 @@ export function PipelinesSection({ onOpenPipelines, onImported }: Props) {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  title="Edit"
+                  title={t("Edit")}
                   data-testid="pipelines-section-edit"
                   disabled={busyId === p.id}
                   onClick={() => onOpenPipelines(p.id, true)}
@@ -163,7 +164,7 @@ export function PipelinesSection({ onOpenPipelines, onImported }: Props) {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  title="Delete"
+                  title={t("Delete")}
                   data-testid="pipelines-section-delete"
                   disabled={busyId === p.id}
                   onClick={() => void remove(p)}

@@ -5,6 +5,7 @@ import { AgentIcon } from "@/components/kanban/AgentIcon";
 import { cn } from "@/lib/utils";
 import type { OnboardingStep, OnboardingStepId } from "@/lib/onboarding";
 import type { AgentKind, Harness, HarnessStatus } from "../../../shared/types.ts";
+import { t } from "@/lib/i18n";
 
 interface Props {
   steps: OnboardingStep[];
@@ -125,7 +126,7 @@ function HarnessStepDetail({
                     {label} — installed but disabled
                   </span>
                   <Button variant="outline" size="sm" onClick={onOpenSettingsHarnesses}>
-                    Enable in Settings…
+                    {t("Enable in Settings…")}
                   </Button>
                 </div>
                 <StatusNotices notices={s.notices} />
@@ -190,7 +191,7 @@ function HarnessStepDetail({
       </div>
 
       <div className="space-y-1 border-t border-border/60 pt-2">
-        <p className="text-[11px] text-muted-foreground">Just installed one? Log it in first:</p>
+        <p className="text-[11px] text-muted-foreground">{t("Just installed one? Log it in first:")}</p>
         <div className="space-y-1">
           {presentKinds.map((kind) =>
             kind === "gemini" ? (
@@ -218,7 +219,7 @@ function HarnessStepDetail({
       {harnessRows !== null && harnessRows.length > 0 && harnessesWithHome.length > 0 && (
         <div className="space-y-1 border-t border-border/60 pt-2">
           <p className="text-[11px] text-muted-foreground">
-            Additional accounts have their own login — open a terminal with that harness's env loaded:
+            {t("Additional accounts have their own login — open a terminal with that harness's env loaded:")}
           </p>
           <div className="flex flex-wrap gap-1.5">
             {harnessesWithHome.map((h) => (
@@ -237,7 +238,7 @@ function HarnessStepDetail({
       )}
 
       <p className="text-[11px] text-muted-foreground">
-        Running multiple accounts? Add more harnesses in Settings → Harnesses.
+        {t("Running multiple accounts? Add more harnesses in Settings → Harnesses.")}
       </p>
     </div>
   );
@@ -272,10 +273,10 @@ function StepDetail({
       return (
         <div className="space-y-2 pt-2">
           <p className="text-xs text-muted-foreground">
-            Register the folder of a repo you want agents to work in.
+            {t("Register the folder of a repo you want agents to work in.")}
           </p>
           <Button variant="outline" size="sm" onClick={onFocusNewTask}>
-            Choose a project…
+            {t("Choose a project…")}
           </Button>
         </div>
       );
@@ -283,17 +284,17 @@ function StepDetail({
       return (
         <div className="space-y-2 pt-2">
           <p className="text-xs text-muted-foreground">
-            Give it a title and a prompt — the panel on the left has everything else prefilled.
+            {t("Give it a title and a prompt — the panel on the left has everything else prefilled.")}
           </p>
           <Button variant="outline" size="sm" onClick={onFocusNewTask}>
-            Create your first task
+            {t("Create your first task")}
           </Button>
         </div>
       );
     case "run":
       return (
         <p className="pt-2 text-xs text-muted-foreground">
-          Press Run on your task's card, then watch the agent stream its work live.
+          {t("Press Run on your task's card, then watch the agent stream its work live.")}
         </p>
       );
     default: {
@@ -325,7 +326,7 @@ export function OnboardingChecklist({
     return (
       <Card data-testid="onboarding-checklist" className="py-2">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4">
-          <span className="text-xs font-medium text-muted-foreground">Getting started</span>
+          <span className="text-xs font-medium text-muted-foreground">{t("Getting started")}</span>
           {steps.map((step, i) => (
             <div
               key={step.id}
@@ -340,7 +341,7 @@ export function OnboardingChecklist({
             </div>
           ))}
           <Button variant="ghost" size="sm" className="ml-auto text-muted-foreground" onClick={onDismiss}>
-            Dismiss — I know my way around
+            {t("Dismiss — I know my way around")}
           </Button>
         </div>
       </Card>
@@ -350,9 +351,9 @@ export function OnboardingChecklist({
   return (
     <Card data-testid="onboarding-checklist" className="mx-auto w-full max-w-md">
       <CardHeader>
-        <CardTitle>Welcome to Agetor</CardTitle>
+        <CardTitle>{t("Welcome to Agetor")}</CardTitle>
         <p className="text-xs text-muted-foreground">
-          Create your first task to run an agent on a project.
+          {t("Create your first task to run an agent on a project.")}
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -382,7 +383,7 @@ export function OnboardingChecklist({
             onClick={onDismiss}
             className="text-xs text-muted-foreground underline-offset-2 hover:underline"
           >
-            Dismiss — I know my way around
+            {t("Dismiss — I know my way around")}
           </button>
         </div>
       </CardContent>

@@ -4,6 +4,7 @@ import { resumableRunId } from "../run-logic.ts";
 import { c, out, printJson } from "../output.ts";
 import { commitPushPrompt } from "../../shared/types.ts";
 import { usageError } from "../usage.ts";
+import { ct } from "../i18n.ts";
 
 /**
  * One-shot "commit & push": ask the agent to commit all changes and push the
@@ -17,7 +18,7 @@ export async function cmdCommit(args: string[], flags: Flags): Promise<void> {
   const task = await resolveTask(client, ref);
   const short = task.id.slice(0, 8);
   if (task.archivedAt != null) {
-    throw new Error("task is archived — unarchive it before committing");
+    throw new Error(ct("task is archived — unarchive it before committing"));
   }
   // Committing mid-turn is supported: the prompt folds into the in-flight run
   // via the same paste-follow-up path as `agetor send`. Since #92, a task can
@@ -25,12 +26,12 @@ export async function cmdCommit(args: string[], flags: Flags): Promise<void> {
   // actually succeeded — column no longer implies a turn is in flight — so
   // there's no column-based guard here.
   if (task.pendingInteractionCount > 0) {
-    throw new Error(`task is waiting for an answer — respond first with 'agetor answer ${short}'`);
+    throw new Error(`${ct("task is waiting for an answer — respond first with 'agetor answer")} ${short}'`);
   }
   const runs = task.runId ? [] : await client.getRuns(task.id);
   const runId = resumableRunId(task, runs);
   if (!runId) {
-    throw new Error(`task has no run yet — start it first: agetor start ${short}`);
+    throw new Error(`${ct("task has no run yet — start it first: agetor start")} ${short}`);
   }
 
   // Best-effort heads-up so a no-op turn (clean tree) isn't a surprise.
@@ -49,7 +50,7 @@ export async function cmdCommit(args: string[], flags: Flags): Promise<void> {
     out(`${c.red("!")} ${res.reason ?? "not delivered"}`);
     return;
   }
-  out(`${c.green("→")} commit & push requested for ${c.dim(short)}${c.dim(note)}`);
+  out(`${c.green("→")} ${ct("commit & push requested for")} ${c.dim(short)}${c.dim(note)}`);
 }
 
 /** The best-effort heads-up appended to the success line. Empty in the normal

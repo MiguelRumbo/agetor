@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import type { ResolvedTheme, ThemePreference } from "../../shared/types.ts";
 import { api } from "@/lib/api";
 import { parseThemePreference, readThemeFromHash, resolveTheme } from "@/lib/theme";
+import { t } from "@/lib/i18n";
 
 export interface ThemeContextValue {
   preference: ThemePreference;
@@ -103,7 +104,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       // SettingsDialog's onPickDefault/onPickTmuxSource do) isn't safe here.
       setPreferenceState(previous);
       toast.error("Couldn't save theme preference", {
-        description: "Reverted to the previous setting — try again.",
+        description: t("Reverted to the previous setting — try again."),
       });
     });
   }, []);
