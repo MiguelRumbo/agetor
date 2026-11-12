@@ -14,7 +14,7 @@ import { PROJECT_CAPABILITY_PATHSPECS } from "./ref-tree.ts";
 import { taskDirExists, writeTaskDirFileAtomic } from "./task-dir-fs.ts";
 import { DISCLAIM_PREF_KEY, isDisclaimOffValue } from "./disclaim.ts";
 import { applyDisclaimPreferenceWrite } from "./disclaim-switch.ts";
-import { childEnv } from "./core-spawn.ts";
+import { childEnv, coreSpawn } from "./core-spawn.ts";
 import {
   tasks,
   backlog,
@@ -5551,6 +5551,45 @@ export function startApiServer(
           const harness = harnesses.getByIdOrKind(req.params.id);
           if (!harness) {
             return json({ error: "harness not found" }, { status: 404, headers: corsHeaders(req) });
+          }
+          // Linux (fork): no osascript/Terminal.app. Spawning the missing
+          // binary throws, the request dies and the webview only sees
+          // "Failed to fetch". Answer a clear 501 with the working
+          // alternative instead (docs/linux-port.md).
+          // WSL: open Windows Terminal running a login shell of this distro.
+          // The command travels base64-encoded so no quoting layer between
+          // Linux argv and the Windows command line can mangle it.
+          if (process.platform === "linux" && process.env.WSL_DISTRO_NAME) {
+            const b64 = Buffer.from(
+              // The trailing `exec bash -l` lives INSIDE the encoded script:
+              // wt.exe reads a bare `;` in its argv as a new-tab separator.
+              `${buildHarnessTerminalCommand(harness)}; exec bash -l`,
+            ).toString("base64");
+            try {
+              coreSpawn(
+                [
+                  "wt.exe", "wsl.exe", "-d", process.env.WSL_DISTRO_NAME, "--",
+                  "bash", "-lc", `eval "$(echo ${b64} | base64 -d)"`,
+                ],
+                { stdout: "ignore", stderr: "ignore" },
+              );
+              return json({ ok: true }, { headers: corsHeaders(req) });
+            } catch (e) {
+              return json(
+                { error: `Couldn't open Windows Terminal (wt.exe): ${e instanceof Error ? e.message : e}` },
+                { status: 502, headers: corsHeaders(req) },
+              );
+            }
+          }
+          if (process.platform !== "darwin") {
+            return json(
+              {
+                error:
+                  "Opening a terminal from the UI is only available on macOS. " +
+                  `In your own terminal run: agetor harness shell ${harness.id}`,
+              },
+              { status: 501, headers: corsHeaders(req) },
+            );
           }
           const script = toTerminalAppleScript(buildHarnessTerminalCommand(harness));
           // spawn-exempt(osascript): Terminal.app automation is Agetor's own Automation grant; /usr/bin/osascript is SIP-protected and spawned by absolute path so PATH can't swap it.
