@@ -5552,6 +5552,20 @@ export function startApiServer(
           if (!harness) {
             return json({ error: "harness not found" }, { status: 404, headers: corsHeaders(req) });
           }
+          // Linux (fork): no osascript/Terminal.app. Spawning the missing
+          // binary throws, the request dies and the webview only sees
+          // "Failed to fetch". Answer a clear 501 with the working
+          // alternative instead (docs/linux-port.md).
+          if (process.platform !== "darwin") {
+            return json(
+              {
+                error:
+                  "Opening a terminal from the UI is only available on macOS. " +
+                  `In your own terminal run: agetor harness shell ${harness.id}`,
+              },
+              { status: 501, headers: corsHeaders(req) },
+            );
+          }
           const script = toTerminalAppleScript(buildHarnessTerminalCommand(harness));
           // spawn-exempt(osascript): Terminal.app automation is Agetor's own Automation grant; /usr/bin/osascript is SIP-protected and spawned by absolute path so PATH can't swap it.
           const proc = Bun.spawn(["/usr/bin/osascript", "-e", script], {

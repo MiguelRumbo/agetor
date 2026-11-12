@@ -92,6 +92,7 @@ scripts/linux.sh stop      # los agentes en tmux siguen vivos; el próximo start
 |---|---|---|---|
 | Notificaciones del SO | `src/bun/headless-notifications.ts:271` | El core headless no notifica fuera de macOS | Baja |
 | "Mostrar en el explorador" | `revealPath` solo existe en el escritorio (`src/bun/index.ts`) | La ruta responde 501 en headless | Baja |
+| Botón «Open terminal» de un harness (`/harnesses/:id/open-terminal`) | `osascript` + Terminal.app | Responde 501 con el mensaje de usar `agetor harness shell <id>` (antes la petición se caía con «Failed to fetch») | Baja |
 | Abrir terminal externa / `open-tmux` | `osascript` + Terminal.app en `src/bun/server.ts` | No disponible. Alternativa: `artifacts/agetor-linux-x64 attach <id>` desde tu terminal | Baja |
 | Arrastrar archivos con ruta real | `src/bun/drag-pasteboard.ts` (AppKit) | Devuelve `[]`. Usar los botones Files/Folder o `@ruta` | Baja |
 | Actualizaciones | `/updates/status` → 501 en headless | Se actualiza con `git pull` + `scripts/linux.sh build` | n/a |
