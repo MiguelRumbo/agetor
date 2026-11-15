@@ -32,3 +32,7 @@ notice plus `(2/3)`; a `user` event that is exactly the hidden
 `<harness-stack-continuation>` wrapper renders nothing. The panel takes an
 optional `stacks` prop; no extra fetch is made. See
 [harness-stacks.md](harness-stacks.md).
+
+## Sticky user messages
+
+With the `stickyUserMessages` preference on (the default), each user message heads its turn's `<section>` and pins with `position: sticky`. The pinned wrapper (the `data-evid` div in `renderEvent`'s `user` case) carries the panel's `bg-card` and spans the log's `p-3` padding (`-mx-3 px-3`, `-top-3`, with `-my-3 py-3` cancelling out in flow). The bubble fills only 85% of the width, so a transparent wrapper would let the transcript scrolling underneath show beside and above it.
