@@ -38,8 +38,14 @@ describe("claudeDotJsonPath", () => {
 });
 
 describe("claudeCredentialsPath", () => {
-  test("main account (home=null) returns null (keychain signal)", () => {
-    expect(claudeCredentialsPath(mkHarness(null))).toBeNull();
+  test("main account (home=null) returns null on macOS (keychain signal)", () => {
+    expect(claudeCredentialsPath(mkHarness(null), "darwin")).toBeNull();
+  });
+
+  test("main account (home=null) off macOS reads ~/.claude/.credentials.json (no keychain)", () => {
+    expect(claudeCredentialsPath(mkHarness(null), "linux")).toBe(
+      path.join(homedir(), ".claude", ".credentials.json"),
+    );
   });
 
   test("a harness env CLAUDE_CONFIG_DIR is the account root, not home", () => {

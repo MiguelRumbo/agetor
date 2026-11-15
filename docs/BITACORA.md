@@ -84,6 +84,13 @@ Cuando supere ~2000 líneas, archivar en `bitacora/<año>-Q<n>.md` y dejar aquí
 
 **Investigado (UI caída):** el core lanzado por `scripts/linux.sh` usa `AGETOR_DAEMON_IDLE_MS=0` y no tiene modo idle. En `daemon.log` siguió vivo hasta el SIGTERM del restart. Los "idle timeout" del log son de cores que arrancó el CLI `agetor` por su cuenta (5 min por defecto). Los logs del script se sobrescribían en cada arranque y no quedó el de la caída; ahora se anexan con marca de tiempo.
 
+## 2026-11-15 — El uso de Claude Code no se actualizaba en Linux
+
+**Decisión:**
+- [Claude] Fuera de macOS, la cuenta principal de Claude lee su token de `~/.claude/.credentials.json`. Antes se buscaba en el llavero de macOS, que no existe en Linux, y el medidor se quedaba con la caché de `~/.claude.json`. Detalle en `docs/linux-port.md`.
+
+**Verificado:** `bun test src/bun/usage/` (119 pasan), `bun run typecheck` y una llamada real (`source: api`, sesión al 7 %; la caché vieja decía 50 %).
+
 ## 2026-11-15 — El mensaje fijo del usuario se superponía al transcript
 
 **Decisión:**

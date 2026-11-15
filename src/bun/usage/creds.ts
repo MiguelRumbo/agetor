@@ -11,6 +11,7 @@
  */
 
 import { existsSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { Harness } from "../../shared/types.ts";
 import { coreSpawn } from "../core-spawn.ts";
@@ -31,9 +32,15 @@ const CREDENTIALS_MAX_BYTES = 1024 * 1024;
 function claudeConfigRoot(harness: Harness, platform: NodeJS.Platform): string | null {
   const pinned = claudeConfigDirEnvFor(harness);
   if (pinned) return pinned;
-  const envHome = harness.env?.HOME;
-  if (typeof envHome === "string" && envHome.trim() !== "" && platform !== "darwin") {
-    return path.join(envHome, ".claude");
+  // Off macOS there is no Keychain: claude keeps every login, the main
+  // account's included, in `<HOME>/.claude/.credentials.json`. Returning null
+  // here for the main account (the macOS "use the Keychain" signal) left
+  // Linux with no token, so the usage tracker never reached the live API and
+  // kept showing the stale `.claude.json` cache (docs/linux-port.md).
+  if (platform !== "darwin") {
+    const envHome = harness.env?.HOME;
+    const home = typeof envHome === "string" && envHome.trim() !== "" ? envHome : os.homedir();
+    return path.join(home, ".claude");
   }
   return null;
 }
