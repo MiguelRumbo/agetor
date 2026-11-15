@@ -98,6 +98,7 @@ scripts/linux.sh stop      # los agentes en tmux siguen vivos; el próximo start
 | Actualizaciones | `/updates/status` → 501 en headless | Se actualiza con `git pull` + `scripts/linux.sh build` | n/a |
 | Ejecutar en segundo plano al iniciar sesión | `src/bun/background-derive.ts:98` | Deshabilitado fuera de macOS. Alternativa futura: unidad systemd `--user` | Baja |
 | Selector nativo de archivos para referencias (botones Files/Folder del prompt) | `/refs/pick` → 501 en headless | Hay que escribir `@ruta` en el prompt. Los proyectos sí tienen fallback (ver arriba) | Media |
+| La UI dejó de cargar una vez (2026-11-15), sin causa conocida | `scripts/linux.sh` | El core del script no tiene modo idle (`AGETOR_DAEMON_IDLE_MS=0`) y siguió vivo, según `~/.agetor/daemon.log`. Lo que se apaga a los 5 min son los cores que arranca el CLI `agetor` cuando no encuentra uno. Ahora `core.log`/`ui.log` se anexan con marca `=== start …`: si vuelve a pasar, mirar ahí antes del `restart` | Media |
 | Discovery de capacidades en modo "disclaim" | `src/bun/discovery-fs.ts`, `task-dir-fs.ts`, `core-file-read.ts` | Usan `stat -f` y `tar -L` de BSD, pero solo con el disclaim activo, que nunca ocurre fuera de macOS | Ninguna |
 
 ## Tests en Linux

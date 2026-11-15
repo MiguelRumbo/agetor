@@ -128,12 +128,16 @@ do_start() {
   cd "$REPO_ROOT"
   dim "starting core on $API_PORT…"
   # AGETOR_DAEMON_IDLE_MS=0: never idle-exit when the browser tab is closed.
+  # Logs are appended (with a start marker), not truncated: after a crash the
+  # next `start`/`restart` must not wipe the evidence of why it died.
+  echo "=== start $(date -Is) ===" >> "$CORE_LOG"
   AGETOR_DATA_DIR="$DATA_DIR" AGETOR_API_PORT="$API_PORT" AGETOR_API_TOKEN="$token" \
-    AGETOR_DAEMON_IDLE_MS=0 nohup "$BIN" __daemon > "$CORE_LOG" 2>&1 &
+    AGETOR_DAEMON_IDLE_MS=0 nohup "$BIN" __daemon >> "$CORE_LOG" 2>&1 &
   echo $! > "$CORE_PID_FILE"
 
   dim "serving UI on $UI_PORT…"
-  nohup bunx vite preview --port "$UI_PORT" --strictPort --host 127.0.0.1 > "$UI_LOG" 2>&1 &
+  echo "=== start $(date -Is) ===" >> "$UI_LOG"
+  nohup bunx vite preview --port "$UI_PORT" --strictPort --host 127.0.0.1 >> "$UI_LOG" 2>&1 &
   echo $! > "$UI_PID_FILE"
 
   for _ in $(seq 1 50); do
