@@ -83,3 +83,10 @@ Cuando supere ~2000 líneas, archivar en `bitacora/<año>-Q<n>.md` y dejar aquí
 **Verificado:** `bun test src/bun/usage/`, `bun run typecheck` y una llamada real a los dos proveedores con las cuentas locales (Copilot 24/200 premium; agy Gemini 1 %).
 
 **Investigado (UI caída):** el core lanzado por `scripts/linux.sh` usa `AGETOR_DAEMON_IDLE_MS=0` y no tiene modo idle. En `daemon.log` siguió vivo hasta el SIGTERM del restart. Los "idle timeout" del log son de cores que arrancó el CLI `agetor` por su cuenta (5 min por defecto). Los logs del script se sobrescribían en cada arranque y no quedó el de la caída; ahora se anexan con marca de tiempo.
+
+## 2026-11-15 — El mensaje fijo del usuario se superponía al transcript
+
+**Decisión:**
+- [Claude] El contenedor fijo (sticky) del mensaje del usuario en el RunPanel pasa a tener el fondo del panel (`bg-card`) de borde a borde y a cubrir el padding superior del log. Antes era transparente y la burbuja solo ocupa el 85 % derecho, así que el texto que pasaba por debajo se veía a su lado. No se desactiva el modo sticky.
+
+**Verificado:** `bun run typecheck` y tests de `sticky-sections` y `user-message-display`. Sin comprobación visual: el usuario pidió no compilar ni reiniciar mientras Agetor estaba en uso.

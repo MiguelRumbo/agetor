@@ -6129,7 +6129,14 @@ function RunEventList({
               key,
               evid,
               <UserMessageBlock text={e.data} taskId={taskId} pathRoots={pathRoots} />,
-              stickyUserMessages ? "sticky top-0 z-10" : undefined,
+              // The pinned wrapper needs the panel's own background, edge to
+              // edge: the bubble fills only the right 85% and the log has
+              // `p-3`, so a transparent wrapper let the transcript scrolling
+              // underneath show beside and above the bubble. `-mx-3 px-3`
+              // spans the log's side padding, `-top-3` pins it over the top
+              // padding, and `-my-3 py-3` cancel out so the in-flow layout
+              // is unchanged.
+              stickyUserMessages ? "sticky -top-3 z-10 -mx-3 -my-3 bg-card px-3 py-3" : undefined,
             ),
           ];
         case "assistant": {
