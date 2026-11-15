@@ -18,3 +18,14 @@ Install is `brew install --cask antigravity-cli`; upgrade is `agy update` (or `b
 
 **Unlike codex/cursor/gemini/fx/opencode (which ship disabled — but see the auto-enable rule in [harnesses.md](harnesses.md)), migration 061 seeds the built-in `antigravity` row `enabled = 1` on purpose** — and migration 077 later seeded `copilot` enabled the same way.
 Env seams: `AGETOR_ANTIGRAVITY_BIN`, `AGETOR_ANTIGRAVITY_ARGS` (spliced before the trailing `-p`) and `AGETOR_ANTIGRAVITY_DRIVER=fake`.
+
+## Usage
+
+`src/bun/usage/antigravity-usage.ts` feeds the topbar usage tracker (the shared poller in `src/bun/usage/poller.ts`). It reads agy's Google OAuth token from `<HOME>/.gemini/antigravity-cli/antigravity-oauth-token` (HOME: the env map's `HOME`, then `harness.home`, then the user's) and calls the same endpoint agy's `quota_manager` uses: `POST https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels` with body `{}`. Each model's `quotaInfo` has `remainingFraction` and `resetTime`. Models share pools, so there is one meter per distinct (fraction, reset), labelled by family: "Gemini", "Claude / GPT-OSS". Internal `chat_*` / `tab_*` ids are skipped.
+
+Facts verified on 2026-11-15 against agy 1.5.9:
+
+- The request needs a `User-Agent` starting with `antigravity`; without one it gets 403.
+- The production host `cloudcode-pa` answers with every model at 100%, which is why the provider uses the `daily-` host.
+- The access token lives about an hour, and agy refreshes it only while it runs. Agetor doesn't hold agy's OAuth client and never refreshes it, so an expired token (or a 401) reports `unavailable` with "run agy once to refresh it".
+- The read is no-follow (`readAccountFileText`).

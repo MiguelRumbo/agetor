@@ -5,6 +5,8 @@ import { broadcastAppEvent } from "../quit-guard.ts";
 import { fetchClaudeQuota } from "./claude-usage.ts";
 import { fetchCodexQuota } from "./codex-usage.ts";
 import { fetchCursorQuota } from "./cursor-usage.ts";
+import { fetchCopilotQuota } from "./copilot-usage.ts";
+import { fetchAntigravityQuota } from "./antigravity-usage.ts";
 
 /**
  * Per-harness usage poller (docs/plans/harness-usage-tracker.md, §3 "Refresh:
@@ -45,6 +47,8 @@ export const USAGE_PROVIDERS: Partial<Record<AgentKind, UsageProvider>> &
   "claude-code": fetchClaudeQuota,
   codex: fetchCodexQuota,
   cursor: fetchCursorQuota,
+  copilot: fetchCopilotQuota,
+  antigravity: fetchAntigravityQuota,
 };
 
 // ── Test seam ────────────────────────────────────────────────────────────

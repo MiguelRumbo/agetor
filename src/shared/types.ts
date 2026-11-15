@@ -2329,7 +2329,7 @@ export const USAGE_CRIT_PERCENT = 90;
  *  this list, so the two can't drift). The webview uses it to decide whether
  *  a chip without a snapshot should say "enable the harness / refresh" vs
  *  "usage tracking isn't supported for this kind yet" (gemini/grok). */
-export const USAGE_SUPPORTED_KINDS = ["claude-code", "codex", "cursor"] as const satisfies readonly AgentKind[];
+export const USAGE_SUPPORTED_KINDS = ["claude-code", "codex", "cursor", "copilot", "antigravity"] as const satisfies readonly AgentKind[];
 
 /**
  * A git worktree materialized on disk under `dataDir/worktrees/`, as surfaced
