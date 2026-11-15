@@ -90,3 +90,10 @@ Cuando supere ~2000 líneas, archivar en `bitacora/<año>-Q<n>.md` y dejar aquí
 - [Claude] Fuera de macOS, la cuenta principal de Claude lee su token de `~/.claude/.credentials.json`. Antes se buscaba en el llavero de macOS, que no existe en Linux, y el medidor se quedaba con la caché de `~/.claude.json`. Detalle en `docs/linux-port.md`.
 
 **Verificado:** `bun test src/bun/usage/` (119 pasan), `bun run typecheck` y una llamada real (`source: api`, sesión al 7 %; la caché vieja decía 50 %).
+
+## 2026-11-15 — El mensaje fijo del usuario se superponía al transcript
+
+**Decisión:**
+- [Claude] El contenedor fijo (sticky) del mensaje del usuario en el RunPanel pasa a tener el fondo del panel (`bg-card`) de borde a borde y a cubrir el padding superior del log. Antes era transparente y la burbuja solo ocupa el 85 % derecho, así que el texto que pasaba por debajo se veía a su lado. No se desactiva el modo sticky.
+
+**Verificado:** `bun run typecheck` y tests de `sticky-sections` y `user-message-display`. Sin comprobación visual: el usuario pidió no compilar ni reiniciar mientras Agetor estaba en uso.
