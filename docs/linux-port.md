@@ -86,6 +86,14 @@ scripts/linux.sh stop      # los agentes en tmux siguen vivos; el próximo start
 
 **Arreglo:** ante un 501, la UI pide la ruta absoluta con `window.prompt` y la registra con `POST /projects` (`api.addProject`). Verificado con Playwright: registra el proyecto y lo deja seleccionado en el formulario. En la app de escritorio el camino no cambia, porque allí nunca hay 501.
 
+### Uso de Claude Code congelado (`src/bun/usage/creds.ts`)
+
+**Síntoma:** el medidor de uso de Claude Code no se actualizaba, ni siquiera con el refresco manual. El snapshot decía `source: cache` y tenía horas de antigüedad.
+
+**Causa raíz:** para la cuenta principal, `claudeConfigRoot` devolvía `null`, que significa "el token está en el llavero de macOS". En Linux no hay llavero: claude guarda el login en `~/.claude/.credentials.json`. Sin token, el proveedor nunca llamaba a la API y se quedaba con la caché `cachedUsageUtilization` de `~/.claude.json`, que el CLI actualiza poco.
+
+**Arreglo:** fuera de macOS, la cuenta principal usa `<HOME>/.claude` como raíz (el `HOME` del env map si lo hay; si no, el del usuario). En macOS no cambia nada. Verificado con una llamada real: `source: api` y datos al momento.
+
 ## Problemas conocidos en Linux (sin arreglar)
 
 | Qué | Dónde | Efecto | Prioridad |
