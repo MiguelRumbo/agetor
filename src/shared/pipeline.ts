@@ -920,10 +920,16 @@ export function parseHandoffInner(inner: string): HandoffParseResult {
   return { ok: true, handoff: normalizeHandoff(parsed) };
 }
 
-/** Join transcript segments (one per event) with `"\n"` — the same text the
- *  runner always scanned — and report where each segment starts in it. */
-function joinHandoffSegments(text: string | readonly string[]): { joined: string; starts: number[] | undefined } {
+/** Join transcript segments (one per event) with `"\n"` for code-aware mode
+ *  (where each segment is a distinct message event), or with `""` for legacy
+ *  mode (where delta-streaming harnesses emit raw token-level chunks that
+ *  must not be broken by synthetic newlines). */
+function joinHandoffSegments(
+  text: string | readonly string[],
+  codeAware: boolean = true,
+): { joined: string; starts: number[] | undefined } {
   if (typeof text === "string") return { joined: text, starts: undefined };
+  if (!codeAware) return { joined: text.join(""), starts: undefined };
   const starts: number[] = [];
   let offset = 0;
   for (let i = 0; i < text.length; i++) {
@@ -944,18 +950,20 @@ function joinHandoffSegments(text: string | readonly string[]): { joined: string
  * `PIPELINE_LIMITS.handoffScanTailBytes` code units of the text are scanned.
  *
  * `text` is one string, or an array of segments (one per transcript event):
- * the array is joined with `"\n"` — the same text a single string would be —
- * and each element's offset becomes a segment start, where the locator resets
- * its Markdown state (a block may still pair across segments). Pass
- * `{ codeAware: false }` for the legacy Markdown-blind scan, which the
- * delta-streaming harnesses need ({@link HANDOFF_DELTA_STREAM_KINDS}).
+ * the array is joined with `"\n"` in code-aware mode (or `""` in legacy mode
+ * for delta streams) — and in code-aware mode each element's offset becomes a
+ * segment start, where the locator resets its Markdown state (a block may
+ * still pair across segments). Pass `{ codeAware: false }` for the legacy
+ * Markdown-blind scan, which the delta-streaming harnesses need
+ * ({@link HANDOFF_DELTA_STREAM_KINDS}).
  *
  * Returns `{ok:false, error, raw:null}` when no `<handoff>` tag is found at
  * all, or `{ok:false, error, raw:<inner text>}` when a tag was found but its
  * contents couldn't be parsed as an object.
  */
 export function parseHandoff(text: string | readonly string[], opts?: { codeAware?: boolean }): HandoffParseResult {
-  const { joined, starts } = joinHandoffSegments(text);
+  const codeAware = opts?.codeAware !== false;
+  const { joined, starts } = joinHandoffSegments(text, codeAware);
   const blocks = findHandoffBlocks(joined, { segmentStarts: starts, codeAware: opts?.codeAware });
   const last = blocks[blocks.length - 1];
   if (last === undefined) return { ok: false, error: "no <handoff> block found", raw: null };

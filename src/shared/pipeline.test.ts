@@ -2747,6 +2747,25 @@ describe("parseHandoff — segments and code awareness", () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.handoff.summary).toBe("s");
   });
+
+  test("delta-streaming chunks with codeAware:false join without newlines and do not corrupt tokens or JSON strings", () => {
+    const deltaChunks = [
+      "Here is the final update:\n\n<hand",
+      "off>\n{\n  \"schema",
+      "Version\": 1,\n  \"pur",
+      "pose\": \"Test delta stream\",\n  \"sum",
+      "mary\": \"Successfully handled token splits\",\n  \"rea",
+      "son\": \"Done\",\n  \"next\": null,\n  \"artifacts\": [],\n  \"openQuestions\": [],\n  \"status\": \"done\"\n}\n</hand",
+      "off>\n",
+    ];
+    // Under codeAware: false (legacy delta mode), chunks are joined with "" so split tags and split string literals survive.
+    const res = parseHandoff(deltaChunks, { codeAware: false });
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.handoff.summary).toBe("Successfully handled token splits");
+      expect(res.handoff.status).toBe("done");
+    }
+  });
 });
 
 describe("classifyStepResponse — segments and codeAware", () => {
@@ -2765,6 +2784,26 @@ describe("classifyStepResponse — segments and codeAware", () => {
     expect(
       classifyStepResponse({ runStatus: "succeeded", assistantText: text, pendingInteractions: 0, codeAware: false }).kind,
     ).toBe("handoff");
+  });
+
+  test("delta-streaming token chunks classify as handoff under codeAware:false", () => {
+    const deltaChunks = [
+      "Done with step.\n<hand",
+      "off>\n{\n  \"schema",
+      "Version\": 1,\n  \"pur",
+      "pose\": \"p\",\n  \"summary\": \"s\",\n  \"reason\": \"r\",\n  \"next\": null,\n  \"artifacts\": [],\n  \"openQuestions\": [],\n  \"status\": \"done\"\n}\n</hand",
+      "off>\n",
+    ];
+    const r = classifyStepResponse({
+      runStatus: "succeeded",
+      assistantText: deltaChunks,
+      pendingInteractions: 0,
+      codeAware: false,
+    });
+    expect(r.kind).toBe("handoff");
+    if (r.kind === "handoff" && r.handoff) {
+      expect(r.handoff.summary).toBe("s");
+    }
   });
 });
 

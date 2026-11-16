@@ -256,3 +256,56 @@ test("the scan mode follows the run's harness: a fence split across two delta ev
     await deleteTask(taskId).catch(() => {});
   }
 });
+
+test("delta-streaming harnesses (antigravity/gemini) parse handoffs split across streamed token deltas without corruption", async () => {
+  const { createTask } = await import("./orchestrator.ts");
+  const { runs } = await import("./db.ts");
+  const { __forTest } = await import("./pipeline-runner.ts");
+
+  const created = await createTask({
+    title: "token-deltas",
+    prompt: "goal",
+    workdir: mkdtempSync(path.join(tmpdir(), "agetor-handoff-deltas-wd-")),
+    isolation: "none",
+  });
+  if ("error" in created) throw new Error(created.error);
+  const taskId = created.task.id;
+
+  const deltaSegments = [
+    "I have completed the step.\n\n<hand",
+    "off>\n{\n  \"schema",
+    "Version\": 1,\n  \"pur",
+    "pose\": \"p\",\n  \"summary\": \"token deltas handled\",\n  \"reason\": \"r\",\n  \"next\": null,\n  \"artifacts\": [],\n  \"openQuestions\": [],\n  \"status\": \"done\"\n}\n</hand",
+    "off>\n",
+  ];
+
+  const kindFor = (agent: string) => {
+    const runId = randomUUID();
+    const now = Date.now();
+    runs.insert({
+      id: runId,
+      taskId,
+      agent,
+      status: "succeeded",
+      startedAt: now,
+      endedAt: now,
+      exitCode: 0,
+      tmuxSession: null,
+      claudeSessionId: null,
+      codexSessionId: null,
+      cursorSessionId: null,
+      geminiSessionId: null,
+      fxSessionId: null,
+    });
+    for (const s of deltaSegments) runs.appendEvent(runId, "assistant", s);
+    return __forTest.parsedRunResponse(runId).kind;
+  };
+
+  try {
+    expect(kindFor("gemini")).toBe("handoff");
+    expect(kindFor("antigravity")).toBe("handoff");
+  } finally {
+    const { deleteTask } = await import("./orchestrator.ts");
+    await deleteTask(taskId).catch(() => {});
+  }
+});
