@@ -208,6 +208,6 @@ Migration 091 (`091_task_repositories.sql`) adds two `tasks` columns; the featur
   - `tasks.clearIssueRepoPath(taskId, repoPath)` sets `issue_repo_path` to NULL only while it still equals `repoPath` (compare-then-write); `removeTaskRepository` calls it for the removed repository, on the task and on each pipeline step row that names it, so no remaining repository's PR claims `Closes #N`.
 - `PATCH /tasks/:id` refuses `repositories` (400, pointing at the removal route) and any change to a multi row's `workdir` (400), even before its first start: the workspace root is derived from the set, which can lose entries but never gain them.
 
-## Native run usage (migration 093)
+## Native run usage (migrations 093 and 094)
 
-Migration 093 stores token counters in `run_usage` and snapshots profile and model metadata on `runs`. See [native token telemetry](run-usage.md) for the collection, retention and rollback contract.
+Migration 093 stores token counters in `run_usage` and snapshots profile and model metadata on `runs`. Migration 094 keeps collected telemetry and its attribution after a task or run is deleted. See [native token telemetry](run-usage.md) for the collection, retention and rollback contract.

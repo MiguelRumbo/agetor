@@ -25,4 +25,8 @@ Run attribution uses the harness and the launch-time model, effort and profile s
 
 ## Database
 
-Migration 093 creates `run_usage` and adds launch-attribution columns to `runs`. Usage rows are indexed by run and task and cascade on deletion. To roll back, stop the core and apply `src/bun/migrations/down/093_run_usage.sql`. Databases that already applied the fork’s original `087_run_usage` migration register 093 as an alias without recreating its tables or counters. Rollback removes telemetry and both migration entries. Existing tasks, runs and transcripts remain available, and starting a build with migration 093 reapplies it.
+Migration 093 creates `run_usage` and adds launch-attribution columns to `runs`. Databases that already applied the fork’s original `087_run_usage` migration register 093 as an alias without recreating its tables or counters.
+
+Migration 094 preserves collected telemetry after task or run deletion. It snapshots the harness kind, pipeline, and profile attribution, including the subagent persona's profile when available. `agetor usage` includes retained rows in its totals and filters, and a surviving pipeline parent includes the usage of its deleted steps. Removing a card still removes its runs and transcript. Telemetry already removed by the former cascade can only be recovered from a backup that contains it.
+
+To roll back, stop the core and apply `src/bun/migrations/down/094_retain_run_usage.sql`. It restores the original foreign keys and drops historical telemetry whose task or run has already been deleted. To remove telemetry entirely, apply `src/bun/migrations/down/093_run_usage.sql` next. A build containing the migrations reapplies them on startup.

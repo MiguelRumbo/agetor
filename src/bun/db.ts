@@ -5387,14 +5387,39 @@ export const runUsage = {
 
   replace(run: Run, items: (Omit<RunUsage, "id" | "runId" | "taskId" | "harness" | "createdAt"> & { providerTotal?: number })[], now: number): RunUsage[] {
     return db.transaction(() => {
+      const attribution = db.query<{
+        kind: string; pipeline_parent_id: string | null; pipeline_id: string | null;
+        pipeline_name: string | null; profile_id: string | null; profile_name: string | null;
+      }, [string]>(
+        `SELECT COALESCE(r.usage_kind, h.kind, r.agent) AS kind, t.pipeline_parent_id,
+           COALESCE(parent.pipeline_id, t.pipeline_id) AS pipeline_id,
+           COALESCE(json_extract(parent.pipeline_run, '$.pipelineName'), p.name,
+             parent.pipeline_id, t.pipeline_id) AS pipeline_name,
+           COALESCE(r.usage_profile_id, CASE WHEN r.usage_kind IS NULL THEN t.agent_profile_id END) AS profile_id,
+           COALESCE(r.usage_profile_name,
+             CASE WHEN r.usage_kind IS NULL THEN json_extract(t.agent_profile, '$.name') END) AS profile_name
+         FROM runs r JOIN tasks t ON t.id = r.task_id
+         LEFT JOIN tasks parent ON parent.id = t.pipeline_parent_id
+         LEFT JOIN pipelines p ON p.id = COALESCE(parent.pipeline_id, t.pipeline_id)
+         LEFT JOIN harnesses h ON h.id = r.agent
+         WHERE r.id = ?`,
+      ).get(run.id);
+      if (!attribution) return [];
       db.run("DELETE FROM run_usage WHERE run_id = ?", [run.id]);
       return items.map(({ providerTotal, ...item }) => {
+        const profileId = item.subagentPersona === null
+          ? attribution.profile_id
+          : db.query<{ id: string }, [string]>("SELECT id FROM agent_profiles WHERE name_key = ?")
+            .get(item.subagentPersona.trim().toLowerCase())?.id ?? null;
         const result = db.run(
           `INSERT INTO run_usage (run_id, task_id, harness, model, effort, input, cache_write,
-             cache_read, output, reasoning, provider_total, subagent_persona, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             cache_read, output, reasoning, provider_total, subagent_persona, created_at, kind,
+             pipeline_parent_id, pipeline_id, pipeline_name, profile_id, profile_name)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [run.id, run.taskId, run.agent, item.model, item.effort, item.input, item.cacheWrite,
-            item.cacheRead, item.output, item.reasoning, providerTotal ?? null, item.subagentPersona, now],
+            item.cacheRead, item.output, item.reasoning, providerTotal ?? null, item.subagentPersona, now,
+            attribution.kind, attribution.pipeline_parent_id, attribution.pipeline_id,
+            attribution.pipeline_name, profileId, item.subagentPersona ?? attribution.profile_name],
         );
         return { ...item, id: Number(result.lastInsertRowid), runId: run.id, taskId: run.taskId,
           harness: run.agent, createdAt: now };
@@ -5410,11 +5435,7 @@ export const runUsage = {
 
   summaryForRun(runId: string): TaskUsageSummary | null {
     return db.query<TaskUsageSummary, [string]>(
-      `SELECT ${usageSums} FROM (
-         SELECT ru.*, COALESCE(r.usage_kind, h.kind, ru.harness) AS kind
-         FROM run_usage ru JOIN runs r ON r.id = ru.run_id
-         LEFT JOIN harnesses h ON h.id = ru.harness WHERE ru.run_id = ?
-       ) HAVING COUNT(*) > 0`,
+      `SELECT ${usageSums} FROM run_usage WHERE run_id = ? HAVING COUNT(*) > 0`,
     ).get(runId);
   },
 
@@ -5423,16 +5444,11 @@ export const runUsage = {
     for (let i = 0; i < ids.length; i += 200) {
       const batch = ids.slice(i, i + 200);
       const rows = db.query<TaskUsageSummary & { taskId: string }, [string]>(
-        `WITH requested AS (SELECT value AS id FROM json_each(?)),
-         related AS (
-           SELECT id AS taskId, id AS source FROM requested
-           UNION ALL
-           SELECT t.pipeline_parent_id, t.id FROM requested q JOIN tasks t ON t.pipeline_parent_id = q.id
-         )
+        `WITH requested AS (SELECT value AS id FROM json_each(?))
          SELECT taskId, ${usageSums} FROM (
-           SELECT rel.taskId, ru.*, COALESCE(r.usage_kind, h.kind, ru.harness) AS kind
-           FROM related rel JOIN run_usage ru ON ru.task_id = rel.source
-           JOIN runs r ON r.id = ru.run_id LEFT JOIN harnesses h ON h.id = ru.harness
+           SELECT q.id AS taskId, ru.* FROM requested q JOIN run_usage ru ON ru.task_id = q.id
+           UNION ALL
+           SELECT q.id AS taskId, ru.* FROM requested q JOIN run_usage ru ON ru.pipeline_parent_id = q.id
          ) GROUP BY taskId`,
       ).all(JSON.stringify(batch));
       for (const { taskId, ...summary } of rows) result.set(taskId, summary);
@@ -5448,29 +5464,16 @@ export const runUsage = {
       params.push(opts.since);
     }
     if (opts.pipeline) {
-      conditions.push("(pipelineId = ? OR lower(pipeline) = lower(?))");
+      conditions.push("(pipeline_id = ? OR lower(pipeline_name) = lower(?))");
       params.push(opts.pipeline, opts.pipeline);
     }
     if (opts.profile) {
-      conditions.push("(profileId = ? OR lower(profile) = lower(?))");
+      conditions.push("(profile_id = ? OR lower(profile_name) = lower(?))");
       params.push(opts.profile, opts.profile);
     }
-    const source = `WITH attributed AS (
-      SELECT ru.*, COALESCE(r.usage_kind, h.kind, ru.harness) AS kind,
-        COALESCE(parent.pipeline_id, t.pipeline_id) AS pipelineId,
-        COALESCE(json_extract(parent.pipeline_run, '$.pipelineName'), p.name,
-          parent.pipeline_id, t.pipeline_id) AS pipeline,
-        CASE WHEN ru.subagent_persona IS NOT NULL THEN sub.id
-          ELSE COALESCE(r.usage_profile_id, CASE WHEN r.usage_kind IS NULL THEN t.agent_profile_id END)
-        END AS profileId,
-        COALESCE(ru.subagent_persona, r.usage_profile_name,
-          CASE WHEN r.usage_kind IS NULL THEN json_extract(t.agent_profile, '$.name') END) AS profile
-      FROM run_usage ru JOIN runs r ON r.id = ru.run_id JOIN tasks t ON t.id = ru.task_id
-      LEFT JOIN tasks parent ON parent.id = t.pipeline_parent_id
-      LEFT JOIN pipelines p ON p.id = COALESCE(parent.pipeline_id, t.pipeline_id)
-      LEFT JOIN harnesses h ON h.id = ru.harness
-      LEFT JOIN agent_profiles sub ON sub.name_key = lower(ru.subagent_persona)
-    ), filtered AS (SELECT * FROM attributed ${conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""})`;
+    const source = `WITH filtered AS (
+      SELECT * FROM run_usage ${conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""}
+    )`;
     const total = db.query<TaskUsageSummary, (string | number)[]>(
       `${source} SELECT ${usageSums} FROM filtered`,
     ).get(...params)!;
@@ -5480,7 +5483,7 @@ export const runUsage = {
       ).all(...params);
       return { total, items };
     }
-    const column = { pipeline: "pipeline", profile: "profile", harness: "harness", model: "model" }[opts.by];
+    const column = { pipeline: "pipeline_name", profile: "profile_name", harness: "harness", model: "model" }[opts.by];
     const groups = db.query<UsageGroup, (string | number)[]>(
       `${source} SELECT ${column} AS key, COUNT(*) AS count, ${usageSums}
        FROM filtered GROUP BY ${column} ORDER BY total DESC, key`,
