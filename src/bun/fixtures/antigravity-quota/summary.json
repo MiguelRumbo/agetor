@@ -1,0 +1,20 @@
+{
+  "groups": [
+    {
+      "displayName": "Gemini Models",
+      "description": "Models within this group: Gemini 3.8 Flash",
+      "buckets": [
+        { "bucketId": "gemini-weekly", "window": "weekly", "remainingFraction": 1, "resetTime": "2026-01-08T00:00:00Z" },
+        { "bucketId": "gemini-5h", "window": "5h", "remainingFraction": 1, "resetTime": "2026-01-01T05:00:00Z" }
+      ]
+    },
+    {
+      "displayName": "Claude and GPT models",
+      "description": "Models within this group: Claude Sonnet 4.6, Claude Opus 4.6, GPT-OSS 120B",
+      "buckets": [
+        { "bucketId": "3p-weekly", "window": "weekly", "remainingFraction": 1, "resetTime": "2026-01-08T00:00:00Z" },
+        { "bucketId": "3p-5h", "window": "5h", "remainingFraction": 1, "resetTime": "2026-01-01T05:00:00Z" }
+      ]
+    }
+  ]
+}

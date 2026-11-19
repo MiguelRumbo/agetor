@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { migrate } from "./migrate.ts";
 import { migrations } from "./migrations/index.ts";
+import rollbackRetention from "./migrations/down/094_retain_run_usage.sql" with { type: "text" };
 import rollback from "./migrations/down/093_run_usage.sql" with { type: "text" };
 import type { Run, Task } from "../shared/types.ts";
 import pkg from "../../package.json" with { type: "json" };
@@ -22,17 +23,19 @@ test("migration 093 preserves fork telemetry from 087 and supports rollback and 
     VALUES ('run', 'task', 'codex', 42, 1)`);
   expect(migrate(db, migrations)).toEqual([
     "087_harness_stacks_fix_round", "088_harness_orphaned_copies", "089_harness_mirror_sources",
-    "090_harness_mirror_backup_folder", "091_task_repositories", "092_task_base_branch_and_prs",
+    "090_harness_mirror_backup_folder", "091_task_repositories", "092_task_base_branch_and_prs", "094_retain_run_usage",
   ]);
+  expect(db.query("SELECT input FROM run_usage").get()).toEqual({ input: 42 });
+  db.exec(rollbackRetention);
   expect(db.query("SELECT input FROM run_usage").get()).toEqual({ input: 42 });
   db.exec(rollback);
   expect(db.query("SELECT id FROM runs").get()).toEqual({ id: "run" });
   expect(db.query("SELECT name FROM sqlite_master WHERE name = 'run_usage'").get()).toBeNull();
-  expect(migrate(db, migrations)).toEqual(["093_run_usage"]);
+  expect(migrate(db, migrations)).toEqual(["093_run_usage", "094_retain_run_usage"]);
 });
 
 test("settlement records provider telemetry and exposes it through the CLI and SSE", async () => {
-  const { agentProfiles, pipelines, runs, runUsage, tasks } = await import("./db.ts");
+  const { agentProfiles, db, pipelines, runs, runUsage, tasks } = await import("./db.ts");
   const { createTask } = await import("./orchestrator.ts");
   const { antigravityLogPath } = await import("./antigravity-tmux.ts");
   const { startApiServer } = await import("./server.ts");
@@ -171,10 +174,28 @@ test("settlement records provider telemetry and exposes it through the CLI and S
       { key: persona.name, total: 5 },
     ]);
     expect((await cli("usage", "--pipeline", pipeline.id, "--since", "2026-01-02")).items).toEqual([]);
+    // Deleting the card and its source records preserves the historic report.
+    tasks.delete(claude.taskId);
+    expect(runs.get(claude.id)).toBeNull();
+    expect(tasks.get(parent.id)?.usage?.total).toBe(50);
+    tasks.delete(parent.id);
+    pipelines.delete(pipeline.id);
+    agentProfiles.delete(profile.id);
+    agentProfiles.delete(persona.id);
+    expect((await cli("usage", "--pipeline", pipeline.id, "--by", "model")).total.total).toBe(50);
+    expect(runUsage.queryUsage({ pipeline: pipeline.name, profile: persona.id }).total.total).toBe(5);
+    expect(runUsage.queryUsage({ profile: profile.name }).total.total).toBe(45);
+
+    tasks.delete(codex.taskId);
+    expect(runs.get(codex.id)).toBeNull();
+    expect(runUsage.summaryForRun(codex.id)?.total).toBe(90);
   } finally {
     controller.abort();
     server.stop(true);
-    for (const id of taskIds.reverse()) tasks.delete(id);
+    for (const id of taskIds.reverse()) {
+      tasks.delete(id);
+      db.run("DELETE FROM run_usage WHERE task_id = ?", [id]);
+    }
     pipelines.delete(pipeline.id);
     agentProfiles.delete(profile.id);
     agentProfiles.delete(persona.id);

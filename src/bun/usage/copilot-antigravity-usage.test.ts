@@ -2,11 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { Harness } from "../../shared/types.ts";
+import summary from "../fixtures/antigravity-quota/summary.json" with { type: "json" };
+import { harnessQuotaLooksExhausted, harnessQuotaResetAt, HARNESS_QUOTA_STALE_MS } from "../../shared/harness-limits.ts";
+import type { Harness, HarnessQuota } from "../../shared/types.ts";
 import {
   antigravityTokenPath,
   fetchAntigravityQuota,
-  parseAntigravityModels,
+  parseAntigravityQuotaSummary,
   readAntigravityToken,
 } from "./antigravity-usage.ts";
 import { fetchCopilotQuota, parseCopilotUsage, readCopilotToken } from "./copilot-usage.ts";
@@ -66,28 +68,59 @@ describe("readCopilotToken", () => {
   });
 });
 
-describe("parseAntigravityModels", () => {
-  test("one meter per shared pool, labelled by family; chat_/tab_ ids ignored", () => {
-    const meters = parseAntigravityModels({
-      models: {
-        "gemini-2.5-pro": { quotaInfo: { remainingFraction: 0.75, resetTime: "2026-11-15T23:14:44Z" } },
-        "gemini-3-flash": { quotaInfo: { remainingFraction: 0.75, resetTime: "2026-11-15T23:14:44Z" } },
-        "claude-sonnet-4-6": { quotaInfo: { remainingFraction: 1, resetTime: "2026-11-16T00:15:40Z" } },
-        "gpt-oss-120b-medium": { quotaInfo: { remainingFraction: 1, resetTime: "2026-11-16T00:15:40Z" } },
-        chat_20706: { quotaInfo: { remainingFraction: 0 } },
-        tab_flash_lite_preview: { quotaInfo: { remainingFraction: 0 } },
-        "no-quota": {},
-      },
-    });
-    expect(meters).toEqual([
-      { id: "gemini", label: "Gemini", usedPercent: 25, resetsAtMs: Date.parse("2026-11-15T23:14:44Z") },
-      { id: "claude-gpt-oss", label: "Claude / GPT-OSS", usedPercent: 0, resetsAtMs: Date.parse("2026-11-16T00:15:40Z") },
-    ]);
+describe("Antigravity quota windows", () => {
+  const now = Date.parse("2026-01-01T00:00:00Z");
+  const quota = (gemini: number, thirdParty: number): HarnessQuota => {
+    const body = structuredClone(summary);
+    for (const group of body.groups) {
+      for (const bucket of group.buckets) {
+        bucket.remainingFraction = bucket.bucketId.startsWith("gemini") ? gemini : thirdParty;
+      }
+    }
+    return {
+      harnessId: "agy", kind: "antigravity", status: "ok", source: "api", planType: null,
+      reason: null, fetchedAtMs: now, meters: parseAntigravityQuotaSummary(body),
+    };
+  };
+  const blocked = (snapshot: HarnessQuota, model: string, at = now) =>
+    harnessQuotaLooksExhausted(snapshot, at, HARNESS_QUOTA_STALE_MS, model);
+
+  test("equal windows keep four distinct meters and the provider model names", () => {
+    const meters = quota(1, 1).meters;
+    expect(meters.map((meter) => meter.id)).toEqual(["gemini-weekly", "gemini-5h", "3p-weekly", "3p-5h"]);
+    expect(meters[0]).toMatchObject({ scope: "Gemini", scopeModels: "Gemini 3.8 Flash", usedPercent: 0 });
+    expect(meters[2]).toMatchObject({ scope: "Claude / GPT-OSS", scopeModels: "Claude Sonnet 4.6, Claude Opus 4.6, GPT-OSS 120B" });
   });
 
-  test("garbage in → no meters", () => {
-    expect(parseAntigravityModels(null)).toEqual([]);
-    expect(parseAntigravityModels({ models: [] })).toEqual([]);
+  test("an exhausted pool blocks only its models and uses its latest exhausted reset", () => {
+    const geminiFull = quota(0, 1);
+    expect(blocked(geminiFull, "gemini-3.8-flash-high")).toBe(true);
+    expect(blocked(geminiFull, "claude-sonnet-4-6")).toBe(false);
+    expect(blocked(quota(1, 0), "gemini-3.8-flash-high")).toBe(false);
+    expect(blocked(quota(1, 0), "claude-opus-4-6")).toBe(true);
+    expect(blocked(quota(1, 0), "gpt-oss-120b-medium")).toBe(true);
+    expect(blocked(geminiFull, "unknown-model")).toBe(false);
+    expect(harnessQuotaResetAt(geminiFull, now, HARNESS_QUOTA_STALE_MS, "gemini-3.8-flash-high"))
+      .toBe(Date.parse("2026-01-08T00:00:00Z"));
+  });
+
+  test("a full window without a reset does not promise availability at another window's reset", () => {
+    const snapshot = quota(0, 1);
+    snapshot.meters[1]!.resetsAtMs = null;
+    expect(blocked(snapshot, "gemini-3.8-flash-high")).toBe(true);
+    expect(harnessQuotaResetAt(snapshot, now, HARNESS_QUOTA_STALE_MS, "gemini-3.8-flash-high")).toBeNull();
+  });
+
+  test("headroom, stale snapshots and unreported windows stay out of the block decision", () => {
+    expect(blocked(quota(0.001, 1), "gemini-3.8-flash-high")).toBe(false);
+    expect(blocked(quota(0, 1), "gemini-3.8-flash-high", now + HARNESS_QUOTA_STALE_MS + 1)).toBe(false);
+    const partial = { ...quota(0, 1), meters: quota(0, 1).meters.filter((meter) => meter.scope !== "Gemini") };
+    expect(blocked(partial, "gemini-3.8-flash-high")).toBe(false);
+    expect(parseAntigravityQuotaSummary(null)).toEqual([]);
+    expect(parseAntigravityQuotaSummary({ groups: [{ buckets: [
+      { bucketId: "gemini-5h", remainingFraction: -1 },
+      { bucketId: "other-weekly", remainingFraction: 0 },
+    ] }] })).toEqual([]);
   });
 });
 
