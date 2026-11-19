@@ -104,3 +104,5 @@ A task created against two or more repositories stores `Task.repositories[]` and
 - **Terminals** (`POST /tasks/:id/terminals { repo }`) open at the workspace root or inside one repository's checkout; an unknown `repo` is refused before anything is prepared, and a `null` or non-object body is read as empty.
 
 Run settlement, blocking and pauses trigger asynchronous [native token telemetry](run-usage.md).
+
+Antigravity starts and follow-ups check the fresh [quota snapshot for the selected model’s pool](harness-antigravity.md#usage) before launching another turn.

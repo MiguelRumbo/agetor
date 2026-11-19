@@ -8,6 +8,7 @@ import {
   runs,
   setRunSettledListener,
   harnesses,
+  harnessUsage,
   projects,
   subagents,
   backlog,
@@ -21,6 +22,7 @@ import {
   type SessionIdColumn,
   type AppendedEvent,
 } from "./db.ts";
+import { antigravityQuotaPool } from "../shared/antigravity-quota.ts";
 import { isHiddenContinuationUserText as dbIsHiddenContinuationUserText } from "./db.ts";
 import { markStalled, clearStalled } from "./stall-registry.ts";
 // File READERS (JSONL paths, tailers, watchers) resolve the account's config
@@ -90,7 +92,7 @@ import {
 } from "../shared/fx-recovery.ts";
 import { resolveStartStep, validatePipelineGraph } from "../shared/pipeline.ts";
 import { HARNESS_LIMIT_STATUS_PREFIX, HARNESS_SWAP_STATUS_PREFIX, type HarnessLimitSignal, type HarnessMemberReason, type HarnessStack, type HarnessStackMember, type HarnessSwapEvent, type HarnessSwapNotice, type SwitchAccountRefusal, type SwitchAccountResult, type TaskHarnessState } from "../shared/types.ts";
-import { classifyHarnessLimitSignal, parseHarnessLimitSignal } from "../shared/harness-limits.ts";
+import { classifyHarnessLimitSignal, parseHarnessLimitSignal, HARNESS_QUOTA_STALE_MS, harnessQuotaLooksExhausted, harnessQuotaResetAt } from "../shared/harness-limits.ts";
 import {
   composeHarnessStackContinuationPrompt,
   formatStackExhausted,
@@ -2503,6 +2505,9 @@ async function startTaskInner(
     }
   }
   const effective: AgentProfileSnapshot | null = resolvedProfile?.profile ?? null;
+
+  const quotaError = antigravityQuotaError(task, resolveHarness(task.agent));
+  if (quotaError) return { error: quotaError };
 
   // Harness-stack prepare: a Run on an account removed/disabled/logged out of
   // its stack moves to the next usable account and transfers the
@@ -8625,6 +8630,10 @@ async function sendInputInner(
   // gate, not the only one.
   {
     const taskHarness = resolveHarness(task.agent);
+    if (!isAnyRunOfTaskLive(row.task_id)) {
+      const quotaError = antigravityQuotaError(task, taskHarness);
+      if (quotaError) return { delivered: false, reason: quotaError };
+    }
     if (taskHarness?.kind === "codex" || taskHarness?.kind === "copilot") {
       const floorError = await minCliVersionError(taskHarness, task.model ?? DEFAULT_MODEL[taskHarness.kind]);
       if (floorError !== null) return { delivered: false, reason: floorError };
@@ -8813,6 +8822,7 @@ async function sendInputInner(
   if (kind === "antigravity") {
     const result = await sendAntigravityTurn(row.task_id, line, onlyIfIdle);
     if (isIdleOnlyBusy(result)) return idleOnlyBusyResult();
+    if (result && typeof result === "object") return { delivered: false, reason: result.error };
     return result
       ? { delivered: true, runId: result, ...(unresolvedRefs.length ? { unresolvedRefs } : {}) }
       : {
@@ -9613,6 +9623,19 @@ async function drainGeminiQueue(taskId: string): Promise<void> {
 }
 
 
+function antigravityQuotaError(task: Pick<Task, "model">, harness: Harness | null): string | null {
+  if (harness?.kind !== "antigravity") return null;
+  const model = task.model ?? DEFAULT_MODEL.antigravity;
+  const pool = antigravityQuotaPool(model);
+  if (!pool) return null;
+  const quota = harnessUsage.get(harness.id);
+  const now = Date.now();
+  if (!harnessQuotaLooksExhausted(quota, now, HARNESS_QUOTA_STALE_MS, model)) return null;
+  const reset = harnessQuotaResetAt(quota, now, HARNESS_QUOTA_STALE_MS, model);
+  const retry = reset === null ? "check usage before retrying" : `retry after ${new Date(reset).toISOString()}`;
+  return `Antigravity quota exhausted for ${pool.label} on ${harness.label} — ${retry}`;
+}
+
 /**
  * Per-task queue of follow-up lines received while an antigravity turn is in
  * flight. Antigravity's CLI is one-shot per turn, so — exactly like
@@ -9628,13 +9651,14 @@ const antigravityTurnQueue = new Map<string, string[]>();
  * When a turn is already running, the message is queued; otherwise it spawns
  * immediately. Returns the run id the message was attached to, or null on
  * lookup failure — or when `spawnAntigravityTurnNow` declined to mint a run
- * because `startingTaskIds` was already claimed for this task.
+ * because `startingTaskIds` was already claimed for this task. An exhausted
+ * pool returns the quota refusal before a new run is minted.
  */
 async function sendAntigravityTurn(
   taskId: string,
   line: string,
   onlyIfIdle = false,
-): Promise<string | IdleOnlyBusy | null> {
+): Promise<string | IdleOnlyBusy | { error: string } | null> {
   const task = tasks.get(taskId);
   if (!task) return null;
   // Idle-only send: refuse before the queue push / user event / spawn (see
@@ -9651,6 +9675,8 @@ async function sendAntigravityTurn(
     saveAndEmit({ runId, taskId, stream: "user", data });
     return runId;
   }
+  const quotaError = antigravityQuotaError(task, resolveHarness(task.agent));
+  if (quotaError) return { error: quotaError };
   return spawnAntigravityTurnNow(task, taskId, line);
 }
 
@@ -9755,11 +9781,17 @@ async function drainAntigravityQueue(taskId: string): Promise<void> {
   const q = antigravityTurnQueue.get(taskId);
   if (!q || q.length === 0) return;
   const task = tasks.get(taskId);
-  if (!task || resolveHarness(task.agent)?.kind !== "antigravity") {
+  const harness = task ? resolveHarness(task.agent) : null;
+  if (!task || harness?.kind !== "antigravity") {
     antigravityTurnQueue.delete(taskId);
     return;
   }
   if (task.runId && active.has(task.runId)) return;
+  const quotaError = antigravityQuotaError(task, harness);
+  if (quotaError) {
+    stashQueuedFollowUps(taskId, task.runId, quotaError);
+    return;
+  }
   const next = q.shift();
   if (q.length === 0) antigravityTurnQueue.delete(taskId);
   if (next !== undefined) await spawnAntigravityTurnNow(task, taskId, next);

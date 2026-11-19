@@ -139,3 +139,24 @@ test("renders the claude-code chip's worst-meter mini-bar and its popover's mete
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
 });
+
+test("Antigravity shows separate pools, remaining percentages and an unreported window", async ({ page, freshBackend }) => {
+  seedHarnessUsage(freshBackend, {
+    harnessId: "antigravity", kind: "antigravity", planType: null, status: "ok", source: "api",
+    fetchedAtMs: NOW, reason: null,
+    meters: [
+      { id: "gemini-weekly", label: "Weekly", scope: "Gemini", scopeModels: "Gemini 3.8 Flash", usedPercent: 25, resetsAtMs: NOW + DAY_MS },
+      { id: "gemini-5h", label: "Five hours", scope: "Gemini", usedPercent: 100, resetsAtMs: NOW + HOUR_MS },
+      { id: "3p-weekly", label: "Weekly", scope: "Claude / GPT-OSS", scopeModels: "Claude Sonnet 4.6, GPT-OSS 120B", usedPercent: 25, resetsAtMs: NOW + DAY_MS },
+    ],
+  });
+  await gotoApp(page, freshBackend.bootBase);
+  await page.getByRole("banner").getByRole("button", { name: "Antigravity", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Antigravity usage" });
+  const gemini = dialog.locator("section").filter({ hasText: "Gemini 3.8 Flash" });
+  const thirdParty = dialog.locator("section").filter({ hasText: "Claude Sonnet 4.6, GPT-OSS 120B" });
+  await expect(gemini.getByText("75.00% remaining", { exact: true })).toBeVisible();
+  await expect(gemini.getByText("0.00% remaining", { exact: true })).toBeVisible();
+  await expect(thirdParty.getByText("75.00% remaining", { exact: true })).toBeVisible();
+  await expect(thirdParty.getByText("No usage data", { exact: true })).toBeVisible();
+});

@@ -21,11 +21,15 @@ Env seams: `AGETOR_ANTIGRAVITY_BIN`, `AGETOR_ANTIGRAVITY_ARGS` (spliced before t
 
 ## Usage
 
-`src/bun/usage/antigravity-usage.ts` feeds the topbar usage tracker (the shared poller in `src/bun/usage/poller.ts`). It reads agy's Google OAuth token from `<HOME>/.gemini/antigravity-cli/antigravity-oauth-token` (HOME: the env map's `HOME`, then `harness.home`, then the user's) and calls the same endpoint agy's `quota_manager` uses: `POST https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels` with body `{}`. Each model's `quotaInfo` has `remainingFraction` and `resetTime`. Models share pools, so there is one meter per distinct (fraction, reset), labelled by family: "Gemini", "Claude / GPT-OSS". Internal `chat_*` / `tab_*` ids are skipped.
+The topbar tracker (`src/bun/usage/antigravity-usage.ts`) reads the quota summary used by `agy /usage` from the daily Cloud Code host (`POST v1internal:retrieveUserQuotaSummary`, body `{}`, user-agent `antigravity/cli` with the cached CLI version when available). The response was verified with agy 1.5.12. Stable bucket IDs identify a pool and a window.
 
-Facts verified on 2026-11-15 against agy 1.5.9:
+| Pool | Weekly | Five hours |
+| --- | --- | --- |
+| Gemini | `gemini-weekly` | `gemini-5h` |
+| Claude / GPT-OSS | `3p-weekly` | `3p-5h` |
 
-- The request needs a `User-Agent` starting with `antigravity`; without one it gets 403.
-- The production host `cloudcode-pa` answers with every model at 100%, which is why the provider uses the `daily-` host.
-- The access token lives about an hour, and agy refreshes it only while it runs. Agetor doesn't hold agy's OAuth client and never refreshes it, so an expired token (or a 401) reports `unavailable` with "run agy once to refresh it".
-- The read is no-follow (`readAccountFileText`).
+The popover shows each window's remaining quota and reset. It displays model names when the provider returns them and marks omitted windows as unavailable. Equal values and reset times leave the windows separate.
+
+Start, idle follow-ups and queued resumes consider the fresh quota snapshot for the selected account and model family. A reported empty window blocks the turn for its pool. When both windows are exhausted, the refusal reports the latest known reset only if both reset times are known. Missing, stale or unrecognized data allows the turn. Queued messages refused by the quota check return to the backlog. Antigravity runs use the selected account; harness stacks currently support Claude Code and Codex.
+
+The provider reads agy's login from `<HOME>/.gemini/antigravity-cli/antigravity-oauth-token` through `readAccountFileText`. HOME follows the harness environment override, configured home, then the process default. An expired token or a 401 gives a hint to run agy to refresh the login.

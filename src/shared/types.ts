@@ -1567,6 +1567,8 @@ export interface QuotaMeter {
   resetsAtMs: number | null;
   /** Optional model/window scope this meter applies to (e.g. "Opus", "Sonnet"). */
   scope?: string;
+  /** Model names reported for a shared pool, when available. */
+  scopeModels?: string;
 }
 
 /**

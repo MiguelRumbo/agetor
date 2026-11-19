@@ -6,6 +6,7 @@ import { fetchClaudeQuota } from "./claude-usage.ts";
 import { fetchCodexQuota } from "./codex-usage.ts";
 import { fetchCursorQuota } from "./cursor-usage.ts";
 import { fetchCopilotQuota } from "./copilot-usage.ts";
+import { peekCachedCliVersion } from "../agent-status.ts";
 import { fetchAntigravityQuota } from "./antigravity-usage.ts";
 
 /**
@@ -48,7 +49,7 @@ export const USAGE_PROVIDERS: Partial<Record<AgentKind, UsageProvider>> &
   codex: fetchCodexQuota,
   cursor: fetchCursorQuota,
   copilot: fetchCopilotQuota,
-  antigravity: fetchAntigravityQuota,
+  antigravity: (harness) => fetchAntigravityQuota(harness, peekCachedCliVersion(harness)),
 };
 
 // ── Test seam ────────────────────────────────────────────────────────────

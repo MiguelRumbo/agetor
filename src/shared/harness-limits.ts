@@ -9,6 +9,7 @@
  * Pure and shared: drivers use the same table for Claude pane/API text and
  * Codex's error vocabulary, so the two kinds cannot drift.
  */
+import { antigravityQuotaPool } from "./antigravity-quota.ts";
 import type { AgentKind, HarnessLimitReason, HarnessLimitSignal, HarnessQuota, QuotaMeter } from "./types.ts";
 
 export interface HarnessLimitInput {
@@ -434,13 +435,16 @@ function exhaustedBlockingMeters(
   quota: HarnessQuota | null | undefined,
   now: number,
   staleMs: number,
+  model?: string | null,
 ): QuotaMeter[] | null {
   if (!quota || quota.status !== "ok") return null;
   if (!Number.isFinite(quota.fetchedAtMs) || now - quota.fetchedAtMs > staleMs) return null;
   if (quota.meters.some((m) => CREDITS_METER_IDS.includes(m.id) && !(m.usedPercent >= 100))) return null;
+  const pool = quota.kind === "antigravity" ? antigravityQuotaPool(model) : null;
   const full = quota.meters.filter(
-    (m) => !m.scope
-      && BLOCKING_METER_IDS.includes(m.id)
+    (m) => (quota.kind === "antigravity"
+      ? pool?.windows.some((window) => window.id === m.id)
+      : !m.scope && BLOCKING_METER_IDS.includes(m.id))
       && m.usedPercent >= 100
       && (m.resetsAtMs === null || m.resetsAtMs > now),
   );
@@ -452,14 +456,16 @@ function exhaustedBlockingMeters(
  * exhausted: `status === "ok"`, fresh enough, ANY blocking window (5 h /
  * weekly / Codex session / weekly) at >= 100% with an unexpired reset, and no
  * credits meter with headroom. Used only to skip a member during an automatic
- * walk — a stale, missing or scoped-only snapshot fails open.
+ * walk — stale and missing snapshots fail open. Antigravity selects windows
+ * from the requested model’s quota pool.
  */
 export function harnessQuotaLooksExhausted(
   quota: HarnessQuota | null | undefined,
   now: number,
   staleMs: number,
+  model?: string | null,
 ): boolean {
-  return exhaustedBlockingMeters(quota, now, staleMs) !== null;
+  return exhaustedBlockingMeters(quota, now, staleMs, model) !== null;
 }
 
 /**
@@ -472,13 +478,17 @@ export function harnessQuotaResetAt(
   quota: HarnessQuota | null | undefined,
   now: number,
   staleMs: number,
+  model?: string | null,
 ): number | null {
-  const meters = exhaustedBlockingMeters(quota, now, staleMs);
+  const meters = exhaustedBlockingMeters(quota, now, staleMs, model);
   if (!meters) return null;
   let latest: number | null = null;
   for (const meter of meters) {
     const at = meter.resetsAtMs;
-    if (at === null || !Number.isFinite(at) || at <= now) continue;
+    if (at === null || !Number.isFinite(at) || at <= now) {
+      if (quota?.kind === "antigravity") return null;
+      continue;
+    }
     if (latest === null || at > latest) latest = at;
   }
   return latest;

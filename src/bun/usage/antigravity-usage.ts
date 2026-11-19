@@ -1,34 +1,27 @@
 import os from "node:os";
 import path from "node:path";
 import type { Harness, HarnessQuota, QuotaMeter } from "../../shared/types.ts";
+import { parseCliVersion } from "../../shared/cli-version.ts";
+import { ANTIGRAVITY_QUOTA_POOLS } from "../../shared/antigravity-quota.ts";
 import { readAccountFileText } from "../no-follow.ts";
 
 /**
  * Antigravity (`agy`) usage provider (docs/architecture/harness-antigravity.md,
  * "Usage"). Reads the Google OAuth token agy keeps in
- * `<HOME>/.gemini/antigravity-cli/antigravity-oauth-token` and calls the same
- * Cloud Code endpoint agy's own `quota_manager` uses,
- * `daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels`, whose
- * `models[id].quotaInfo` carries `remainingFraction` (0..1) and `resetTime`.
- *
- * Models share quota pools (every Gemini model reports the same fraction and
- * reset; Claude and GPT-OSS share another), so meters are one per distinct
- * (fraction, reset) pair, labelled by the model families in it. Internal ids
- * (`chat_*`, `tab_*`) are ignored.
+ * `<HOME>/.gemini/antigravity-cli/antigravity-oauth-token` and calls
+ * `retrieveUserQuotaSummary` for each pool's weekly and five-hour windows.
  *
  * The access token lives about an hour and agy refreshes it only while it
  * runs; Agetor does not hold agy's OAuth client, so it never refreshes it.
  * An expired token yields `unavailable` with a hint to run agy. Never throws.
  *
- * Verified 2026-11-15 against agy 1.5.9: the request needs a `User-Agent`
- * that starts with `antigravity` (none → 403), the body can be `{}`, and the
- * production host (`cloudcode-pa`) answers with every model at 100%, which is
- * why the daily host is used.
+ * Verified with agy 1.5.12: the summary accepts an empty JSON object on the
+ * daily Cloud Code host with Antigravity's user-agent.
  */
 
 const FETCH_TIMEOUT_MS = 10_000;
 const TOKEN_MAX_BYTES = 64 * 1024;
-const ENDPOINT = "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
+const ENDPOINT = "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary";
 const EXPIRED_REASON = "Antigravity login token expired — run agy once to refresh it";
 
 /** agy has no config-dir env var; an additional account is a HOME override
@@ -60,42 +53,44 @@ export function readAntigravityToken(harness: Harness): { accessToken: string; e
   }
 }
 
-const FAMILY_LABELS: Record<string, string> = { gemini: "Gemini", claude: "Claude", gpt: "GPT-OSS" };
-
-function familyOf(modelId: string): string {
-  const head = modelId.split(/[-_]/)[0]!.toLowerCase();
-  return FAMILY_LABELS[head] ?? head.charAt(0).toUpperCase() + head.slice(1);
-}
-
-/** Map a `fetchAvailableModels` body to one meter per shared quota pool. */
-export function parseAntigravityModels(body: unknown): QuotaMeter[] {
-  const models = (body as { models?: unknown } | null)?.models;
-  if (!models || typeof models !== "object") return [];
-  const pools = new Map<string, { fraction: number; resetsAtMs: number | null; families: Set<string> }>();
-  for (const [id, raw] of Object.entries(models as Record<string, unknown>)) {
-    if (/^(chat|tab)_/.test(id)) continue;
-    const q = (raw as { quotaInfo?: { remainingFraction?: unknown; resetTime?: unknown } } | null)?.quotaInfo;
-    if (!q || typeof q.remainingFraction !== "number" || !Number.isFinite(q.remainingFraction)) continue;
-    const resetsAtMs = typeof q.resetTime === "string" && Number.isFinite(Date.parse(q.resetTime)) ? Date.parse(q.resetTime) : null;
-    const key = `${q.remainingFraction}|${resetsAtMs}`;
-    const pool = pools.get(key) ?? { fraction: q.remainingFraction, resetsAtMs, families: new Set<string>() };
-    pool.families.add(familyOf(id));
-    pools.set(key, pool);
+/** Only reported buckets become meters. The UI can show missing windows explicitly. */
+export function parseAntigravityQuotaSummary(body: unknown): QuotaMeter[] {
+  const groups = (body as { groups?: unknown } | null)?.groups;
+  if (!Array.isArray(groups)) return [];
+  const buckets = new Map<string, QuotaMeter>();
+  for (const group of groups) {
+    if (!Array.isArray(group?.buckets)) continue;
+    const scopeModels = typeof group.description === "string"
+      ? /^Models within this group:\s*([^\r\n]{1,512})$/i.exec(group.description.trim())?.[1]
+      : undefined;
+    for (const bucket of group.buckets) {
+      const id = bucket?.bucketId;
+      const fraction = bucket?.remainingFraction;
+      if (typeof id !== "string" || typeof fraction !== "number" ||
+          !Number.isFinite(fraction) || fraction < 0 || fraction > 1) continue;
+      const pool = ANTIGRAVITY_QUOTA_POOLS.find((p) => p.windows.some((window) => window.id === id));
+      const window = pool?.windows.find((window) => window.id === id);
+      if (!pool || !window) continue;
+      buckets.set(id, {
+        id,
+        label: window.label,
+        scope: pool.label,
+        ...(scopeModels ? { scopeModels } : {}),
+        // Keep positive headroom below 100 even with floating-point cancellation.
+        usedPercent: fraction === 0 ? 100 : Math.min(99.999999, (1 - fraction) * 100),
+        resetsAtMs: parseExpiry(bucket.resetTime),
+      });
+    }
   }
-  return [...pools.values()]
-    .map((p) => {
-      const families = [...p.families].sort();
-      return {
-        id: families.join("-").toLowerCase(),
-        label: families.join(" / "),
-        usedPercent: Math.min(100, Math.max(0, Math.round((1 - p.fraction) * 100))),
-        resetsAtMs: p.resetsAtMs,
-      };
-    })
-    .sort((a, b) => b.usedPercent - a.usedPercent || a.label.localeCompare(b.label));
+  return ANTIGRAVITY_QUOTA_POOLS.flatMap((pool) =>
+    pool.windows.flatMap(({ id }) => {
+      const meter = buckets.get(id);
+      return meter ? [meter] : [];
+    }),
+  );
 }
 
-export async function fetchAntigravityQuota(harness: Harness): Promise<HarnessQuota> {
+export async function fetchAntigravityQuota(harness: Harness, cliVersion?: string | null): Promise<HarnessQuota> {
   const fetchedAtMs = Date.now();
   const base = { harnessId: harness.id, kind: harness.kind, planType: null, source: "api" as const, fetchedAtMs };
   const token = readAntigravityToken(harness);
@@ -105,6 +100,8 @@ export async function fetchAntigravityQuota(harness: Harness): Promise<HarnessQu
   if (token.expiresAtMs !== null && token.expiresAtMs <= fetchedAtMs) {
     return { ...base, status: "unavailable", meters: [], reason: EXPIRED_REASON };
   }
+  const version = cliVersion ? parseCliVersion(cliVersion) : null;
+  const userAgent = version ? `antigravity/cli/${version.major}.${version.minor}.${version.patch}` : "antigravity/cli";
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
@@ -113,19 +110,19 @@ export async function fetchAntigravityQuota(harness: Harness): Promise<HarnessQu
       headers: {
         authorization: `Bearer ${token.accessToken}`,
         "content-type": "application/json",
-        "user-agent": "antigravity",
+        "user-agent": userAgent,
       },
       body: "{}",
       signal: controller.signal,
     });
     if (res.status === 401) return { ...base, status: "unavailable", meters: [], reason: EXPIRED_REASON };
     if (!res.ok) return { ...base, status: "error", meters: [], reason: `Cloud Code answered HTTP ${res.status}` };
-    const meters = parseAntigravityModels(await res.json().catch(() => null));
+    const meters = parseAntigravityQuotaSummary(await res.json().catch(() => null));
     return {
       ...base,
       status: meters.length > 0 ? "ok" : "unavailable",
       meters,
-      reason: meters.length > 0 ? null : "Antigravity reported no model quotas",
+      reason: meters.length > 0 ? null : "Antigravity reported no quota windows",
     };
   } catch (err) {
     const reason = controller.signal.aborted ? "Cloud Code request timed out" : err instanceof Error ? err.message : String(err);

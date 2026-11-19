@@ -22,6 +22,7 @@ import {
   type TaskHarnessState,
 } from "./types.ts";
 import { escapeFreeText } from "./terminal-text.ts";
+import { ANTIGRAVITY_QUOTA_POOLS } from "./antigravity-quota.ts";
 import { BLOCKING_METER_IDS, HARNESS_QUOTA_STALE_MS } from "./harness-limits.ts";
 
 /** How long a completed move stays in the task header. */
@@ -454,9 +455,18 @@ export function quotaSummary(
   if (!quota) return { meters: [], ageMs: null, stale: true, status: "missing" };
   const ageMs = Number.isFinite(quota.fetchedAtMs) ? Math.max(0, now - quota.fetchedAtMs) : null;
   const meters: QuotaSummaryMeter[] = [];
-  for (const id of BLOCKING_METER_IDS) {
-    const m = quota.meters.find((x) => x.id === id && !x.scope);
-    if (m) meters.push({ id: m.id, label: m.label, usedPercent: m.usedPercent, resetsAtMs: m.resetsAtMs });
+  if (quota.kind === "antigravity") {
+    for (const pool of ANTIGRAVITY_QUOTA_POOLS) {
+      for (const { id, label } of pool.windows) {
+        const meter = quota.meters.find((m) => m.id === id);
+        if (meter) meters.push({ id, label: `${pool.label} · ${label}`, usedPercent: meter.usedPercent, resetsAtMs: meter.resetsAtMs });
+      }
+    }
+  } else {
+    for (const id of BLOCKING_METER_IDS) {
+      const m = quota.meters.find((x) => x.id === id && !x.scope);
+      if (m) meters.push({ id: m.id, label: m.label, usedPercent: m.usedPercent, resetsAtMs: m.resetsAtMs });
+    }
   }
   return {
     meters,
