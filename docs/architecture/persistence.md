@@ -81,3 +81,7 @@ survives a stack delete. `harness_session_handoffs` cascades with the task; its
 `copied_paths_json` is the only allowlist cleanup may remove. Snapshot/restore
 for tests covers all three (`test-harness-state.ts`). Model:
 [harness-stacks.md](harness-stacks.md).
+
+## Native run usage (migration 087)
+
+Migration 087 stores token counters in `run_usage` and snapshots profile and model metadata on `runs`. See [native token telemetry](run-usage.md) for the collection, retention and rollback contract.

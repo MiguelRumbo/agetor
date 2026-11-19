@@ -200,8 +200,8 @@ export async function cmdPipeline(args: string[], flags: Flags): Promise<void> {
       const ref = args[1];
       if (!ref) throw usageError("pipeline status");
       const task = await resolvePipelineTask(client, ref);
-      const { task: fresh, steps } = await client.getPipelineRun(task.id);
-      if (flags.json) return printJson({ task: fresh, steps });
+      const { task: fresh, steps, usage } = await client.getPipelineRun(task.id);
+      if (flags.json) return printJson({ task: fresh, steps, usage: usage ?? fresh.usage ?? null });
       for (const line of pipelineStatusLines(fresh, steps)) out(line);
       return;
     }

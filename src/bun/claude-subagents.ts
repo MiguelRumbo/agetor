@@ -615,13 +615,13 @@ export function setSubagentEmitter(
  * above). The predicate itself lives on the orchestrator side — this module
  * only signals "something changed for taskId," never decides what to do.
  */
-let settleFn: ((taskId: string) => void) | null = null;
+let settleFn: ((taskId: string, runId?: string) => void) | null = null;
 /** Returns the previously-registered hook, for the same save/restore reason as
  *  `setSubagentEmitter`: nulling this in a test's `afterEach` strands every
  *  later test file with no release path, so a held task never reaches `review`. */
 export function setSubagentSettleHook(
-  fn: ((taskId: string) => void) | null,
-): ((taskId: string) => void) | null {
+  fn: ((taskId: string, runId?: string) => void) | null,
+): ((taskId: string, runId?: string) => void) | null {
   const prev = settleFn;
   settleFn = fn;
   return prev;
@@ -630,9 +630,10 @@ export function setSubagentSettleHook(
 /** Call the settle hook, never letting a throwing hook reach the poll timer
  *  (or any other caller in this file) — the hook runs orchestrator logic we
  *  don't control, and a bad release predicate must not take the tail down. */
-function fireSettle(taskId: string): void {
+function fireSettle(taskId: string, runId?: string): void {
   try {
-    settleFn?.(taskId);
+    if (runId) settleFn?.(taskId, runId);
+    else settleFn?.(taskId);
   } catch (e) {
     console.error(`[claude-subagents] settle hook threw for task ${taskId}:`, e);
   }
@@ -2936,7 +2937,7 @@ export function attachSubagentWatcher(opts: {
         fs.apiErrored = true;
         subagentsDb.setStatus(fs.subagentId, "failed", fs.endedAt);
         emitLifecycle(fs, "finished");
-        fireSettle(taskId);
+        fireSettle(taskId, fs.runId);
         fireApiError({ subagentId: fs.subagentId, detail: apiErrorInfo.detail, runId: fs.runId });
       }
     }
@@ -2952,7 +2953,7 @@ export function attachSubagentWatcher(opts: {
         emitLifecycle(fs, "finished");
         // The DB write above must land before the orchestrator's release
         // predicate (which reads subagentsDb.hasRunning) can see it as done.
-        fireSettle(taskId);
+        fireSettle(taskId, fs.runId);
       }
     }
   }
@@ -3002,7 +3003,7 @@ export function attachSubagentWatcher(opts: {
         fs.staleSettled = true;
         subagentsDb.setStatus(fs.subagentId, "completed", now);
         emitLifecycle(fs, "finished");
-        fireSettle(taskId);
+        fireSettle(taskId, fs.runId);
       }
     }
   }

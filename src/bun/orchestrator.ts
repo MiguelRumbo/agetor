@@ -6,6 +6,7 @@ import {
   db,
   tasks,
   runs,
+  setRunSettledListener,
   harnesses,
   projects,
   subagents,
@@ -577,7 +578,10 @@ setOpencodeSubagentEmitter(emit);
 // lifecycle will ever move it out of `running` — the release has to be driven
 // by the background agents themselves. Register the release as the subagent
 // settle hook so the last-agent-finishing edge lands the card in `review`.
-setSubagentSettleHook(maybeReleaseHeldTask);
+setSubagentSettleHook((taskId, runId) => {
+  if (runId && runs.get(runId)?.endedAt != null) recordUsageForRun(runId);
+  maybeReleaseHeldTask(taskId);
+});
 // OpenCode subagent rows settle outside the claude watcher (turn-end export
 // refresh, teardown, boot) — same release, so a refresh that lands after the
 // driver's `beforeSettle` budget still frees a held task.
@@ -837,6 +841,25 @@ function normalizeUserText(s: string): string {
   return s.replace(/\r\n?/g, "\n");
 }
 
+const pendingUsage = new Map<string, Promise<void>>();
+
+function recordUsageForRun(runId: string): void {
+  const previous = pendingUsage.get(runId) ?? Promise.resolve();
+  const pending = previous.then(async () => {
+    const { collectRunUsage } = await import("./usage-telemetry.ts");
+    const rows = await collectRunUsage(runId);
+    const taskId = rows[0]?.taskId;
+    if (taskId) emitGlobal({ kind: "usage.updated", taskId, runId, ts: Date.now() });
+  }).catch(() => {
+    // Telemetry cannot fail a run or leak a provider log in an error.
+  }).finally(() => {
+    if (pendingUsage.get(runId) === pending) pendingUsage.delete(runId);
+  });
+  pendingUsage.set(runId, pending);
+}
+
+setRunSettledListener(recordUsageForRun);
+
 /**
  * Update a task's column and broadcast the transition. Reads the row's
  * current column first so the global event carries `prev` — saves the UI
@@ -854,6 +877,9 @@ function updateColumn(
   tasks.update(taskId, { column: next });
   if (prev !== next) {
     emitGlobal({ kind: "column", taskId, runId, column: next, prev, ts: Date.now(), reason });
+  }
+  if (next === "blocked" && runId) {
+    recordUsageForRun(runId);
   }
 }
 
@@ -1338,6 +1364,7 @@ export async function reconcileOrphans(): Promise<number> {
     });
     reconcile();
     for (const row of orphaned) {
+      recordUsageForRun(row.id);
       emitGlobal({
         kind: "run-status",
         taskId: row.task_id,
@@ -9643,6 +9670,7 @@ function recordFxPause(taskId: string, runId: string, payload: FxRecoveryPayload
   if (payload.attempt !== undefined) base.attempt = payload.attempt;
   if (payload.attemptLimit !== undefined) base.attemptLimit = payload.attemptLimit;
   if (payload.message !== undefined) base.message = payload.message;
+  recordUsageForRun(runId);
 
   // A follow-up is already queued for this task — it will consume the
   // checkpoint (and clear this row via `spawnFxRun`'s `{ line }` row

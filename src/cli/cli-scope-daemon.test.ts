@@ -225,6 +225,7 @@ const MISSING = "00000000-0000-4000-8000-000000000000";
 const ROWS: Record<ClientMethod, Row> = {
   // ── core info and preferences ──────────────────────────────────────────────
   info: { expect: [200], why: "version probe", call: () => client.info() },
+  getUsage: { expect: [200], why: "read native token telemetry", call: () => client.getUsage({}) },
   defaults: { expect: [200], why: "home/cwd/dataDir", call: () => client.defaults() },
   getPreferences: { expect: [200], why: "preference map", call: () => client.getPreferences() },
   setPreference: {

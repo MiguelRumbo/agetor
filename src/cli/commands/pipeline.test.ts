@@ -1329,15 +1329,16 @@ test("cmdPipeline status: resolves the task, fetches the pipeline run, and rende
   expect(outputs).toEqual(pipelineStatusLines(t, []));
 });
 
-test("cmdPipeline status --json: prints { task, steps }", async () => {
-  const t = task({ pipelineRun: pipelineRun() });
-  const steps = [task({ id: "step-task-1" })];
+test("cmdPipeline status --json: includes usage for the pipeline and each step", async () => {
+  const usage = { input: 10, cacheWrite: null, cacheRead: null, output: 5, reasoning: null, total: 15 };
+  const t = task({ pipelineRun: pipelineRun(), usage });
+  const steps = [task({ id: "step-task-1", usage })];
   currentClient = makeClient({
     listTasks: async () => [t],
     getPipelineRun: async () => ({ task: t, steps }),
   });
   await cmdPipeline(["status", "parent-1"], jsonFlags);
-  expect(jsonOutputs).toEqual([{ task: t, steps }]);
+  expect(jsonOutputs).toEqual([{ task: t, steps, usage }]);
 });
 
 // ── terminal safety (imported names, ids and descriptions) ───────────────

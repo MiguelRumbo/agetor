@@ -408,3 +408,5 @@ successor run's settle is the step's real outcome. A stack block surfaces as
 `harness-swap-failed` ("no usable backup account") in the step's block
 message. A manual Switch inside the same stack is refused at the route while
 a run is live. See [harness-stacks.md](harness-stacks.md).
+
+`agetor pipeline status --json` includes token usage by step task and a total for the parent. A run blocked at the step cap gives an explicit `agetor pipeline retry <id>` hint when manually advanced. See [native token telemetry](run-usage.md) for aggregation rules.

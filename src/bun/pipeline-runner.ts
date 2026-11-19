@@ -1956,6 +1956,9 @@ export async function advancePipeline(
       return { error: "pipeline has never run", status: 409 as const };
     }
     const run: PipelineRunState = parent.pipelineRun;
+    if (run.status === "blocked" && run.blocked.some((block) => block.kind === "step-cap")) {
+      return { error: `paused at step-cap; use 'agetor pipeline retry ${parentId}' to extend the cap`, status: 409 as const };
+    }
     const graph = run.snapshot!.graph;
 
     const refreshed = await refreshParentWorktree(parent, run);

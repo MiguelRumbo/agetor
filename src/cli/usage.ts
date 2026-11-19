@@ -39,6 +39,10 @@ export const USAGE: Record<string, string> = {
                         (needs --workdir or cwd inside the repo; --title/--prompt optional)
     --start            run immediately (creates in 'ready', not 'backlog')`,
 
+  usage: `usage: agetor usage [--since <ISO>] [--pipeline <id|name>] [--profile <id|name>] [--by pipeline|profile|harness|model] [--json]
+
+  Report recorded token usage. Filters combine.`,
+
   ls: `usage: agetor ls [filters]
 
   List tasks. Filters combine (substring match for --repo/--search):
