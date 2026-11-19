@@ -43,7 +43,7 @@ import { beginLagLabel } from "./event-loop-lag.ts";
 import { resolveResumeCursor } from "./event-resume.ts";
 import { isNotificationKind, UNBLOCKED_REMOVAL_KINDS, type NotificationKind, type TaskNotificationRemoval } from "../shared/os-notification.ts";
 import { notificationTargetTaskId } from "./notification-hooks.ts";
-import { HIDDEN_CONTINUATION_REFUSAL, activeRunCount, isHeldByBackgroundAgents, appendRunStatusLine, archiveTask, beginManualAccountSwitch, cancelFxAutoResume, cancelHarnessRetryForTask, claimTaskForAccountSwitch, clearManualAccountSwitch, createTask, deleteOrphanWorktree, deleteTask, isOrphanedPipelineStep, listWorktrees, minCliVersionError, releaseTaskAccountSwitch, startTask, cancelRun, reconcileTaskSession, resumeFxRecovery, sendInput, subscribe, subscribeGlobal, teardownBranchesForTask, unarchiveTask, worktreeGitStatus } from "./orchestrator.ts";
+import { HIDDEN_CONTINUATION_REFUSAL, activeRunCount, backgroundAgentsHoldTask, isScheduledSwitchUnderway, appendRunStatusLine, archiveTask, beginManualAccountSwitch, cancelFxAutoResume, cancelHarnessRetryForTask, cancelScheduledAccountSwitch, claimTaskForAccountSwitch, clearManualAccountSwitch, createTask, deleteOrphanWorktree, deleteTask, isOrphanedPipelineStep, listWorktrees, minCliVersionError, rearmRetriesAfterCooldownClear, releaseTaskAccountSwitch, startTask, switchTaskAccountNow, SwitchAccountRefusedError, cancelRun, reconcileTaskSession, resumeFxRecovery, sendInput, subscribe, subscribeGlobal, teardownBranchesForTask, unarchiveTask, removeTaskRepository, worktreeGitStatus } from "./orchestrator.ts";
 import { checkoutSessionBranch, importClaudeSessions, retryImport } from "./claude-session-import.ts";
 import { scanOpencodeSessions } from "./opencode-session-scan.ts";
 import { importOpencodeSessions, retryOpencodeImport } from "./opencode-session-import.ts";
@@ -60,11 +60,24 @@ import {
 import { advancePipeline, cancelPipelineRun, isPipelineStepTask, retryPipelineStep, reviewHumanStep, startPipelineRun } from "./pipeline-runner.ts";
 import { approvePlan, effectiveContent, planSlug, setEditedContent } from "./task-plans.ts";
 import { checkAllHarnesses } from "./agent-status.ts";
-import { claudeJsonDirFor, effectiveHome, expandHomePath, harnessStacks, StackInputError } from "./harness-stacks.ts";
+import { claudeJsonDirFor, effectiveHome, expandHomePath, harnessStacks, StackChangedError, StackInputError, validateInput as validateStackInput } from "./harness-stacks.ts";
 import { claudeConfigDirFor } from "./harness-config-root.ts";
-import { clearFailoverState, failoverTaskIdsForStack } from "./harness-failover.ts";
-import { mirrorStack } from "./harness-mirror.ts";
-import { collectHarnessSessionCopies, removeHarnessSessionCopies } from "./harness-session-transfer.ts";
+import { clearFailoverState, failoverTaskIdsForStack, repointTaskStatesAwayFromStack } from "./harness-failover.ts";
+import { harnessIdsWithProvenance } from "./harness-mirror-provenance.ts";
+import {
+  deleteMirrorStateForHarness,
+  describeMirrorEditDrop,
+  mirrorRecordsAffectedByEdit,
+  mirrorStack,
+  previewMirror,
+  restoreMirror,
+} from "./harness-mirror.ts";
+import { harnessSwapEvents } from "./harness-swap-history.ts";
+import {
+  collectHarnessSessionCopies,
+  removeHarnessSessionCopies,
+  sweepOrphanedHandoffCopies,
+} from "./harness-session-transfer.ts";
 import {
   applyHarnessAutoEnable,
   flushPendingHarnessAutoEnableNotice,
@@ -90,12 +103,16 @@ import {
   bundledTmuxAvailable,
   bundledTmuxPath,
   getTmuxSource,
+  isBundledTmuxBin,
   resolveTmuxBin,
   setTmuxSource,
+  terminfoDirsFor,
   TMUX_SOURCE_KEY,
   tmuxSocketArgs,
   type TmuxSource,
 } from "./tmux-resolution.ts";
+import { buildTmuxAttachCommand } from "./tmux-attach.ts";
+import { awaitTerminalLaunch, terminalLaunchErrorMessage } from "./terminal-launch.ts";
 import {
   dismissAskModalForMessage,
   dismissTmuxPrompt,
@@ -112,6 +129,7 @@ import {
 import { formatAnswersMessage, planAskAnswers } from "./claude-questions.ts";
 import { CURSOR_ASK_SKIP_FOLLOWUP, cursorAskAnswersFromLabels, formatCursorAskFollowup } from "../shared/cursor-ask.ts";
 import {
+  MULTI_REPO_CONCURRENCY,
   getAheadCount,
   getTaskDiff,
   getTaskDiffBlob,
@@ -122,7 +140,9 @@ import {
   headBranchState,
   listBranches,
   remoteSyncState,
+  repoRoot,
 } from "./worktree.ts";
+import { isMultiRepoTask } from "../shared/multi-repo.ts";
 import {
   attachSocket,
   closeTerminal,
@@ -199,6 +219,7 @@ import {
 } from "./github.ts";
 import { remoteHostsForDirs } from "./git-provider.ts";
 import * as gitHost from "./git-host.ts";
+import { isSafeBranchName, pullTargets } from "./pr-targets.ts";
 import { getDiscoveredEfforts, getDiscoveredModels } from "./agent-discovery.ts";
 import {
   refreshAllModels,
@@ -206,6 +227,7 @@ import {
   noteHarnessRemoved,
   getHarnessModelMap,
   noteHarnessStatuses,
+  MODEL_CATALOG_PREF_PREFIX,
 } from "./model-discovery.ts";
 import { getMainWindow } from "./window.ts";
 import {
@@ -246,6 +268,7 @@ import {
 } from "../shared/types.ts";
 import type {
   AgentKind,
+  TaskPr,
   AgentProfile,
   AppEvent,
   BranchNamingConfig,
@@ -269,10 +292,18 @@ import type {
   Task,
   TaskEventsReplayMeta,
   TaskGitStatus,
+  TaskRepoGitStatus,
   TaskTeardownPreview,
   TaskReference,
+  TaskRepositoryInput,
+  HarnessEditMirrorRefusal,
+  HarnessStackChanged,
+  HarnessSwapHistoryPage,
+  MirrorRestoreResult,
+  SwitchAccountRefusal,
+  SwitchAccountResult,
 } from "../shared/types.ts";
-import { REMOTE_ACCESS_PREF_KEY } from "../shared/types.ts";
+import { REMOTE_ACCESS_PREF_KEY, validateBranchName } from "../shared/types.ts";
 import { armForceQuit, broadcastAppEvent, hasAppEventListeners, requestQuitCompletely, subscribeAppEvents } from "./quit-guard.ts";
 import { BOOT_GATE_EXEMPT_ALWAYS, BOOT_GATE_EXEMPT_HEADLESS, gateRoutesUntilReady } from "./boot-gate.ts";
 import {
@@ -392,6 +423,45 @@ function withRunningSubagents(t: Task): Task & { runningSubagents: number } {
 // end in a space. `/refs/pick` re-joins the native panel's comma-split answer
 // first (`pickedPaths`, ./native-pick.ts); any piece that still doesn't exist
 // on disk falls out here rather than reaching the prompt as a broken ref.
+/**
+ * The live git status of one directory — `GET /tasks/:id/git-status`'s body,
+ * extracted so a multi-repository task can compute one entry per repository
+ * and the single-repository path stays byte-identical (issue #291).
+ */
+async function taskGitStatusForDir(
+  dir: string,
+  baseRef: string | null,
+): Promise<TaskGitStatus> {
+  const [result, syncState, headState] = await Promise.all([
+    hasUncommittedChanges(dir),
+    remoteSyncState(dir),
+    headBranchState(dir),
+  ]);
+  if (result === null) {
+    return {
+      hasChanges: false,
+      ahead: 0,
+      ignored: true,
+      hasUpstream: false,
+      remoteSynced: false,
+      branch: null,
+      isDefaultBranch: false,
+    };
+  }
+  const ahead = syncState.hasUpstream && syncState.ahead !== null
+    ? syncState.ahead
+    : (await getAheadCount(dir, baseRef)) ?? 0;
+  return {
+    hasChanges: result,
+    ahead,
+    ignored: false,
+    hasUpstream: syncState.hasUpstream,
+    remoteSynced: syncState.hasUpstream && syncState.ahead === 0,
+    branch: headState.branch,
+    isDefaultBranch: headState.isDefaultBranch,
+  };
+}
+
 function refsFromPaths(rawPaths: unknown[]): TaskReference[] {
   const refs: TaskReference[] = [];
   const seen = new Set<string>();
@@ -451,6 +521,45 @@ async function refsFromPathsForCaller(rawPaths: unknown[], caller: ApiCaller | n
 // mangled. Uniquification against what's already on disk happens at write
 // time (see `writeAttachmentAtomic` below), not here — an existsSync probe
 // here would leave a TOCTOU gap for concurrent same-name uploads.
+/**
+ * Parse the create-time `repositories[]` body into the only fields
+ * `createTask` reads (issue #291). A missing/null value means "no explicit
+ * selection". Any entry that isn't an object with an absolute non-empty
+ * `path` 400s the whole request — unlike `references`, a silently dropped
+ * repository would create a task that doesn't touch the repo the user picked.
+ * There is deliberately no hard cap on the count (owner decision, grill #14):
+ * every per-repository fan-out downstream runs in bounded batches instead.
+ */
+function parseRepositoryInputs(
+  raw: unknown,
+): { ok: true; value?: TaskRepositoryInput[] } | { ok: false; error: string } {
+  if (raw === undefined || raw === null) return { ok: true };
+  if (!Array.isArray(raw)) return { ok: false, error: "repositories must be an array" };
+  const out: TaskRepositoryInput[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") {
+      return { ok: false, error: "each repository must be an object with a path" };
+    }
+    const p = (entry as { path?: unknown }).path;
+    if (typeof p !== "string" || p.trim().length === 0) {
+      return { ok: false, error: "each repository needs a non-empty path" };
+    }
+    const trimmed = p.trim();
+    if (!path.isAbsolute(trimmed)) {
+      return { ok: false, error: `repository path must be absolute: ${trimmed}` };
+    }
+    const b = (entry as { baseRef?: unknown }).baseRef;
+    if (b !== undefined && b !== null && typeof b !== "string") {
+      return { ok: false, error: "repository baseRef must be a string" };
+    }
+    out.push({
+      path: trimmed,
+      ...(typeof b === "string" && b.trim() ? { baseRef: b.trim() } : {}),
+    });
+  }
+  return { ok: true, value: out };
+}
+
 function sanitizeAttachmentBasename(rawName: string): { stem: string; ext: string } {
   const cleaned = rawName
     .replace(/\0/g, "")
@@ -595,6 +704,9 @@ function consumeWsTicket(ticket: string | null, terminalId: string): boolean {
   return entry.expiresAt > Date.now() && entry.terminalId === terminalId;
 }
 
+/** `GET /github/pull-targets` takes at most this many `head` parameters. */
+const MAX_PULL_TARGET_HEADS = 20;
+
 /**
  * Fields callers may patch on a task. Everything else is server-managed —
  * including, additively, `agentProfileId`/`agentProfile` (docs/plans/
@@ -637,7 +749,14 @@ const REACTION_CONTENTS = new Set<string>(["+1", "-1", "laugh", "confused", "hea
  * label, kind and members. Validation of the *values* stays in
  * `harness-stacks.ts` so the CLI shares one rulebook.
  */
-type StackInput = { label: string; kind: "claude-code" | "codex"; members: string[]; mirrorMode?: "full" | "safe" };
+type StackInput = {
+  label: string;
+  kind: "claude-code" | "codex";
+  members: string[];
+  mirrorMode?: "full" | "safe";
+  /** Edit only: the `updatedAt` the draft was based on (optimistic concurrency, D16). */
+  expectedUpdatedAt?: number;
+};
 
 async function parseStackBody(
   req: Request,
@@ -666,8 +785,14 @@ async function parseStackBody(
   if (mirrorMode !== undefined && mirrorMode !== "full" && mirrorMode !== "safe") {
     return { error: "mirrorMode must be 'full' or 'safe'" };
   }
+  const expectedUpdatedAt = body.expectedUpdatedAt;
+  if (opts.partial && expectedUpdatedAt !== undefined && expectedUpdatedAt !== null
+    && (typeof expectedUpdatedAt !== "number" || !Number.isFinite(expectedUpdatedAt))) {
+    return { error: "expectedUpdatedAt must be a number" };
+  }
   if (opts.partial) {
     const patch: Partial<StackInput> = {};
+    if (typeof expectedUpdatedAt === "number") patch.expectedUpdatedAt = expectedUpdatedAt;
     if (typeof label === "string") patch.label = label;
     if (kind === "claude-code" || kind === "codex") patch.kind = kind;
     if (Array.isArray(members)) patch.members = members as string[];
@@ -2059,6 +2184,20 @@ export function startApiServer(
         // and the CLI); /projects/pick is the native add-picker only.
       },
 
+      // Resolve the git top-level for a selected project path (issue #291).
+      // The Select Projects dialog uses it to dedupe a selection by repository
+      // root before the task exists. Only the webview calls it, so it is
+      // desktop-only in ROUTE_POLICY (no CLI path gate needed).
+      "/projects/repo-root": {
+        GET: authed(async (req) => {
+          const dir = new URL(req.url).searchParams.get("path");
+          if (!dir) return json({ error: "path required" }, { status: 400, headers: corsHeaders(req) });
+          const root = await repoRoot(dir);
+          if (!root) return json({ error: "not a git repository" }, { status: 400, headers: corsHeaders(req) });
+          return json({ root }, { headers: corsHeaders(req) });
+        }),
+      },
+
       "/projects/branches": {
         GET: authed(async (req) => {
           const url = new URL(req.url);
@@ -2068,9 +2207,16 @@ export function startApiServer(
           // the base-ref picker. The legacy `agetor/` prefix is filtered inside
           // listBranches; custom-prefixed branches (feature/…, fix/…) are only
           // recognizable via the pinned names on task rows, so pass those too.
-          const managed = new Set(
-            tasks.list().map((t) => t.branch).filter((b): b is string => Boolean(b)),
-          );
+          // A multi-repository task pins its branches on `repositories[]`, not
+          // the scalar column (that is null by design) — omitting them left
+          // every task branch of a multi task visible here.
+          const managed = new Set<string>();
+          for (const t of tasks.list()) {
+            if (t.branch) managed.add(t.branch);
+            for (const repo of t.repositories ?? []) {
+              if (repo.branch) managed.add(repo.branch);
+            }
+          }
           return json(await listBranches(dir, { exclude: managed }), { headers: corsHeaders(req) });
         }),
       },
@@ -3220,6 +3366,51 @@ export function startApiServer(
         }),
       },
 
+      // Create-all-PRs facts for one repository: forge identity, remotes, default
+      // branch, remote branch list, whether each `head` (and the task's stored
+      // base) exists there, and whether the stored base is stale. Read-only; the
+      // forge's REST API is the source, never `git ls-remote`.
+      "/github/pull-targets": {
+        GET: authed(async (req) => {
+          const url = new URL(req.url);
+          const dir = url.searchParams.get("path");
+          if (!dir) return json({ error: "path required" }, { status: 400, headers: corsHeaders(req) });
+          const heads = url.searchParams.getAll("head");
+          if (heads.length > MAX_PULL_TARGET_HEADS) {
+            return json(
+              { error: `at most ${MAX_PULL_TARGET_HEADS} head branches per request` },
+              { status: 400, headers: corsHeaders(req) },
+            );
+          }
+          const storedBase = url.searchParams.get("storedBase") || null;
+          const storedBaseSha = url.searchParams.get("storedBaseSha") || null;
+          const liveHead = url.searchParams.get("liveHead") || null;
+          // Every name that can reach a git argv or a forge URL is validated at the boundary.
+          for (const [label, name] of [
+            ...heads.map((h) => ["head", h] as const),
+            ["storedBase", storedBase] as const,
+            ["liveHead", liveHead] as const,
+          ]) {
+            if (name === null) continue;
+            const bad = !isSafeBranchName(name) ? (validateBranchName(name).ok ? "cannot start with '-'" : "not a valid branch name") : null;
+            if (bad) return json({ error: `${label} "${name}": ${bad}` }, { status: 400, headers: corsHeaders(req) });
+          }
+          if (storedBaseSha !== null && !/^[0-9a-f]{7,64}$/i.test(storedBaseSha)) {
+            return json({ error: "storedBaseSha must be a hex commit sha" }, { status: 400, headers: corsHeaders(req) });
+          }
+          const result = await pullTargets({
+            dir,
+            heads,
+            storedBase,
+            storedBaseSha,
+            liveHead,
+            listBranches: url.searchParams.get("branches") !== "none",
+          });
+          if (!result.ok) return json({ error: result.error }, { status: 400, headers: corsHeaders(req) });
+          return json(result, { headers: corsHeaders(req) });
+        }),
+      },
+
       "/github/pull-create": {
         POST: authed(async (req) => {
           const body = (await req.json().catch(() => ({}))) as {
@@ -3253,32 +3444,54 @@ export function startApiServer(
             reviewers: Array.isArray(body.reviewers) ? body.reviewers.filter((x): x is string => typeof x === "string") : undefined,
           });
           if (!result.ok) {
-            return json({ error: result.error }, { status: 400, headers: corsHeaders(req) });
+            // `code` ("already-exists") and `existingUrl` ride along so the
+            // webview can show "already open" instead of a failure.
+            return json(
+              {
+                error: result.error,
+                ...(result.code ? { code: result.code } : {}),
+                ...(result.existingUrl ? { existingUrl: result.existingUrl } : {}),
+              },
+              { status: 400, headers: corsHeaders(req) },
+            );
           }
-          // Best-effort: persist the created PR's URL onto the task so the
-          // run panel can show a durable "View PR" link across restarts.
-          // A missing/invalid taskId or an item with no htmlUrl must never
-          // fail an otherwise-successful creation — this is pure bookkeeping
-          // layered on top of a request that already succeeded.
+          // Best-effort: append the created PR to the task's `prs` so the run
+          // panel can show a durable "View PR" link across restarts. A
+          // missing/invalid taskId or an item with no htmlUrl must never fail
+          // an otherwise-successful creation — this is pure bookkeeping layered
+          // on top of a request that already succeeded.
           if (typeof body.taskId === "string" && body.taskId) {
             try {
               const task = tasks.get(body.taskId);
               // Guards: archived tasks are frozen (same contract as PATCH /
-              // backlog), a first PR is never silently overwritten, and the
-              // task must actually belong to the project the PR was created
-              // from — a stale/mistargeted taskId must not stamp an unrelated
-              // task.
-              if (
-                task &&
-                task.archivedAt == null &&
-                !task.prUrl &&
-                task.workdir === dir &&
-                result.item?.htmlUrl
-              ) {
-                tasks.update(task.id, { prUrl: result.item.htmlUrl });
+              // backlog), and the task must actually belong to the project the
+              // PR was created from — a stale/mistargeted taskId must not stamp
+              // an unrelated task. Stamps only ever append (a task can open
+              // several PRs: one per branch, one per repository), deduped by URL.
+              if (task && task.archivedAt == null && result.item?.htmlUrl) {
+                const entry: TaskPr = {
+                  url: result.item.htmlUrl,
+                  // The names the forge was sent (`create*Pull` trims them).
+                  head: body.head.trim(),
+                  base: body.base.trim(),
+                  number: typeof result.item.number === "number" ? result.item.number : null,
+                  createdAt: Date.now(),
+                };
+                if (isMultiRepoTask(task)) {
+                  // Multi-repository (issue #291): stamp only the entry whose
+                  // worktree/selected path is the PR's `dir`, matched by
+                  // worktree path before name. `task.prs` stays empty (there
+                  // is no single PR).
+                  const repo = (task.repositories ?? []).find(
+                    (r) => r.worktreePath === dir || r.path === dir,
+                  );
+                  if (repo) tasks.appendRepositoryPr(task.id, repo.name, entry);
+                } else if (task.workdir === dir || task.worktreePath === dir) {
+                  tasks.appendPr(task.id, entry);
+                }
               }
             } catch (err) {
-              console.warn(`[agetor] failed to persist pr_url for task ${body.taskId}:`, err);
+              console.warn(`[agetor] failed to record the pull request for task ${body.taskId}:`, err);
             }
           }
           return json(result, { headers: corsHeaders(req) });
@@ -4121,13 +4334,31 @@ export function startApiServer(
       // `lastEffort:<agent>`). Values are opaque strings — the meaning
       // lives in whichever caller writes them.
       "/preferences": {
-        GET: authed((req) => json(preferences.list(), { headers: corsHeaders(req) })),
+        GET: authed((req) => {
+          // `modelCatalog:*` rows are the core's own persisted discovery
+          // catalogs (model-discovery.ts): server-managed, never listed.
+          const all = preferences.list();
+          for (const key of Object.keys(all)) {
+            if (key.startsWith(MODEL_CATALOG_PREF_PREFIX)) delete all[key];
+          }
+          return json(all, { headers: corsHeaders(req) });
+        }),
       },
       "/preferences/:key": {
         PUT: authed(async (req) => {
           const body = (await req.json().catch(() => ({}))) as { value?: unknown };
           if (typeof body.value !== "string") {
             return json({ error: "value (string) required" }, { status: 400, headers: corsHeaders(req) });
+          }
+          if (req.params.key.startsWith(MODEL_CATALOG_PREF_PREFIX)) {
+            // The discovered catalogs are written only by the core's own
+            // probes: this route is `app+cli` and the CLI token is readable
+            // by an agent, so letting it plant rows would let it shape the
+            // model pickers (and the effort ids they offer) for every surface.
+            return json(
+              { error: "this preference is managed by the server", code: "server-managed" },
+              { status: 403, headers: corsHeaders(req) },
+            );
           }
           if (req.params.key === ARCHIVED_HISTORY_RETENTION_PREF) {
             // The retention age drives a destructive, one-way trim, so it is
@@ -4450,7 +4681,13 @@ export function startApiServer(
           // response below either way.
           noteHarnessStatuses(statuses);
           return json(
-            { harnesses: harnesses.list(), statuses, stacks: harnessStacks.list(), limitStates: harnessStacks.listLimitStates() },
+            {
+              harnesses: harnesses.list(),
+              statuses,
+              stacks: harnessStacks.list(),
+              limitStates: harnessStacks.listLimitStates(),
+              mirrorRestorable: harnessIdsWithProvenance(),
+            },
             { headers: corsHeaders(req) },
           );
         }),
@@ -4598,6 +4835,84 @@ export function startApiServer(
         }),
       },
 
+      // Dry run of a mirror save (D10): what the save would add, update or
+      // remove on each backup. Names only, never values. The static path wins
+      // over `/harness-stacks/:id`.
+      "/harness-stacks/mirror-preview": {
+        POST: authed(async (req) => {
+          const raw = await req.json().catch(() => null);
+          if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+            return json({ error: "invalid JSON body" }, { status: 400, headers: corsHeaders(req) });
+          }
+          const body = raw as Record<string, unknown>;
+          if (body.kind !== "claude-code" && body.kind !== "codex") {
+            return json({ error: "kind must be 'claude-code' or 'codex'" }, { status: 400, headers: corsHeaders(req) });
+          }
+          if (!Array.isArray(body.members) || !body.members.every((m) => typeof m === "string")) {
+            return json({ error: "members must be an array of harness ids" }, { status: 400, headers: corsHeaders(req) });
+          }
+          if (body.mirrorMode !== undefined && body.mirrorMode !== "full" && body.mirrorMode !== "safe") {
+            return json({ error: "mirrorMode must be 'full' or 'safe'" }, { status: 400, headers: corsHeaders(req) });
+          }
+          if (body.stackId !== undefined && typeof body.stackId !== "string") {
+            return json({ error: "stackId must be a string" }, { status: 400, headers: corsHeaders(req) });
+          }
+          const members = body.members as string[];
+          const existing = typeof body.stackId === "string" ? harnessStacks.get(body.stackId) : null;
+          if (typeof body.stackId === "string" && !existing) {
+            return json({ error: "not found" }, { status: 404, headers: corsHeaders(req) });
+          }
+          const mirrorMode: "full" | "safe" = body.mirrorMode === "safe" || body.mirrorMode === "full"
+            ? body.mirrorMode
+            : existing?.mirrorMode ?? "full";
+          // Gate BEFORE validation: `validateStackInput` realpaths account roots
+          // and `stackWarnings` reads login evidence inside them, in-process.
+          const rootRefusal = await gateStackMemberRoots(req, members);
+          if (rootRefusal) return rootRefusal;
+          const validation = validateStackInput(
+            { label: existing?.label ?? "preview", kind: body.kind, members, mirrorMode },
+            existing?.id,
+          );
+          if (validation.blockers.length > 0) {
+            return json(
+              { error: validation.blockers[0]!.message, blockers: validation.blockers },
+              { status: 400, headers: corsHeaders(req) },
+            );
+          }
+          // The dry run walks the primary's plugin tree like a real mirror.
+          server.timeout(req, 0);
+          try {
+            const preview = await previewMirror(
+              { kind: body.kind, members, mirrorMode },
+              existing ? { stackId: existing.id } : {},
+            );
+            return json(preview, { headers: corsHeaders(req) });
+          } catch (err) {
+            return json({ error: (err as Error).message }, { status: 400, headers: corsHeaders(req) });
+          }
+        }),
+      },
+
+      // Newest-first swap history of one stack, paged by an opaque cursor.
+      "/harness-stacks/:id/history": {
+        GET: authed((req) => {
+          if (!harnessStacks.get(req.params.id)) {
+            return json({ error: "not found" }, { status: 404, headers: corsHeaders(req) });
+          }
+          const params = new URL(req.url).searchParams;
+          const limitRaw = params.get("limit");
+          const limit = limitRaw !== null && limitRaw.trim() !== "" ? Number(limitRaw) : undefined;
+          const before = params.get("before");
+          // The store clamps the limit to its own bounds and treats a
+          // malformed cursor as "first page".
+          const page: HarnessSwapHistoryPage = harnessSwapEvents.page(req.params.id, {
+            ...(limit !== undefined && Number.isFinite(limit) ? { limit } : {}),
+            before: before || null,
+          });
+          return json(page, { headers: corsHeaders(req) });
+        }),
+      },
+
       "/harness-stacks/:id": {
         GET: authed((req) => {
           // The detail read is what `agetor harness stack show` prints, so it
@@ -4637,6 +4952,14 @@ export function startApiServer(
               { headers: corsHeaders(req) },
             );
           } catch (err) {
+            if (err instanceof StackChangedError) {
+              const changed: HarnessStackChanged = {
+                error: "This stack changed elsewhere",
+                code: "stack-changed",
+                stack: err.current,
+              };
+              return json(changed, { status: 409, headers: corsHeaders(req) });
+            }
             if (err instanceof StackInputError) {
               return json({ error: err.message, blockers: err.blockers }, { status: 400, headers: corsHeaders(req) });
             }
@@ -4656,6 +4979,21 @@ export function startApiServer(
           // this stack after its last state write still names the old stack
           // id, so the stored-id filter alone would miss it (review S10).
           const affected = failoverTaskIdsForStack(stack.id);
+          // A task whose account has since moved into another stack still
+          // records this id until its next write: re-point it first, so the
+          // delete neither cancels its retry or scheduled switch nor wipes the
+          // state it now carries for the other stack.
+          repointTaskStatesAwayFromStack(stack.id);
+          // An armed quota-reset retry or an all-exhausted block would
+          // otherwise lose its countdown silently: cancel it first so the card
+          // says why (the cancel also hands held follow-ups back to the
+          // backlog), then drop the rest of the failover state.
+          for (const taskId of affected) {
+            if (tasks.get(taskId)?.harnessState?.scheduledSwitch) {
+              cancelScheduledAccountSwitch(taskId, "scheduled account switch cancelled — the stack was deleted");
+            }
+            cancelHarnessRetryForTask(taskId, "automatic account retry cancelled — the stack was deleted");
+          }
           harnessStacks.delete(stack.id);
           for (const taskId of affected) clearFailoverState(taskId);
           return json({ removed: true }, { headers: corsHeaders(req) });
@@ -4719,7 +5057,14 @@ export function startApiServer(
               { status: 400, headers: corsHeaders(req) },
             );
           }
-          if (typeof body.enabled === "boolean") {
+          if ("confirmMirrorDrop" in body && typeof body.confirmMirrorDrop !== "boolean") {
+            return json(
+              { error: "confirmMirrorDrop must be a boolean" },
+              { status: 400, headers: corsHeaders(req) },
+            );
+          }
+          const applyEnabled = () => {
+            if (typeof body.enabled !== "boolean") return;
             harnesses.setEnabled(req.params.id, body.enabled);
             // Re-enabling a harness that was previously excluded from every
             // discovery sweep (disabled harnesses are skipped — see
@@ -4729,8 +5074,9 @@ export function startApiServer(
             // skips disabled harnesses, so it drops out of the picker
             // immediately with no probe required.
             if (body.enabled) void refreshHarnessModels(req.params.id);
-          }
+          };
           if (!hasConfigPatch) {
+            applyEnabled();
             if (typeof body.profileMcpServers === "boolean") {
               harnesses.update(req.params.id, { profileMcpServers: body.profileMcpServers });
             }
@@ -4786,8 +5132,36 @@ export function startApiServer(
             });
             if (rootError) return json({ error: rootError }, { status: 400, headers: corsHeaders(req) });
           }
+          // Moving an account away from a config folder the config mirror
+          // keeps records and saved originals for makes the next mirror into
+          // it drop them (they describe the old folder), so the edit is
+          // refused until the caller confirms, like a stack save whose
+          // preview overwrites (docs/architecture/harness-stacks.md). Checked
+          // synchronously right before the write, so nothing lands between.
+          if ((patch.home !== undefined || patch.env !== undefined) && body.confirmMirrorDrop !== true) {
+            const drops = mirrorRecordsAffectedByEdit(current, {
+              ...current,
+              home: patch.home !== undefined ? patch.home : current.home,
+              env: patch.env ?? current.env,
+            });
+            if (drops) {
+              const refusal: HarnessEditMirrorRefusal = {
+                error: describeMirrorEditDrop(current.label, drops),
+                code: "mirror-records",
+                folders: drops,
+              };
+              return json(refusal, { status: 409, headers: corsHeaders(req) });
+            }
+          }
+          applyEnabled();
           try {
             const updated = harnesses.update(req.params.id, patch);
+            // A changed config root may bring orphaned handoff copies kept
+            // because they were outside the old one back in reach (or put
+            // them out of reach, which the sweep just keeps). Not awaited.
+            if (patch.home !== undefined || patch.env !== undefined) {
+              void sweepOrphanedHandoffCopies({ harnessId: updated.id });
+            }
             // home/bin/env can each change which account's (or which
             // binary's) catalog this harness resolves to — re-probe rather
             // than let the picker show a stale list until the next periodic
@@ -4814,6 +5188,14 @@ export function startApiServer(
             const copies = collectHarnessSessionCopies(req.params.id);
             harnesses.delete(req.params.id);
             await removeHarnessSessionCopies(copies);
+            // The row (and, with it, its provenance rows) is gone, so the
+            // account's mirror backups and records can never be restored. Best effort:
+            // a leftover directory must not fail a delete that succeeded.
+            try {
+              await deleteMirrorStateForHarness(req.params.id);
+            } catch (err) {
+              console.error("[agetor] removing mirror state failed:", err);
+            }
             // Prunes the deleted harness out of the per-harness discovery
             // cache and its transition-detector bookkeeping, then publishes
             // once — cheaper than a full `refreshAllModels()` sweep (which
@@ -5458,6 +5840,45 @@ export function startApiServer(
         }),
       },
 
+      // Clear an account's cooldown rows (D13): all of them, or just the one
+      // for `?model=`. Touches no files, so no path gate.
+      "/harnesses/:id/limit-state": {
+        DELETE: authed((req) => {
+          const harness = harnesses.getByIdOrKind(req.params.id);
+          if (!harness) return json({ error: "not found" }, { status: 404, headers: corsHeaders(req) });
+          const params = new URL(req.url).searchParams;
+          const model = params.get("model")?.trim().toLowerCase();
+          if (model) harnessStacks.clearLimitState(harness.id, { model });
+          else if (params.get("scope") === "account") harnessStacks.clearLimitState(harness.id, { accountWideOnly: true });
+          else harnessStacks.clearLimitState(harness.id);
+          // A task waiting out the cooldown must not keep waiting for a reset
+          // that no longer applies.
+          const rearmed = rearmRetriesAfterCooldownClear(harness.id);
+          return json(
+            { cleared: true, rearmed, limitStates: harnessStacks.listLimitStates() },
+            { headers: corsHeaders(req) },
+          );
+        }),
+      },
+
+      // Put an account's mirror backups back (D9). It writes inside the
+      // account's config root, so a CLI-token caller is path-gated.
+      "/harnesses/:id/mirror-restore": {
+        POST: authed(async (req) => {
+          const harness = harnesses.getByIdOrKind(req.params.id);
+          if (!harness) return json({ error: "not found" }, { status: 404, headers: corsHeaders(req) });
+          const rootRefusal = await gateStackMemberRoots(req, [harness.id]);
+          if (rootRefusal) return rootRefusal;
+          server.timeout(req, 0);
+          try {
+            const result: MirrorRestoreResult = await restoreMirror(harness.id);
+            return json(result, { headers: corsHeaders(req) });
+          } catch (err) {
+            return json({ error: (err as Error).message }, { status: 400, headers: corsHeaders(req) });
+          }
+        }),
+      },
+
       // Blast-radius probe for the disable-confirmation UI. Returns the
       // running task ids (so we can warn "N tasks are still using this")
       // plus the total task count for context.
@@ -5603,28 +6024,16 @@ export function startApiServer(
           // as soon as Terminal accepts the command (it does NOT wait for the
           // shell command to finish), so this resolves in well under a second
           // on success and fails fast when Automation permission is denied.
-          // A 5s ceiling guards against a wedged osascript holding the
-          // response open.
-          const exit = await Promise.race([
-            proc.exited,
-            Bun.sleep(5000).then(() => "timeout" as const),
-          ]);
-          if (exit === "timeout") {
-            // Assume it's still coming up rather than reporting a false error.
-            return json({ ok: true }, { headers: corsHeaders(req) });
-          }
-          if (exit !== 0) {
-            const detail = (await new Response(proc.stderr).text()).trim();
-            console.warn(
-              `[agetor] osascript exited ${exit} while opening a terminal for harness "${harness.id}": ${detail}`,
-            );
+          // Past the 5 s ceiling the route answers ok and leaves the child
+          // running: it is usually waiting on macOS's first-use "control
+          // Terminal" consent prompt, and killing it would mean the window
+          // never opens (`awaitTerminalLaunch` logs a late failure instead).
+          const launch = await awaitTerminalLaunch(proc, {
+            label: `opening a terminal for harness "${harness.id}"`,
+          });
+          if (launch.kind === "failed") {
             return json(
-              {
-                error:
-                  `Couldn't open Terminal (osascript exited ${exit}).` +
-                  (detail ? ` ${detail}` : "") +
-                  " Check System Settings → Privacy & Security → Automation.",
-              },
+              { error: terminalLaunchErrorMessage(launch) },
               { status: 502, headers: corsHeaders(req) },
             );
           }
@@ -5910,7 +6319,11 @@ export function startApiServer(
                   return [{ path: p, isDirectory: Boolean(r.isDirectory) }];
                 })
             : [];
-          const { fast: _legacyFast, speed: _rawSpeed, opencodeServer: _rawOpencodeServer, ...rest } = body;
+          const repositories = parseRepositoryInputs((body as { repositories?: unknown }).repositories);
+          if (!repositories.ok) {
+            return json({ error: repositories.error }, { status: 400, headers: corsHeaders(req) });
+          }
+          const { fast: _legacyFast, speed: _rawSpeed, opencodeServer: _rawOpencodeServer, repositories: _rawRepositories, issueRepoPath: _rawIssueRepoPath, ...rest } = body;
           const result = await createTask({
             ...rest,
             ...(speedInput.speed !== undefined ? { speed: speedInput.speed } : {}),
@@ -5918,6 +6331,7 @@ export function startApiServer(
             title: body.title,
             prompt: body.prompt,
             references,
+            ...(repositories.value ? { repositories: repositories.value } : {}),
           });
           if ("error" in result) {
             return json({ error: result.error }, { status: 400, headers: corsHeaders(req) });
@@ -5940,7 +6354,42 @@ export function startApiServer(
           // persist) can land during the parse and move the column; a
           // snapshot taken beforehand would still treat the run as `done`
           // and write `column: "done"` onto a run that is no longer finished.
-          const filtered = filterPatch(await req.json());
+          //
+          // A malformed non-empty body is a 400, not an empty patch: the old
+          // `req.json().catch(() => ({})))` silently turned junk into "PATCH
+          // nothing" and returned 200, so a client with a serialization bug
+          // saw success while its edit never landed. An absent body stays a
+          // no-op (an empty patch is harmless).
+          let rawPatch: Record<string, unknown> | null = {};
+          const rawBody = await req.text().catch(() => "");
+          if (rawBody.trim() !== "") {
+            try {
+              rawPatch = JSON.parse(rawBody) as Record<string, unknown> | null;
+            } catch {
+              return json({ error: "invalid JSON body" }, { status: 400, headers: corsHeaders(req) });
+            }
+          }
+          // Valid JSON that isn't an object (`"hi"`, `42`, `null`, `[]`) used
+          // to fall through `filterPatch`'s non-object guard and answer 200
+          // with nothing applied — the same false-success the unparseable-body
+          // check above closes. An array is accepted as an empty patch by
+          // `typeof`, so exclude it explicitly.
+          if (
+            rawBody.trim() !== ""
+            && (rawPatch === null || typeof rawPatch !== "object" || Array.isArray(rawPatch))
+          ) {
+            return json(
+              { error: "JSON body must be an object" },
+              { status: 400, headers: corsHeaders(req) },
+            );
+          }
+          if (rawPatch && typeof rawPatch === "object" && "repositories" in rawPatch) {
+            return json(
+              { error: "the repository set can't be patched — remove a repository with DELETE /tasks/:id/repositories/:name, or create a new task to add one" },
+              { status: 400, headers: corsHeaders(req) },
+            );
+          }
+          const filtered = filterPatch(rawPatch);
           if ("error" in filtered) {
             return json({ error: filtered.error }, { status: 400, headers: corsHeaders(req) });
           }
@@ -6040,6 +6489,18 @@ export function startApiServer(
               { status: 400, headers: corsHeaders(req) },
             );
           }
+          // A multi-repository task's workdir is its per-task workspace root,
+          // derived from the repository set at create time
+          // (docs/architecture/multi-repo-tasks.md). Its worktreePath stays
+          // null until the first start, so the guard above never fired for a
+          // never-started row; re-pointing that root would detach it from
+          // `repositories[]`, whose checkouts are prepared beneath it.
+          if ("workdir" in patch && patch.workdir !== before.workdir && isMultiRepoTask(before)) {
+            return json(
+              { error: "workdir cannot be changed on a multi-repository task — it is the task's workspace root" },
+              { status: 400, headers: corsHeaders(req) },
+            );
+          }
           // Validate `agent` resolves to a real harness — otherwise the
           // kanban shows a stuck row whose AgentSelect can't reflect its
           // own value and whose startTask fails downstream with the same
@@ -6069,12 +6530,13 @@ export function startApiServer(
               { status: 409, headers: corsHeaders(req) },
             );
           }
-          // A held task (its turn succeeded but background agents are still
-          // running in the REPL) is live too: the switch drops the old
-          // session, which would kill the REPL hosting those agents.
-          if (sameStackAccountSwitch && isHeldByBackgroundAgents(before.id)) {
+          // A task whose background agents are still running in the REPL is
+          // live too, whether the turn that left them succeeded (held in
+          // `running`) or failed: the switch drops the old session, which
+          // would kill the REPL hosting those agents.
+          if (sameStackAccountSwitch && backgroundAgentsHoldTask(before.id)) {
             return json(
-              { error: "stop the background agents before switching accounts" },
+              { error: "stop the background agents before switching accounts", code: "background-agents" },
               { status: 409, headers: corsHeaders(req) },
             );
           }
@@ -6205,6 +6667,9 @@ export function startApiServer(
             // unhandledRejection — every failure mode the function knows about
             // already surfaces via SSE.
             if (sameStackAccountSwitch) {
+              // The awaited transcript copy can outlast Bun's 255 s idle cap on
+              // a large session; lift it like the other long-copy routes.
+              server.timeout(req, 0);
               try {
                 await reconcileTaskSession(req.params.id, before, updated);
               } catch (err) {
@@ -6252,6 +6717,66 @@ export function startApiServer(
           // a step's entry is its parent's, and the parent outlives the step.
           removeTaskNotification(req.params.id);
           return new Response(null, { status: 204, headers: corsHeaders(req) });
+        }),
+      },
+
+      // Switch a stacked task to its next account (D12): now when idle,
+      // after the turn when a run is live. Moves transcripts between the
+      // members' roots, so a CLI-token caller is path-gated on all of them.
+      "/tasks/:id/switch-account": {
+        POST: authed(async (req) => {
+          const task = tasks.get(req.params.id);
+          if (!task) return json({ error: "not found" }, { status: 404, headers: corsHeaders(req) });
+          if (task.archivedAt != null) {
+            return json(
+              { error: "this task is archived", code: "archived" } satisfies SwitchAccountRefusal,
+              { status: 409, headers: corsHeaders(req) },
+            );
+          }
+          const resolved = harnessStacks.resolveForTask(task);
+          const rootRefusal = await gateStackMemberRoots(req, [
+            task.agent,
+            ...(resolved ? resolved.stack.members.map((m) => m.harnessId) : []),
+          ]);
+          if (rootRefusal) return rootRefusal;
+          // An idle switch awaits the transcript copy.
+          server.timeout(req, 0);
+          try {
+            const result: SwitchAccountResult = await switchTaskAccountNow(req.params.id);
+            const fresh = tasks.get(req.params.id);
+            return json(
+              { ...result, task: withRunningSubagents(fresh ?? result.task) },
+              { headers: corsHeaders(req) },
+            );
+          } catch (err) {
+            if (err instanceof SwitchAccountRefusedError) {
+              return json(err.body, { status: 409, headers: corsHeaders(req) });
+            }
+            return json({ error: (err as Error).message }, { status: 500, headers: corsHeaders(req) });
+          }
+        }),
+        DELETE: authed((req) => {
+          if (!tasks.get(req.params.id)) {
+            return json({ error: "not found" }, { status: 404, headers: corsHeaders(req) });
+          }
+          // A scheduled switch being applied right now is past the point of
+          // cancelling (the copy is never aborted halfway): say so instead of
+          // answering a no-op while the task moves. Only that move (or a
+          // "Switch to next account" move, which also consumes the request)
+          // counts: another switch holding the claim, such as a same-stack
+          // PATCH, may be refused and leave the request behind, so the
+          // Cancel drops it as usual.
+          if (isScheduledSwitchUnderway(req.params.id)) {
+            return json(
+              { error: "the switch is already under way", code: "busy" } satisfies SwitchAccountRefusal,
+              { status: 409, headers: corsHeaders(req) },
+            );
+          }
+          // `cancelled` says whether a switch was actually scheduled, so a
+          // caller can tell a cancel from a no-op.
+          const cancelled = tasks.get(req.params.id)?.harnessState?.scheduledSwitch != null;
+          const task = cancelScheduledAccountSwitch(req.params.id);
+          return json({ task: withRunningSubagents(task), cancelled }, { headers: corsHeaders(req) });
         }),
       },
 
@@ -6489,6 +7014,25 @@ export function startApiServer(
           return "error" in result
             ? json(result, { status: 400, headers: corsHeaders(req) })
             : json(withRunningSubagents(result.task), { headers: corsHeaders(req) });
+        }),
+      },
+
+      // Remove one repository from a multi-repository task
+      // (docs/architecture/multi-repo-tasks.md). `:name` is the repository's
+      // workspace name, not a filesystem path, so the CLI path gate has
+      // nothing to probe. 200 `{ task }`; 404 for an unknown task or name;
+      // 409 `{ error, code }` when refused (running, last-repository, dirty,
+      // not-multi, pipeline-step, detach-failed). The detach can wait on git
+      // and on a queued teardown, so the request timeout is lifted like
+      // archive's.
+      "/tasks/:id/repositories/:name": {
+        DELETE: authed(async (req) => {
+          server.timeout(req, 0);
+          const result = await removeTaskRepository(req.params.id, req.params.name);
+          if ("task" in result) return json({ task: withRunningSubagents(result.task) }, { headers: corsHeaders(req) });
+          return result.status === 404
+            ? json({ error: result.error }, { status: 404, headers: corsHeaders(req) })
+            : json({ error: result.error, code: result.code }, { status: 409, headers: corsHeaders(req) });
         }),
       },
 
@@ -6750,7 +7294,11 @@ export function startApiServer(
         GET: authed(async (req) => {
           const t = tasks.get(req.params.id);
           if (!t) return json({ error: "not found" }, { status: 404, headers: corsHeaders(req) });
-          return json(await getTaskDiff(t), { headers: corsHeaders(req) });
+          const repo = new URL(req.url).searchParams.get("repo");
+          if (repo && !(t.repositories ?? []).some((r) => r.name === repo)) {
+            return json({ error: `unknown repository "${repo}"` }, { status: 400, headers: corsHeaders(req) });
+          }
+          return json(await getTaskDiff(t, repo), { headers: corsHeaders(req) });
         }),
       },
 
@@ -6787,7 +7335,11 @@ export function startApiServer(
             );
           }
 
-          const result = await getTaskDiffBlob(t, relPath, side);
+          const repo = url.searchParams.get("repo");
+          if (repo && !(t.repositories ?? []).some((r) => r.name === repo)) {
+            return json({ error: `unknown repository "${repo}"` }, { status: 400, headers: corsHeaders(req) });
+          }
+          const result = await getTaskDiffBlob(t, relPath, side, repo);
           if (!result.ok) {
             return json({ error: result.error }, { status: result.status, headers: corsHeaders(req) });
           }
@@ -6875,40 +7427,42 @@ export function startApiServer(
           // `assumeAlive`: `sessionExists(task.id)` was just checked above, so
           // skip the internal probe's duplicate round-trip.
           void healWindowSize(task.id, { assumeAlive: true });
-          // AppleScript `do script` runs the string through `/bin/bash`, so
-          // we escape anything bash would interpret inside double-quotes:
-          // backslash, dollar, backtick, and the double-quote itself. Without
-          // this, a tmux bin path containing `$` (legal but unusual) would
-          // silently misbehave. Session names are server-generated and only
-          // contain `agetor-<hex>` so they don't strictly need escaping, but
-          // we apply the same helper for symmetry.
-          const shellEscape = (s: string) => s.replace(/(["\\$`])/g, "\\$1");
-          // Honor an active non-default socket (test isolation / a future
-          // dedicated production socket) so "Open in Terminal" attaches to
-          // the same server the session actually lives on, not whatever the
-          // default socket happens to be. Empty in production today.
-          const socketArgsStr = tmuxSocketArgs()
-            .map((a) => `\\"${shellEscape(a)}\\"`)
-            .join(" ");
-          const script =
-            `tell application "Terminal" to do script "exec \\"${shellEscape(tmuxPath)}\\"${socketArgsStr ? " " + socketArgsStr : ""} attach -t \\"${shellEscape(sessionName)}\\""\n` +
-            `activate application "Terminal"`;
+          // Build the attach command through the pure builder so the exact
+          // string is unit-tested (src/bun/tmux-attach.test.ts): POSIX quoting
+          // for every interpolated value, an optional TERMINFO_DIRS prefix for
+          // the BUNDLED binary only, and a stay-open fallback instead of
+          // `exec` — a failed attach must not close the window (issue #298).
+          const terminfoDirs = isBundledTmuxBin(tmuxPath) ? terminfoDirsFor(tmuxPath) : null;
+          const command = buildTmuxAttachCommand({
+            tmuxPath,
+            socketArgs: tmuxSocketArgs(),
+            sessionName,
+            terminfoDirs,
+          });
+          const script = toTerminalAppleScript(command);
           // spawn-exempt(osascript): Terminal.app automation is Agetor's own Automation grant; /usr/bin/osascript is SIP-protected and spawned by absolute path so PATH can't swap it.
           const proc = Bun.spawn(["/usr/bin/osascript", "-e", script], {
             stdout: "ignore",
-            stderr: "ignore",
+            stderr: "pipe",
             env: childEnv(),
           });
-          // Don't block on the AppleScript — Terminal.app opening shouldn't
-          // hold the HTTP response open. Log non-zero exits so users with
-          // Automation permissions revoked have a breadcrumb in the console.
-          void proc.exited.then((code) => {
-            if (code !== 0) {
-              console.warn(
-                `[agetor] osascript exited ${code} while attaching to tmux session "${sessionName}" — check System Settings → Privacy & Security → Automation`,
-              );
-            }
+          // Await the launch so the UI gets real feedback (same contract as
+          // `/harnesses/:id/open-terminal` above, shared through
+          // `awaitTerminalLaunch`). `do script` returns as soon as Terminal
+          // accepts the command — it does NOT wait for the attach itself — so
+          // this resolves quickly on success and fails fast when Automation
+          // permission is denied. Past the ceiling the child is left running
+          // (it is usually waiting on the first-use Automation consent prompt)
+          // and the route answers ok; the in-shell fallback covers the attach.
+          const launch = await awaitTerminalLaunch(proc, {
+            label: `attaching to tmux session "${sessionName}"`,
           });
+          if (launch.kind === "failed") {
+            return json(
+              { error: terminalLaunchErrorMessage(launch), sessionName },
+              { status: 502, headers: corsHeaders(req) },
+            );
+          }
           return json({ ok: true, sessionName }, { headers: corsHeaders(req) });
         }),
       },
@@ -6944,38 +7498,48 @@ export function startApiServer(
           if (!t) {
             return json({ error: "not found" }, { status: 404, headers: corsHeaders(req) });
           }
-          const dir = t.worktreePath ?? t.workdir;
-          const [result, syncState, headState] = await Promise.all([
-            hasUncommittedChanges(dir),
-            remoteSyncState(dir),
-            headBranchState(dir),
-          ]);
-          if (result === null) {
+          if (isMultiRepoTask(t)) {
+            // One batched response for every repository (issue #291) — the
+            // webview polls this once per 5 s, never once per repo. Bounded at
+            // the same concurrency as worktree preparation
+            // (`MULTI_REPO_CONCURRENCY`) so N repos can't fan out 3N git
+            // spawns at once on the shared main thread.
+            const repos = (t.repositories ?? []).map((repo) => ({
+              name: repo.name,
+              path: repo.path,
+              dir: repo.worktreePath ?? repo.path,
+              baseRef: repo.baseRef,
+            }));
+            const perRepo: TaskRepoGitStatus[] = [];
+            for (let i = 0; i < repos.length; i += MULTI_REPO_CONCURRENCY) {
+              perRepo.push(
+                ...(await Promise.all(
+                  repos.slice(i, i + MULTI_REPO_CONCURRENCY).map(async (repo) => ({
+                    ...(await taskGitStatusForDir(repo.dir, repo.baseRef)),
+                    name: repo.name,
+                    path: repo.path,
+                  })),
+                )),
+              );
+            }
+            const first = perRepo[0] ?? {
+              hasChanges: false,
+              ahead: 0,
+              ignored: true,
+              hasUpstream: false,
+              remoteSynced: false,
+              branch: null,
+              isDefaultBranch: false,
+            };
             return json(
-              {
-                hasChanges: false,
-                ahead: 0,
-                ignored: true,
-                hasUpstream: false,
-                remoteSynced: false,
-                branch: null,
-                isDefaultBranch: false,
-              } satisfies TaskGitStatus,
+              { ...first, repositories: perRepo } satisfies TaskGitStatus,
               { headers: corsHeaders(req) },
             );
           }
-          const ahead = syncState.hasUpstream && syncState.ahead !== null
-            ? syncState.ahead
-            : (await getAheadCount(dir, t.baseRef ?? null)) ?? 0;
+          const dir = t.worktreePath ?? t.workdir;
+          const status = await taskGitStatusForDir(dir, t.baseRef);
           return json(
-            {
-              hasChanges: result,
-              ahead,
-              ignored: false,
-              hasUpstream: syncState.hasUpstream,
-              remoteSynced: syncState.hasUpstream && syncState.ahead === 0,
-              branch: headState.branch,
-              isDefaultBranch: headState.isDefaultBranch,
+            { ...status,
             } satisfies TaskGitStatus,
             { headers: corsHeaders(req) },
           );
@@ -9006,7 +9570,12 @@ export function startApiServer(
       "/tasks/:id/terminals": {
         GET: authed((req) => json(listTerminals(req.params.id), { headers: corsHeaders(req) })),
         POST: authed(async (req) => {
-          const result = await createTerminal(req.params.id);
+          // A `null` (or other non-object) JSON body reads as an empty one:
+          // `body.repo` on null used to throw and answer 500.
+          const parsed: unknown = await req.json().catch(() => null);
+          const body = parsed !== null && typeof parsed === "object" ? (parsed as { repo?: unknown }) : {};
+          const repo = typeof body.repo === "string" && body.repo ? body.repo : null;
+          const result = await createTerminal(req.params.id, { repo });
           if ("error" in result) {
             return json(
               { error: result.error },

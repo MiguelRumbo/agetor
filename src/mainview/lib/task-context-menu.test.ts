@@ -58,11 +58,14 @@ const ACTION_GROUP: Record<TaskMenuAction, TaskMenuGroup> = {
   diff: "inspect",
   "open-in-finder": "inspect",
   "view-pr": "inspect",
+  "view-repo-pr": "inspect",
   "view-issue": "inspect",
   "mark-read": "utility",
   "mark-unread": "utility",
   "copy-branch": "utility",
   "copy-worktree-path": "utility",
+  "copy-repo-branch": "utility",
+  "copy-repo-worktree": "utility",
   delete: "danger",
 };
 
@@ -626,5 +629,166 @@ describe("an imported OpenCode session does not offer Run", () => {
   test("a plain OpenCode task with no import still offers Run", () => {
     const entries = buildTaskContextMenu(makeTask({ agent: "opencode", importedOpencode: null }), { isOpen: false });
     expect(actions(entries)).toContain("start");
+  });
+});
+
+test("multi-repository task offers per-repository copy entries", () => {
+  const task = makeTask({
+    branch: null,
+    worktreePath: "/wt/t1",
+    repositories: [
+      { path: "/src/frontend", name: "frontend", branch: "feature/x", branchSource: "created", worktreePath: "/wt/t1/frontend", baseRef: null, checkoutBranch: "feature/x", prUrl: null },
+      { path: "/src/backend", name: "backend", branch: "feature/x-2", branchSource: "created", worktreePath: "/wt/t1/backend", baseRef: null, checkoutBranch: "feature/x-2", prUrl: null },
+    ],
+  });
+  const entries = buildTaskContextMenu(task, { isOpen: false });
+  const copies = entries.filter((e) => e.action === "copy-repo-branch" || e.action === "copy-repo-worktree");
+  expect(copies.map((e) => `${e.action}:${e.repoName}`)).toEqual([
+    "copy-repo-branch:frontend",
+    "copy-repo-worktree:frontend",
+    "copy-repo-branch:backend",
+    "copy-repo-worktree:backend",
+  ]);
+  expect(entries.some((e) => e.action === "copy-branch")).toBe(false);
+  expect(entries.some((e) => e.action === "copy-worktree-path")).toBe(false);
+});
+
+test("multi-repository task offers a View PR entry for every repository that opened one", () => {
+  const repo = (name: string, prUrl: string | null) => ({
+    path: `/src/${name}`,
+    name,
+    branch: "feature/x",
+    branchSource: "created" as const,
+    worktreePath: `/wt/t1/${name}`,
+    baseRef: null,
+    checkoutBranch: "feature/x",
+    prUrl,
+  });
+  const task = makeTask({
+    branch: null,
+    worktreePath: "/wt/t1",
+    repositories: [
+      repo("frontend", "https://github.com/o/frontend/pull/1"),
+      repo("backend", null),
+      repo("infra", "https://github.com/o/infra/pull/2"),
+    ],
+  });
+  const entries = buildTaskContextMenu(task, { isOpen: false });
+  expect(entries.filter((e) => e.action === "view-repo-pr").map((e) => `${e.repoName}:${e.label}`)).toEqual([
+    "frontend:View frontend pull request",
+    "infra:View infra pull request",
+  ]);
+  // A multi task has no aggregate `prUrl`, so the single-repo entry never shows.
+  expect(entries.some((e) => e.action === "view-pr")).toBe(false);
+  for (const e of entries) {
+    expect(e.group).toBe(ACTION_GROUP[e.action]);
+  }
+});
+
+test("a multi task left with one repository keeps its per-repository entries (round 15)", () => {
+  const task = makeTask({
+    branch: null,
+    worktreePath: "/wt/t1",
+    multiRepo: true,
+    repositories: [
+      { path: "/src/backend", name: "backend", branch: "feature/x", branchSource: "created", worktreePath: "/wt/t1/backend", baseRef: null, checkoutBranch: "feature/x", prUrl: "https://github.com/o/backend/pull/4" },
+    ],
+  });
+  const entries = buildTaskContextMenu(task, { isOpen: false });
+  expect(entries.filter((e) => e.repoName === "backend").map((e) => e.action)).toEqual([
+    "view-repo-pr",
+    "copy-repo-branch",
+    "copy-repo-worktree",
+  ]);
+});
+
+// ── One entry per pull request (docs/plans/create-all-prs-title-and-base.md T11) ──
+
+const pr = (n: number, head: string | null = `feature/b${n}`) => ({
+  url: `https://github.com/o/r/pull/${n}`,
+  head,
+  base: "main",
+  number: n,
+  createdAt: n,
+});
+
+describe("per-PR entries", () => {
+  test("a single-repo task with one PR gets one 'View PR: <head>' entry carrying its url and id", () => {
+    const entries = buildTaskContextMenu(makeTask({ prs: [pr(1, "feature/a")] }), { isOpen: false });
+    const prEntries = entries.filter((e) => e.action === "view-pr");
+    expect(prEntries).toHaveLength(1);
+    expect(prEntries[0]).toMatchObject({
+      label: "View PR: feature/a",
+      id: "view-pr-0",
+      prUrl: "https://github.com/o/r/pull/1",
+      group: "inspect",
+    });
+  });
+
+  test("a converted legacy entry (head null) keeps the plain label", () => {
+    const entries = buildTaskContextMenu(makeTask({ prs: [pr(1, null)] }), { isOpen: false });
+    expect(entries.find((e) => e.action === "view-pr")?.label).toBe("View pull request");
+  });
+
+  test("JSON from an older core (prUrl, no prs) still offers its PR", () => {
+    const entries = buildTaskContextMenu(makeTask({ prUrl: "https://github.com/o/r/pull/9" }), { isOpen: false });
+    expect(entries.find((e) => e.action === "view-pr")).toMatchObject({
+      label: "View pull request",
+      prUrl: "https://github.com/o/r/pull/9",
+    });
+  });
+
+  test("three PRs stay flat, in order", () => {
+    const entries = buildTaskContextMenu(makeTask({ prs: [pr(1), pr(2), pr(3)] }), { isOpen: false });
+    const prEntries = entries.filter((e) => e.action === "view-pr");
+    expect(prEntries.map((e) => e.id)).toEqual(["view-pr-0", "view-pr-1", "view-pr-2"]);
+    expect(prEntries.every((e) => !e.children)).toBe(true);
+  });
+
+  test("four PRs collapse into one 'View pull requests' entry with four children", () => {
+    const entries = buildTaskContextMenu(makeTask({ prs: [pr(1), pr(2), pr(3), pr(4)] }), { isOpen: false });
+    const prEntries = entries.filter((e) => e.action === "view-pr");
+    expect(prEntries).toHaveLength(1);
+    expect(prEntries[0]).toMatchObject({ id: "view-prs", label: "View pull requests", group: "inspect" });
+    expect(prEntries[0]!.children?.map((c) => c.label)).toEqual([
+      "View PR: feature/b1",
+      "View PR: feature/b2",
+      "View PR: feature/b3",
+      "View PR: feature/b4",
+    ]);
+    expect(prEntries[0]!.children?.map((c) => c.prUrl)).toHaveLength(4);
+  });
+
+  test("a multi task names each repository's PRs, and the >3 rule counts across repositories", () => {
+    const repo = (name: string, prs: ReturnType<typeof pr>[]) => ({
+      path: `/src/${name}`,
+      name,
+      branch: "feature/x",
+      branchSource: "created" as const,
+      worktreePath: `/wt/t1/${name}`,
+      baseRef: null,
+      checkoutBranch: "feature/x",
+      prUrl: prs[0]?.url ?? null,
+      prs,
+    });
+    const two = buildTaskContextMenu(
+      makeTask({ branch: null, repositories: [repo("frontend", [pr(1, "feature/a")]), repo("backend", [pr(2, "feature/b")])] }),
+      { isOpen: false },
+    );
+    expect(two.filter((e) => e.action === "view-repo-pr").map((e) => `${e.repoName}:${e.label}`)).toEqual([
+      "frontend:View frontend PR: feature/a",
+      "backend:View backend PR: feature/b",
+    ]);
+    const many = buildTaskContextMenu(
+      makeTask({
+        branch: null,
+        repositories: [repo("frontend", [pr(1), pr(2)]), repo("backend", [pr(3), pr(4)])],
+      }),
+      { isOpen: false },
+    );
+    const group = many.filter((e) => e.action === "view-repo-pr");
+    expect(group).toHaveLength(1);
+    expect(group[0]!.children).toHaveLength(4);
+    expect(group[0]!.children?.map((c) => c.repoName)).toEqual(["frontend", "frontend", "backend", "backend"]);
   });
 });

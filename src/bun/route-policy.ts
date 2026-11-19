@@ -48,6 +48,12 @@ export interface PathParam {
   in: "query" | "body";
   name: string;
   mode: "exists" | "nearest-ancestor";
+  /**
+   * When set, `name` is an array of objects and this field is the path string
+   * inside each entry (issue #291: `repositories[].path`). Without it, `name`
+   * itself is the string (or array of strings).
+   */
+  itemField?: string;
 }
 
 export interface RoutePolicy {
@@ -116,6 +122,10 @@ const BODY_PATH: readonly PathParam[] = [{ in: "body", name: "path", mode: "exis
 const BODY_PATHS: readonly PathParam[] = [{ in: "body", name: "paths", mode: "exists" }];
 const BODY_DEST: readonly PathParam[] = [{ in: "body", name: "dest", mode: "nearest-ancestor" }];
 const BODY_WORKDIR: readonly PathParam[] = [{ in: "body", name: "workdir", mode: "exists" }];
+/** Every selected repository path in `POST /tasks` (issue #291). */
+const BODY_REPOSITORY_PATHS: readonly PathParam[] = [
+  { in: "body", name: "repositories", mode: "exists", itemField: "path" },
+];
 /** A harness `home` may not exist yet: the stack mirror and session transfer
  *  create it (and write under it) in-process, under its nearest existing
  *  ancestor, so that ancestor is what gets probed. `bin` is executed, never
@@ -164,6 +174,9 @@ export const ROUTE_POLICY: Record<string, PolicyEntry> = {
   "/projects/clone/:cloneId": { DELETE: CLI },
   "/projects/pick": { POST: app({ headless501: true }) },
   "/projects/branches": { GET: cli({ pathParams: QUERY_PATH }) },
+  // Only the webview's Select Projects dialog resolves a selection's git root;
+  // no CLI or TUI caller exists, so it stays off the CLI token's surface.
+  "/projects/repo-root": { GET: APP },
   "/projects/settings": {
     GET: cli({ pathParamsExempt: EXEMPT_DB }),
     PUT: cli({ pathParamsExempt: EXEMPT_DB }),
@@ -175,6 +188,9 @@ export const ROUTE_POLICY: Record<string, PolicyEntry> = {
   "/github/items-aggregate": { POST: cli({ pathParams: BODY_PATHS }) },
   "/github/repo-permissions": { GET: GH_QUERY },
   "/github/pull-diff": { GET: GH_QUERY },
+  // Create-all-PRs facts for one repository (identity, default branch, remote
+  // branches, stored-base staleness): read-only, path-gated like its siblings.
+  "/github/pull-targets": { GET: GH_QUERY },
   "/github/pull-blob": { GET: GH_QUERY },
   "/github/pull-detail": { GET: GH_QUERY },
   "/github/issue-thread": { GET: GH_QUERY },
@@ -310,6 +326,15 @@ export const ROUTE_POLICY: Record<string, PolicyEntry> = {
     PATCH: CLI,
     DELETE: CLI,
   },
+  // Fix round: swap history, the save-time mirror dry run, cooldown clear,
+  // mirror restore and switch-to-next-account. All take ids, never paths; the
+  // ones that reach an account's config root (preview, restore, switch) probe
+  // those roots for the CLI token in the handler (`gateStackMemberRoots`).
+  "/harness-stacks/:id/history": { GET: CLI },
+  "/harness-stacks/mirror-preview": { POST: CLI },
+  "/harnesses/:id/limit-state": { DELETE: CLI },
+  "/harnesses/:id/mirror-restore": { POST: CLI },
+  "/tasks/:id/switch-account": { POST: CLI, DELETE: CLI },
   "/harnesses/:id": {
     GET: CLI,
     PATCH: cli({ pathParams: BODY_HOME_BIN }),
@@ -368,7 +393,7 @@ export const ROUTE_POLICY: Record<string, PolicyEntry> = {
   "/run-usage": CLI,
   "/tasks": {
     GET: CLI,
-    POST: cli({ pathParams: BODY_WORKDIR }),
+    POST: cli({ pathParams: [...BODY_WORKDIR, ...BODY_REPOSITORY_PATHS] }),
   },
   "/tasks/:id": {
     GET: CLI,
@@ -387,6 +412,8 @@ export const ROUTE_POLICY: Record<string, PolicyEntry> = {
   "/opencode-sessions/import": { POST: cli({ pathParamsExempt: EXEMPT_OPENCODE_SESSION_IMPORT }) },
   "/tasks/:id/archive": { POST: CLI },
   "/tasks/:id/unarchive": { POST: CLI },
+  // `:name` is a repository's workspace name, never a path: no pathParams.
+  "/tasks/:id/repositories/:name": { DELETE: CLI },
   "/tasks/:id/pipeline": { GET: CLI },
   "/tasks/:id/pipeline/advance": { POST: CLI },
   "/tasks/:id/pipeline/review": { POST: CLI },
@@ -618,7 +645,20 @@ async function collectPathValues(req: Request, params: readonly PathParam[]): Pr
         // A body that doesn't parse is the handler's to reject with its own 400.
         body = await req.clone().json().catch(() => undefined);
       }
-      raw = body !== null && typeof body === "object" ? (body as Record<string, unknown>)[p.name] : undefined;
+      const rawValue = body !== null && typeof body === "object"
+        ? (body as Record<string, unknown>)[p.name]
+        : undefined;
+      if (p.itemField) {
+        raw = Array.isArray(rawValue)
+          ? rawValue.map((entry) =>
+              entry !== null && typeof entry === "object"
+                ? (entry as Record<string, unknown>)[p.itemField!]
+                : undefined,
+            )
+          : undefined;
+      } else {
+        raw = rawValue;
+      }
     }
     for (const value of pathValues(raw)) out.push({ value, mode: p.mode });
   }

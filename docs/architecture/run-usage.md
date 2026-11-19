@@ -1,6 +1,6 @@
 # Native token telemetry
 
-Agetor collects provider usage after a run settles, is orphaned during boot, or reports a blocked or paused state. Collection runs asynchronously so the agent can settle and the pipeline can continue while the logs are scanned. Each scan replaces that run's rows in one SQLite transaction. An absent or unreadable log produces a row with null counters. A reported zero stays zero. Runs that finished before migration 087 have null usage unless a later lifecycle event triggers collection.
+Agetor collects provider usage after a run settles, is orphaned during boot, or reports a blocked or paused state. Collection runs asynchronously so the agent can settle and the pipeline can continue while the logs are scanned. Each scan replaces that run's rows in one SQLite transaction. An absent or unreadable log produces a row with null counters. A reported zero stays zero. Runs that finished before migration 093 have null usage unless a later lifecycle event triggers collection.
 
 ## Provider sources
 
@@ -25,4 +25,4 @@ Run attribution uses the harness and the launch-time model, effort and profile s
 
 ## Database
 
-Migration 087 creates `run_usage` and adds launch-attribution columns to `runs`. Usage rows are indexed by run and task and cascade on deletion. To roll back, stop the core and apply `src/bun/migrations/down/087_run_usage.sql`. This removes telemetry and its migration entry. Existing tasks, runs and transcripts remain available, and starting a build with migration 087 reapplies it.
+Migration 093 creates `run_usage` and adds launch-attribution columns to `runs`. Usage rows are indexed by run and task and cascade on deletion. To roll back, stop the core and apply `src/bun/migrations/down/093_run_usage.sql`. Databases that already applied the fork’s original `087_run_usage` migration register 093 as an alias without recreating its tables or counters. Rollback removes telemetry and both migration entries. Existing tasks, runs and transcripts remain available, and starting a build with migration 093 reapplies it.

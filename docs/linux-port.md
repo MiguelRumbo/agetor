@@ -80,9 +80,9 @@ scripts/linux.sh stop      # los agentes en tmux siguen vivos; el próximo start
 
 **Arreglo:** según la plataforma, `stat -c %F` y `tar --dereference` en Linux. `caller-fs.test.ts` pasa de 21 fallos a 0, y `route-policy-endpoint` también queda en verde.
 
-### UI: no se podían registrar proyectos (`ProjectPicker.tsx`)
+### UI: no se podían registrar proyectos (`SelectProjectsDialog.tsx`)
 
-**Síntoma:** "Browse for folder…" no hacía nada. Llama a `/projects/pick`, que necesita el diálogo nativo de Electrobun y responde 501 en headless; el picker se tragaba el error.
+**Síntoma:** El botón «Add folder» necesita un camino alternativo en Linux. Llama a `/projects/pick`, que necesita el diálogo nativo de Electrobun y responde 501 en headless; el picker se tragaba el error.
 
 **Arreglo:** ante un 501, la UI pide la ruta absoluta con `window.prompt` y la registra con `POST /projects` (`api.addProject`). Verificado con Playwright: registra el proyecto y lo deja seleccionado en el formulario. En la app de escritorio el camino no cambia, porque allí nunca hay 501.
 
@@ -125,7 +125,7 @@ Este fork no se usa en macOS, así que lo siguiente se documenta pero no se arre
 - `scripts/linux.sh` es solo para Linux. En macOS se usa la app (`bun run build`).
 - `src/bun/codex-tmux.ts`: el `3<&0` es inocuo según el razonamiento (codex hereda un descriptor más), pero **no está verificado en macOS**.
 - `src/bun/caller-fs.ts`: en darwin conserva exactamente los flags anteriores (`-f %HT`, `-L`); el `case` solo añade alternativas en minúsculas. No verificado en macOS.
-- `ProjectPicker.tsx`: el fallback solo se activa con un 501, que la app de escritorio no devuelve.
+- `SelectProjectsDialog.tsx`: el fallback solo se activa con un 501, que la app de escritorio no devuelve.
 - No se ha cambiado nada más del camino de macOS (Electrobun, ayudantes nativos, firma y actualizaciones).
 
 ## Siguientes pasos

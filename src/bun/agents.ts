@@ -2,6 +2,10 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";import { cursorModelArg, DEFAULT_MODEL, defaultModeFor, FX_PROVIDER_STATUS_PREFIX, FX_RECOVERY_STATUS_PREFIX, FX_SESSION_TITLE_STATUS_PREFIX, FX_USAGE_STATUS_PREFIX, HARNESS_LIMIT_STATUS_PREFIX, MODEL_EFFORT_SUPPORT, SESSION_DIED_STATUS_PREFIX, type AgentKind, type FxRecoveryPayload, type Harness, type OpencodeServerMode, type Speed } from "../shared/types.ts";
 import { classifyHarnessLimitSignal } from "../shared/harness-limits.ts";
+import { claudeCliModelFor, claudeIdFromCliModel } from "../shared/claude-model-id.ts";
+import { EFFORT_ID_RE, effortPassesSpawnCheck } from "../shared/effort-check.ts";
+import { DISCOVERED_SPEED_KINDS } from "../shared/speed.ts";
+import { getDiscoveredEfforts, getDiscoveredModels, getHarnessDiscoveredModels } from "./agent-discovery.ts";
 import {
   effectiveOpencodeServer,
   opencodeMajor,
@@ -144,6 +148,13 @@ export interface AgentRunOptions {
   /** Cursor Max Mode / large-context toggle. Currently consumed by cursor only. */
   maxMode?: boolean | null;
   /**
+   * Extra directories the agent may also read (issue #291): one entry per
+   * sibling repository worktree of a multi-repository task. Emitted as
+   * `--add-dir <path>` for the kinds whose CLI supports it (claude-code,
+   * codex, copilot); every other kind ignores it and relies on the cwd.
+   */
+  extraDirectories?: string[];
+  /**
    * Existing session id to resume a prior conversation on a follow-up turn.
    * For claude-code: the JSONL session uuid, resumed via `claude --resume
    * <id>`. For codex: the `thread_id`, resumed via `codex exec resume <id>`.
@@ -171,11 +182,20 @@ export interface AgentRunOptions {
    * workdir). When this is non-empty, a `git commit`'s objects/refs must reach
    * a dir the cwd-scoped `workspace-write` sandbox doesn't cover, so the codex
    * `auto` run is escalated to `--sandbox danger-full-access` (see
-   * `buildCommand`). Resolved by `await gitWritableRoots(cwd)` and only set on the
-   * codex spawn path; ignored by claude-code and by codex's read-only ("ask")
-   * sandbox (which can't write anything regardless).
+   * `buildCommand`). Resolved by `await gitWritableRoots(cwd, codexWorkspaceRepos)`
+   * and only set on the codex spawn path; ignored by claude-code and by codex's
+   * read-only ("ask") sandbox (which can't write anything regardless).
    */
   codexExternalGitDirs?: string[];
+  /**
+   * Multi-repository tasks only: the task's own repository checkouts under its
+   * (non-git) workspace root, each paired with the source repository it was
+   * created from. `gitWritableRoots` accepts a checkout's git common dir as a
+   * writable root only when it is exactly that source repository's common dir;
+   * nothing is discovered by scanning the cwd. Set by the orchestrator's single
+   * spawn choke point; absent for single-repository tasks.
+   */
+  codexWorkspaceRepos?: Array<{ worktreePath: string; repoPath: string }>;
   /**
    * The run row id, threaded into `buildCommand` ONLY for fx: fx's argv
    * embeds a deterministic `--log-file <dataDir>/fx-logs/<runId>.log` path
@@ -229,47 +249,30 @@ export interface AgentRunOptions {
   title?: string | null;
 }
 
-// Map friendly model ids to the exact strings the claude-code CLI expects.
-// Unknown ids are passed through verbatim (so a user can type a model the
-// curated list doesn't know about yet). Codex accepts the friendly ids as-is
-// so it doesn't need a translation table.
-const CLAUDE_MODEL_FLAG: Record<string, string> = {
-  "mythos-5.2": "claude-mythos-5-2",
-  "mythos-5.1": "claude-mythos-5-1",
-  "fable-5.2": "claude-fable-5-2",
-  "fable-5.1": "claude-fable-5-1",
-  "mythos-5": "claude-mythos-5",
-  "fable-5": "claude-fable-5",
-  "opus-5.5": "claude-opus-5-5",
-  "opus-5": "claude-opus-5",
-  "opus-4.8": "claude-opus-4-8",
-  "opus-4.7": "claude-opus-4-7",
-  "opus-4.6": "claude-opus-4-6",
-  "sonnet-5.5": "claude-sonnet-5-5",
-  "sonnet-5": "claude-sonnet-5",
-  "sonnet-4.6": "claude-sonnet-4-6",
-  "haiku-5.5": "claude-haiku-5-5",
-  "haiku-4.5": "claude-haiku-4-5",
-};
+// Friendly claude-code model ids (`opus-5.5`) and the exact strings the CLI
+// expects (`claude-opus-5-5`) translate by a rule, not a table
+// (`src/shared/claude-model-id.ts`): a model the CLI lists that agetor has
+// never heard of needs no edit here. Unknown ids pass through verbatim, so a
+// user can type a model the picker does not offer yet. Codex accepts the
+// friendly ids as-is.
 
 /**
- * Map a friendly claude-code model id (from AGENT_OPTIONS) to the exact
- * string the CLI / `/model` slash command wants. Unknown ids fall through
- * verbatim so a future curated entry "just works" until the table catches
- * up. Exported because the orchestrator needs the same translation when
- * issuing `/model <id>` to a live session.
+ * Map a friendly claude-code model id to the exact string the CLI / `/model`
+ * slash command wants: the discovered row's own `cliId` when the CLI listed
+ * the model, else the rule. Exported because the orchestrator needs the same
+ * translation when issuing `/model <id>` to a live session.
  */
 export function toClaudeModelArg(id: string): string {
-  return CLAUDE_MODEL_FLAG[id] ?? id;
+  return claudeCliModelFor(id, getDiscoveredModels("claude-code"));
 }
 
 /**
- * Inverse of `toClaudeModelArg`/`CLAUDE_MODEL_FLAG`: given a `/model <arg>`
- * argument as claude itself would echo it back (or as agetor's own dropdown
- * mirror sent it — see `reconcileTaskSession`), resolve it to the agetor
- * model id whose flag matches exactly. Falls back to the arg itself when it
- * already looks like a raw claude model id (`claude-…`), so a future
- * curated id "just works" before `CLAUDE_MODEL_FLAG` catches up.
+ * Inverse of `toClaudeModelArg`: given a `/model <arg>` argument as claude
+ * itself would echo it back (or as agetor's own dropdown mirror sent it — see
+ * `reconcileTaskSession`), resolve it to the agetor model id: a discovered
+ * row with that `cliId`, else the rule (`claude-opus-6` → `opus-6`, a dated
+ * `claude-haiku-4-5-20251001` → `haiku-4.5`). A raw `claude-…` id the rule
+ * cannot shape resolves to itself.
  *
  * Deliberately does NOT resolve claude's own aliases (`sonnet`, `opus`,
  * `default`, …) — those map many-to-one onto a model family and can't be
@@ -278,10 +281,9 @@ export function toClaudeModelArg(id: string): string {
  * (see `claudeModelIdFromDisplayName` in `claude-local-setting.ts`).
  */
 export function claudeModelIdFromArg(arg: string): string | null {
-  for (const [id, flag] of Object.entries(CLAUDE_MODEL_FLAG)) {
-    if (flag === arg) return id;
-  }
-  return /^claude-/.test(arg) ? arg : null;
+  const row = getDiscoveredModels("claude-code").find((m) => m.cliId === arg);
+  if (row) return row.id;
+  return claudeIdFromCliModel(arg) ?? (/^claude-/.test(arg) ? arg : null);
 }
 
 /**
@@ -327,6 +329,20 @@ export function claudeModelIdFromArg(arg: string): string | null {
  * result to `mirrorModelViaPicker` (`claude-tmux.ts`).
  */
 export function claudeModelPickerFamily(id: string): "Opus" | "Sonnet" | "Fable" | "Haiku" | null {
+  const discovered = getDiscoveredModels("claude-code");
+  if (discovered.length > 0) {
+    // The CLI's own alias rows ARE the picker's family rows: a model that is
+    // the target of `opus` / `sonnet` / `fable` / `haiku` owns that row.
+    const alias = discovered.find((m) => m.id === id && m.alias !== undefined)?.alias;
+    switch (alias) {
+      case "opus": return "Opus";
+      case "sonnet": return "Sonnet";
+      case "fable": return "Fable";
+      case "haiku": return "Haiku";
+      default: return null;
+    }
+  }
+  // No catalog (old CLI, offline, first boot): the frozen mapping above.
   switch (id) {
     case "opus-5.5":
       return "Opus";
@@ -342,20 +358,6 @@ export function claudeModelPickerFamily(id: string): "Opus" | "Sonnet" | "Fable"
 }
 
 /**
- * Effort → `CLAUDE_CODE_EFFORT_LEVEL` env var on the spawned process. Same
- * lever the `/effort` slash command uses internally, so it works on every
- * claude model rather than relying on per-model API support. Unknown ids are
- * dropped rather than passed through — better than letting a typo silently
- * become a no-op or surface as a CLI error mid-run.
- *
- * Keep this in sync with `MODEL_EFFORT_SUPPORT['claude-code'][<model>]` in
- * `shared/types.ts` — the latter drives the picker, this drives the env-var
- * emit. Both list the same five ids today; if you extend one, extend the
- * other.
- */
-const CLAUDE_EFFORT_VALUES = new Set(["low", "medium", "high", "xhigh", "max"]);
-
-/**
  * True when the named model is one we know doesn't accept any effort flag
  * (Haiku 4.5 today). For these models, `null`/missing effort is allowed and
  * `buildCommand` emits no env var / `-c` flag. Every other model must carry
@@ -363,7 +365,30 @@ const CLAUDE_EFFORT_VALUES = new Set(["low", "medium", "high", "xhigh", "max"]);
  */
 function modelDeclinesEffort(kind: AgentKind, model: string): boolean {
   const support = MODEL_EFFORT_SUPPORT[kind][model];
-  return Array.isArray(support) && support.length === 0;
+  if (Array.isArray(support) && support.length === 0) return true;
+  if (kind === "claude-code" && support === undefined) {
+    // A model only the CLI knows: it declines effort when the CLI reports
+    // effort levels for its other models but none for this one.
+    const rows = getDiscoveredModels("claude-code");
+    const row = rows.find((m) => m.id === model);
+    return !!row && !row.efforts && rows.some((m) => (m.efforts?.length ?? 0) > 0);
+  }
+  return false;
+}
+
+/**
+ * The effort a spawn may pass for `kind`'s `model`, or null (dropped, with a
+ * value-free warning) when it fails the shared spawn check. For claude the id
+ * becomes `CLAUDE_CODE_EFFORT_LEVEL` — the lever the `/effort` slash command
+ * uses internally, so it works on every claude model rather than relying on
+ * per-model API support; codex puts it in `-c model_reasoning_effort=`,
+ * copilot in `--reasoning-effort`. Better dropped than letting a typo
+ * silently become a no-op or surface as a CLI error mid-run.
+ */
+function checkedEffort(kind: AgentKind, model: string, effort: string, harnessId: string): string | null {
+  if (effortPassesSpawnCheck(kind, effort, getDiscoveredEfforts(kind, model, harnessId))) return effort;
+  console.warn(`[agetor] dropped an effort the ${kind} CLI does not offer for ${model}`);
+  return null;
 }
 
 /**
@@ -723,6 +748,19 @@ export function buildCommand(
       args.push("--permission-mode", toClaudeModeString(mode));
     }
 
+    for (const dir of opts.extraDirectories ?? []) args.push("--add-dir", dir);
+    // Speed → Fast mode, for this process only: `fastMode` in the `--settings`
+    // layer (verified: `initialize` reports `fast_mode_state: "on"`), never a
+    // write to the user's `~/.claude/settings.json`. Only on a model the CLI
+    // itself says supports it, so a stale stored Fast never reaches one that
+    // does not.
+    if (
+      opts.speed === "fast"
+      && DISCOVERED_SPEED_KINDS.has("claude-code")
+      && getDiscoveredModels("claude-code").some((m) => m.id === opts.model && m.fast === true)
+    ) {
+      args.push("--settings", '{"fastMode":true}');
+    }
     args.push(...extra);
 
     // Initial prompt as the final argv element — claude's documented form is
@@ -758,9 +796,8 @@ export function buildCommand(
     // through — better than letting a typo silently become a no-op or
     // surface as a CLI error mid-run.
     if (opts.effort) {
-      if (CLAUDE_EFFORT_VALUES.has(opts.effort)) {
-        env.CLAUDE_CODE_EFFORT_LEVEL = opts.effort;
-      }
+      const effort = checkedEffort("claude-code", opts.model, opts.effort, harness.id);
+      if (effort) env.CLAUDE_CODE_EFFORT_LEVEL = effort;
     } else if (!modelDeclinesEffort("claude-code", opts.model)) {
       throw new Error(`effort is required for claude-code model ${opts.model}`);
     }
@@ -779,7 +816,10 @@ export function buildCommand(
     if (!opts.model) {
       throw new Error("model is required for cursor");
     }
-    const cursorModel = cursorModelArg(opts.model, opts.effort ?? null, opts.speed === "fast", opts.maxMode === true);
+    // A base the CLI reported but no curated spec covers carries its own
+    // variant map (`DiscoveredModel.cursor`); a spec for the same id wins.
+    const discoveredCursor = getDiscoveredModels("cursor").find((m) => m.id === opts.model)?.cursor;
+    const cursorModel = cursorModelArg(opts.model, opts.effort ?? null, opts.speed === "fast", opts.maxMode === true, discoveredCursor);
     const args: string[] = [bin, "acp"];
     const mode = opts.mode ?? defaultModeFor(harness.kind);
     if (mode === "auto") args.push("--force");
@@ -1051,7 +1091,8 @@ export function buildCommand(
     ];
     // `auto` ("Model default") and null both mean: let Copilot choose.
     if (opts.effort && opts.effort !== "auto") {
-      args.push("--reasoning-effort", opts.effort);
+      const effort = checkedEffort("copilot", opts.model, opts.effort, harness.id);
+      if (effort) args.push("--reasoning-effort", effort);
     }
     // `--mode` is always passed (never inherited from the saved session), so
     // a task switched Plan -> Auto stops planning on the very next turn.
@@ -1060,6 +1101,7 @@ export function buildCommand(
       args.push("--allow-all");
     }
     args.push("--usage-output-file", copilotUsagePath(opts.runId));
+    for (const dir of opts.extraDirectories ?? []) args.push("--add-dir", dir);
     args.push(...extra);
 
     // The long-lived tmux server's env may belong to another process, and the
@@ -1092,9 +1134,24 @@ export function buildCommand(
     args.push("--model", opts.model);
 
     if (opts.effort) {
-      args.push("-c", `model_reasoning_effort=${opts.effort}`);
+      const effort = checkedEffort("codex", opts.model, opts.effort, harness.id);
+      if (effort) args.push("-c", `model_reasoning_effort=${effort}`);
     } else if (!modelDeclinesEffort("codex", opts.model)) {
       throw new Error(`effort is required for codex model ${opts.model}`);
+    }
+
+    // Speed → the Fast service tier, per run: `-c service_tier="<tier>"` with
+    // the tier id the model's own catalog entry advertises (`priority`;
+    // codex itself warns about and omits a tier a model does not advertise).
+    // Off passes nothing: no value that forces the standard tier was found
+    // (docs/plans/dynamic-model-catalog-spikes.md G2), so a model whose own
+    // default is Fast keeps its default.
+    if (opts.speed === "fast" && DISCOVERED_SPEED_KINDS.has("codex")) {
+      const catalog = getHarnessDiscoveredModels(harness.id);
+      const row = (catalog.length > 0 ? catalog : getDiscoveredModels("codex")).find((m) => m.id === opts.model);
+      if (row?.fast === true && row.fastTier && EFFORT_ID_RE.test(row.fastTier)) {
+        args.push("-c", `service_tier="${row.fastTier}"`);
+      }
     }
 
     // Structured streaming + deterministic capture: `--json` emits NDJSON events
@@ -1134,6 +1191,7 @@ export function buildCommand(
       args.push("--sandbox", "workspace-write");
     }
 
+    for (const dir of opts.extraDirectories ?? []) args.push("--add-dir", dir);
     args.push(...extra);
 
     // Multi-turn: parent flags MUST precede the `resume` subcommand (codex
@@ -1161,6 +1219,13 @@ export function buildCommand(
  * is the seam `spawnAgent` uses — kept separate from the pure `buildCommand` so
  * the cwd→sandbox wiring is unit-testable without standing up tmux.
  *
+ * A multi-repository task's cwd is its non-git workspace root; its
+ * repositories' source `.git` dirs are found only through
+ * `opts.codexWorkspaceRepos` (the task row's own checkouts, each verified
+ * against its source repository by `gitWritableRoots`), never by scanning the
+ * cwd — a checkout an agent planted there must not escalate the sandbox
+ * (docs/architecture/harness-codex.md).
+ *
  * Async because `gitWritableRoots` now spawns `git` via the async `git()`
  * helper (see worktree.ts) instead of `child_process.spawnSync` — this is the
  * only reason `buildCodexCommand` differs from the otherwise-synchronous
@@ -1176,7 +1241,7 @@ export async function buildCodexCommand(
 ): Promise<AgentCommand> {
   return buildCommand(harness, prompt, {
     ...opts,
-    codexExternalGitDirs: await gitWritableRoots(cwd),
+    codexExternalGitDirs: await gitWritableRoots(cwd, opts.codexWorkspaceRepos),
   });
 }
 
@@ -2372,6 +2437,44 @@ function emitFakeFxToolMetaTurn(
 export const FAKE_CLAUDE_MD_IMAGE_PROMPT_MARKER = "__agetor_fake_claude_md_image__";
 
 /**
+ * Test hook for Create all PRs (`docs/architecture/run-panel.md`): makes the
+ * fake claude driver print ONE assistant reply that proposes pull requests, so
+ * the e2e suite can assert the title, body and base each POST carries. Used as
+ * `__agetor_fake_claude_pr_proposal__:<base64url template>` in the task prompt.
+ * The template is the reply text with two placeholders resolved from the task
+ * row at spawn time (the branch names are minted per task, so a spec can't know
+ * them up front): `{{branch}}` is the task's branch and `{{branch:<repo>}}` the
+ * branch of the multi-repo entry named `<repo>`. A placeholder with no match is
+ * left verbatim. Malformed base64 (or an empty template) emits a `status` line,
+ * `fake pr proposal: bad template`, then completes. Turn 1 only, like every
+ * canned scenario here. Same prompt-marker trick as
+ * {@link FAKE_CLAUDE_MD_IMAGE_PROMPT_MARKER}: the e2e backend is worker-shared,
+ * so a per-test env var isn't possible. `e2e/multi-repo-task.spec.ts` can't
+ * import from `src/bun/*` and keeps a **literal copy** of this string.
+ */
+export const FAKE_CLAUDE_PR_PROPOSAL_PROMPT_MARKER = "__agetor_fake_claude_pr_proposal__";
+
+/**
+ * The reply text a {@link FAKE_CLAUDE_PR_PROPOSAL_PROMPT_MARKER} prompt asks
+ * for, with its branch placeholders resolved from the task row, or `null` when
+ * the template is missing or isn't valid base64url UTF-8. Exported for tests.
+ */
+export function renderFakePrProposalReply(taskId: string, prompt: string): string | null {
+  const m = new RegExp(`${FAKE_CLAUDE_PR_PROPOSAL_PROMPT_MARKER}:([A-Za-z0-9_-]+)`).exec(prompt);
+  if (!m) return null;
+  const encoded = m[1]!;
+  const template = Buffer.from(encoded, "base64url").toString("utf8");
+  // Buffer's base64url decoder is lenient; a lossless round trip proves it was valid.
+  if (!template || Buffer.from(template, "utf8").toString("base64url") !== encoded.replace(/=+$/, "")) return null;
+  const task = tasks.get(taskId);
+  return template.replace(/\{\{branch(?::([^}]+))?\}\}/g, (whole, repo: string | undefined) => {
+    if (repo === undefined) return task?.branch ?? whole;
+    const entry = task?.repositories?.find((r) => r.name === repo);
+    return entry?.branch ?? whole;
+  });
+}
+
+/**
  * Test hook for the Claude Code context-compaction rendering work
  * (`docs/plans/claude-code-placeholder.md`): makes the fake claude driver emit
  * the sequence the real JSONL mapper produces for a compaction — a `status`
@@ -2516,6 +2619,9 @@ function makeFakeAgent(
   } = {},
 ): SpawnedAgent {
   const record: string[] = [`spawn:${prompt}`];
+  // Record the cwd so integration tests can prove a multi-repository task
+  // spawns at the workspace root (issue #291).
+  if (fakeOpts.cwd) record.push(`cwd:${fakeOpts.cwd}`);
   let resolveDone!: (code: number) => void;
   let rejectDone!: (err: Error) => void;
   const done = new Promise<number>((res, rej) => { resolveDone = res; rejectDone = rej; });
@@ -2768,7 +2874,12 @@ function makeFakeAgent(
     const subagentSpec = turn <= 1 ? parseFakeSubagentMarker(handoffPromptSource) : null;
     const baseResolveDelayMs = Math.max(20, Number(process.env.AGETOR_FAKE_CLAUDE_RESOLVE_DELAY_MS ?? 30) || 30);
     const resolveDelayMs = subagentSpec ? Math.max(baseResolveDelayMs, subagentSpec.runMs + 60) : baseResolveDelayMs;
+    // A `FAKE_CLAUDE_PR_PROPOSAL_PROMPT_MARKER` in the same source prompt
+    // (turn 1 only) prints its PR proposal ahead of the handoff, so a
+    // pipeline step can propose PRs the way a real Commit & push step does.
+    const prProposalReply = turn <= 1 ? renderFakePrProposalReply(taskId, handoffPromptSource) : null;
     after(5, () => onChunk("status", "fake: working"));
+    if (prProposalReply !== null) after(6, () => onChunk("assistant", prProposalReply));
     if (subagentSpec) {
       // Keyed on the RUN (same reasoning as the Monitor scenario's id):
       // `insertIfAbsent` is INSERT OR IGNORE, so a task-keyed id would
@@ -3296,6 +3407,19 @@ function makeFakeAgent(
         "assistant",
         `Here are the screenshots.\n\n![Absolute shot](${mdImageDir}/shot.png)\n\n![Relative shot](agetor-md-images/shot.png)\n\n![Missing shot](${mdImageDir}/missing.png)\n\n![The report](${mdImageDir}/report.pdf)`,
       );
+    });
+    after(10, () => {
+      onChunk("status", "turn complete");
+      resolveDone(0);
+    });
+  } else if (prompt.includes(FAKE_CLAUDE_PR_PROPOSAL_PROMPT_MARKER)) {
+    // Test hook: see FAKE_CLAUDE_PR_PROPOSAL_PROMPT_MARKER's doc comment. The
+    // reply goes out as one `assistant` chunk: proposals are read from the
+    // assistant stream only, and the generic fake turn prints on stdout.
+    const reply = renderFakePrProposalReply(taskId, prompt);
+    after(5, () => {
+      if (reply === null) onChunk("status", "fake pr proposal: bad template");
+      else onChunk("assistant", reply);
     });
     after(10, () => {
       onChunk("status", "turn complete");
@@ -4480,9 +4604,11 @@ export async function spawnAgent(args: SpawnAgentArgs): Promise<SpawnedAgent> {
     // worktree) so a codex `auto` run that has to write there escalates its
     // sandbox to full access. Computed here — the single choke point every codex
     // spawn path funnels through — rather than at each orchestrator call site.
-    // No-op for an ordinary checkout or a non-git cwd, so the argv is unchanged
-    // there. `buildCodexCommand` is the testable seam for this wiring (async —
-    // it awaits `gitWritableRoots`, which now shells out via `Bun.spawn`).
+    // No-op for an ordinary checkout or a non-git cwd (a multi-repository
+    // workspace root contributes only the verified `opts.codexWorkspaceRepos`),
+    // so the argv is unchanged there. `buildCodexCommand` is the testable seam
+    // for this wiring (async — it awaits `gitWritableRoots`, which now shells
+    // out via `Bun.spawn`).
     const built = await buildCodexCommand(harness, prompt, opts, cwd);
     return await spawnCodexViaTmux({
       taskId,

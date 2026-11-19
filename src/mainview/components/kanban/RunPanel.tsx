@@ -1,15 +1,15 @@
-import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ComponentType } from "react";
+import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type ComponentType } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
 import {
-  Archive, ArchiveRestore, ArrowDown, ArrowUp, BookmarkPlus, Bot, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, ClipboardList, CornerDownRight, Eye, FolderOpen, FileText, FilePenLine, FilePlus, Folder,  GitCommit, GitCompare, GitMerge, GitPullRequest, Globe, HelpCircle, ListTodo, Paperclip, Plug, Radar, RefreshCw, Search, Send, ShieldAlert, Slash, SquareSlash,
+  AlertTriangle, Archive, ArchiveRestore, ArrowDown, ArrowUp, BookmarkPlus, Bot, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, ClipboardList, CornerDownRight, Eye, FolderOpen, FileText, FilePenLine, FilePlus, Folder,  GitCommit, GitCompare, GitMerge, GitPullRequest, Globe, HelpCircle, ListTodo, Loader2, Paperclip, Plug, Radar, RefreshCw, Search, Send, ShieldAlert, Slash, SquareSlash,
   Play, Sparkles, Square, Terminal, Trash2, Workflow, Wrench, X,
 } from "lucide-react";
 import { api, ApiError, commitPushPrompt, type AgentModelMap, type PendingInteraction } from "@/lib/api";
 import { resolveTaskProfileDisplay, type TaskProfileDisplay } from "@/lib/agent-profiles";
 import { shouldShowSubagentTabs, resolveActiveStream, splitTabsForOverflow, sortSubagentTabs, anySubagentRunning } from "@/lib/subagent-tabs";
-import { prHeadBranch, shouldOfferCommitPush, shouldOfferOpenPr, type TaskGitStatus } from "@/lib/commit-push";
+import { prHeadBranch, repositoryPrHead, shouldOfferCommitPushForTask, shouldOfferOpenPr, type TaskGitStatus } from "@/lib/commit-push";
 import { driftOf, driftTitle } from "@/lib/branch-drift";
 import { IDENTIFIER_INPUT_PROPS } from "@/lib/identifier-input";
 import { findMatchingEventIds, resolveActiveMatchIndex, stepMatchIndex } from "@/lib/event-search";
@@ -18,13 +18,40 @@ import { EXPAND_EVENT } from "@/lib/expand-on-jump";
 import { publishHandoffSearchSession } from "@/lib/handoff-search-hint";
 import { contentSignature, reuseIfSameContent, type Signed } from "@/lib/pipeline-run-signature";
 import { useExpandOnJump } from "@/lib/use-expand-on-jump";
-import { latestPrProposal } from "@/lib/pr-proposal";
+import { collectRunProposals, type RunProposal } from "@/lib/pr-proposal";
+import { buildPrPlan, headHasPr, planReposForTask, proposalHeadsNeedingPr } from "@/lib/pr-plan";
+import {
+  cachedProviderIdentity,
+  loadProviderIdentity,
+  providerInfoVersion,
+  subscribeProviderInfo,
+} from "@/lib/provider-info-cache";
+import { headerPr, livePr, taskPrsOf } from "../../../shared/task-prs.ts";
+import { ContextMenu } from "@/components/ui/context-menu";
+import { CreatePrsDialog } from "./CreatePrsDialog";
+import {
+  isPrBatchRunning,
+  openFolderUnavailableReason,
+  resolveConflictsKey,
+  selectedRepositoryName,
+  subscribePrBatches,
+} from "@/lib/multi-repo-ui";
+import {
+  removalMergeFields,
+  removeRepositoryBlockReason,
+  removeRepositoryConfirmCopy,
+  repositoryDetails,
+  repositoryProblem,
+} from "@/lib/repo-removal";
+import { isMultiRepoTask } from "../../../shared/multi-repo.ts";
+import { useConfirm } from "@/components/ui/confirm";
+import { issueProjectPath } from "@/lib/repo-selection";
 import { parsePrUrl, parsePullNumber, canOfferResolveConflicts } from "@/lib/pr-url";
 import { buildResolveConflictsPrompt } from "@/lib/resolve-conflicts-prompt";
 import { eventWindowKeepCount } from "@/lib/event-window";
 import { appendQuote } from "@/lib/quote-selection";
-import { useProjectFiles, type FileScope } from "@/lib/use-project-files";
-import { fileScopeForTask } from "../../../shared/file-scope.ts";
+import { multiScopesOrNull, useProjectFiles, useProjectFileScopes, type FileScope, type NamedFileScope } from "@/lib/use-project-files";
+import { fileScopeForTask, multiRepoFileScopes } from "../../../shared/file-scope.ts";
 import {
   emptyOpencodeDrafts,
   opencodeAnswerBody,
@@ -70,6 +97,7 @@ import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { abbreviateHome, cn } from "@/lib/utils";
+import { tmuxChoiceLabel } from "@/lib/tmux-prompt";
 import {
   formatHarnessSwapNotice,
   isHarnessStackContinuation,
@@ -78,13 +106,11 @@ import {
 import { harnessStackBannerView } from "@/lib/harness-stack-banner";
 import { agentSwitchPatch } from "@/lib/agent-switch";
 import { groupStickySections, type StickyItem } from "@/lib/sticky-sections";
-import { stackPositionFor } from "@/lib/stack-badge";
-import { taskPatchFailureToast } from "@/lib/task-patch-failure";
+import { stackPickerOptions, stackPositionFor } from "@/lib/stack-badge";
+import { switchAccountFailureToast, taskPatchFailureToast } from "@/lib/task-patch-failure";
 import { iconForRef, refBasename } from "@/lib/file-icons";
 import {
   AGENT_OPTIONS,
-  CATALOG_SCOPED_KINDS,
-  DEFAULT_EFFORT,
   DEFAULT_MODEL,
   defaultModeFor,
   EVENTS_WINDOW_MAX,
@@ -95,16 +121,15 @@ import {
   FX_USAGE_STATUS_PREFIX,
   HARNESS_SWAP_STATUS_PREFIX,
   isInternalStatusSentinel,
-  cursorModelIdCoveredByCatalog,
   cursorModelSupportsMaxMode,
   EFFORT_OPTIONS,
-  retainableEfforts,
-  supportedEfforts,
+  orderEfforts,
   supportedModes,
   type AgentKind,
   type AgentProfile,
   type AgentStatus,
   type Harness,
+  type HarnessLimitState,
   type HarnessStack,
   type BacklogMessage,
   type FxRecoveryPayload,
@@ -124,6 +149,7 @@ import {
   type TaskFxRecovery,
   type TaskPlan,
   type TaskReference,
+  type TaskRepository,
   type ToolResultAttachment,
   type ToolResultRetention,
   retentionTrimNote,
@@ -131,8 +157,18 @@ import {
 import { appendReferences } from "../../../shared/refs.ts";
 import { parseSentFilesToolUse } from "../../../shared/sent-files.ts";
 import { stepNameById } from "../../../shared/pipeline.ts";
-import { discoveredEffortsFor, mergeModelOptions } from "../../../shared/model-options.ts";
-import { supportedSpeeds } from "../../../shared/speed.ts";
+import type { DiscoveredModel } from "../../../shared/model-options.ts";
+import {
+  buildModelOptions,
+  effortOptionsFor,
+  resolveDefaultEffort,
+  resolveDefaultModel,
+  retainableEffortsFor,
+  speedNoticeFor,
+  speedOptionsFor,
+  speedTiersKnown,
+} from "../../../shared/model-catalog.ts";
+import { modelDisplayName } from "../../../shared/model-display.ts";
 import { parseIssueUrl } from "../../../shared/issue-task.ts";
 import { draftsEqual, normalizeDraft } from "@/lib/draft";
 import { createEventDeduper } from "@/lib/event-dedup";
@@ -259,10 +295,16 @@ interface Props {
   harnesses: Harness[];
   /** Harness account stacks, for the active-account line and switch notice. */
   stacks?: HarnessStack[];
+  /** Account cooldowns (one row per account and, for a per-model limit, per
+   *  model) — marks cooling members in the stacked account picker. */
+  limitStates?: HarnessLimitState[];
+  /** Opens Settings → Harnesses (the exhausted banner's "Open Harnesses"). */
+  onOpenSettingsHarnesses?: () => void;
   /** Start a Run for this task. Backs the all-exhausted banner's "Run now"
    *  action (a manual run forces a cooling account and resets the attempt
-   *  cap). Omitted in standalone/test renders. */
-  onRunTask?: (task: Task) => void;
+   *  cap). Omitted in standalone/test renders. A returned promise drives the
+   *  button's in-flight guard. */
+  onRunTask?: (task: Task) => void | Promise<void>;
   /** Saved agent profiles — resolves the header chip (`resolveTaskProfileDisplay`)
    *  and, in Task details, whether the agent/mode/model/effort(/fast/max)
    *  controls are locked (`task.agentProfileId != null`). `null` means the
@@ -364,27 +406,6 @@ const STREAM_READY_FALLBACK_MS = 400;
 // Computed once at module load — see `lib/platform.ts`; used by the Cmd/Ctrl+F handler below.
 const IS_MAC_PLATFORM = isMacPlatform();
 
-/**
- * Prefills the "Closes #N" (GitHub/GitLab) / "Issue #N" (Bitbucket) line
- * into a Create-PR body when the task was created from an issue — the
- * counterpart to `buildIssueTaskPrompt`'s in-prompt directive, but applied
- * at PR-open time since the body itself is only assembled here (the "Create
- * PR" click handler below, which builds the `GitHubPullPrefill` passed to
- * `onOpenPullRequest`). No-op when `issueUrl` doesn't parse (not an
- * issue-sourced task) or the body already references the issue number, so a
- * user-edited body already mentioning the issue is never double-appended.
- * The re-check is a word-boundary regex (`#7` must not match `#71`) rather
- * than a plain substring test.
- */
-function appendIssueCloseDirective(body: string, issueUrl: string | null | undefined): string {
-  const parsed = parseIssueUrl(issueUrl);
-  if (!parsed) return body;
-  const marker = `#${parsed.number}`;
-  if (new RegExp(`#${parsed.number}(?!\\d)`).test(body)) return body;
-  const directive = parsed.provider === "bitbucket" ? `Issue ${marker}` : `Closes ${marker}`;
-  return body ? `${body}\n\n${directive}` : directive;
-}
-
 function formatDuration(r: Run): string {
   const end = r.endedAt ?? Date.now();
   const ms = end - r.startedAt;
@@ -414,7 +435,7 @@ function formatTime(ts: number): string {
  * the kanban behind it stays visible but de-emphasized. The panel keeps the
  * last task mounted during the exit animation so the slide-out doesn't snap.
  */
-export function RunPanel({ task, stickyUserMessages, agents, harnesses, stacks = [], profiles, onOpenSettingsAgents, onRunTask, agentModels, harnessModels, onRefreshModels, homeDir, onTaskFieldsChanged, onClose, onShowDiff, onArchive, onUnarchive, onOpenPullRequest, onViewPullRequest, onViewIssue, onOpenPipeline = noOpOpenPipeline, focusSubagent = null, onFocusSubagentConsumed }: Props) {
+export function RunPanel({ task, stickyUserMessages, agents, harnesses, stacks = [], limitStates = [], onOpenSettingsHarnesses, profiles, onOpenSettingsAgents, onRunTask, agentModels, harnessModels, onRefreshModels, homeDir, onTaskFieldsChanged, onClose, onShowDiff, onArchive, onUnarchive, onOpenPullRequest, onViewPullRequest, onViewIssue, onOpenPipeline = noOpOpenPipeline, focusSubagent = null, onFocusSubagentConsumed }: Props) {
   // `mountedTask` lags behind `task` so that when the parent sets task → null
   // we keep rendering the old contents while the exit animation plays.
   const [mountedTask, setMountedTask] = useState<Task | null>(task);
@@ -625,6 +646,8 @@ export function RunPanel({ task, stickyUserMessages, agents, harnesses, stacks =
           agents={agents}
           harnesses={harnesses}
           stacks={stacks}
+          limitStates={limitStates}
+          onOpenSettingsHarnesses={onOpenSettingsHarnesses}
           onRunTask={onRunTask}
           profiles={profiles}
           onOpenSettingsAgents={onOpenSettingsAgents}
@@ -661,6 +684,8 @@ function RunPanelBody({
   agents,
   harnesses,
   stacks,
+  limitStates,
+  onOpenSettingsHarnesses,
   onRunTask,
   profiles,
   onOpenSettingsAgents,
@@ -687,7 +712,9 @@ function RunPanelBody({
   agents: AgentStatus[];
   harnesses: Harness[];
   stacks: HarnessStack[];
-  onRunTask?: (task: Task) => void;
+  limitStates: HarnessLimitState[];
+  onOpenSettingsHarnesses?: () => void;
+  onRunTask?: (task: Task) => void | Promise<void>;
   profiles: AgentProfile[] | null;
   onOpenSettingsAgents: (profileId?: string) => void;
   agentModels: AgentModelMap;
@@ -1044,7 +1071,7 @@ function RunPanelBody({
     // prStatusSeqRef.current` staleness check (it captured the pre-bump
     // value) and write task A's mergeability into task B's `prStatus`.
     prStatusSeqRef.current++;
-    setResolveConflictsSent(false);
+    setResolveConflictsSentKey(null);
     setResolvingConflicts(false);
     setSending(false);
     setSendHint(null);
@@ -1060,6 +1087,18 @@ function RunPanelBody({
     setImportRetryOk(false);
     setImportedBranchBusy(false);
     setImportedBranchError(null);
+    // Per-repository UI state (issue #291): the tab selection belongs to the
+    // old task and must not leak into the new panel (the repo list is
+    // re-derived from the next task's row, but the tab is local state). The
+    // "Create all PRs" in-flight flag needs no reset: it is read from a
+    // module-level registry keyed by task id (`isPrBatchRunning`), so a
+    // switch away and back still shows the walk that is running for it.
+    setRepoTab(null);
+    // The Create-PRs dialog, the single chip's planning flag and the header PR
+    // menu belong to the task they were opened for.
+    setCreatePrsOpen(false);
+    setChipBusy(false);
+    setPrMenu(null);
     // `editingId` (the backlog tray's inline-editor state) lives inside the
     // `BacklogTray` child component, not here — it's reset by keying that
     // component on `task.id` at its call site below instead (a fresh mount
@@ -2901,7 +2940,8 @@ function RunPanelBody({
   }, [planDialogId, plans]);
   // The task's live git status (uncommitted changes / unpushed commits).
   // Drives the "Commit & push" action chip above the textarea via
-  // `shouldOfferCommitPush`. Deliberately independent of run status —
+  // `shouldOfferCommitPushForTask` (aggregate across a multi task's repos).
+  // Deliberately independent of run status —
   // background agents can dirty the worktree (or add unpushed commits)
   // while the latest run is still `running`, so the chip must be able to
   // surface then too, not just after a run succeeds. `null` means unknown
@@ -2909,6 +2949,52 @@ function RunPanelBody({
   // polling effect keeps this in sync with the actual git state for as
   // long as the panel is mounted.
   const [gitStatus, setGitStatus] = useState<TaskGitStatus | null>(null);
+  // Selected repository tab for a multi-repository task (issue #291). The
+  // default is the first entry, so every existing single-repo surface below
+  // keeps using the top-level fields.
+  const [repoTab, setRepoTab] = useState<string | null>(null);
+  // Keyed by task id, outside this long-lived component: a per-panel flag was
+  // reset on a task switch, so switching away and back mid-walk re-enabled
+  // the button while the first walk was still opening PRs.
+  const allPrsBusy = useSyncExternalStore(subscribePrBatches, () => isPrBatchRunning(task.id));
+  // `isMultiRepoTask`, never a count: a multi task left with one repository
+  // (after a removal) keeps its tab, per-repo status/PR and workspace root.
+  const multiRepo = isMultiRepoTask(task);
+  const activeRepoName = selectedRepositoryName(task, repoTab);
+  const activeRepo = multiRepo
+    ? ((task.repositories ?? []).find((r) => r.name === activeRepoName) ?? null)
+    : null;
+  // A repository removed from the task takes its tab with it: drop the stale
+  // selection so the terminal cwd (which reads `repoTab`) and the header
+  // follow the first remaining repository again.
+  const repoNamesKey = (task.repositories ?? []).map((r) => r.name).join("\0");
+  useEffect(() => {
+    if (repoTab !== null && selectedRepositoryName(task, repoTab) !== repoTab) setRepoTab(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `repoNamesKey` stands in for `task.repositories`
+  }, [repoTab, repoNamesKey]);
+  const activeGitStatus = multiRepo
+    ? (gitStatus?.repositories?.find((r) => r.name === activeRepo?.name)
+      ?? gitStatus?.repositories?.[0]
+      ?? null)
+    : gitStatus;
+  /** One repository's live status inside the batched multi-repo response. */
+  const gitStatusForRepo = (name: string): TaskGitStatus | null =>
+    gitStatus?.repositories?.find((r) => r.name === name) ?? null;
+  // The PR the header/mergeability surfaces follow: each repository stamps
+  // its own entry, so a multi task follows the selected tab's PR (task.prUrl
+  // stays null by design). The status fetch also needs that repository's path
+  // to resolve its provider remote.
+  // A task can open several PRs (one per branch, one per repository): the
+  // header follows the live-head PR, else the first (`headerPr`).
+  const scopePrs = multiRepo ? (activeRepo ? taskPrsOf(activeRepo) : []) : taskPrsOf(task);
+  const liveHeadNow = activeGitStatus && !activeGitStatus.ignored ? activeGitStatus.branch : null;
+  const scopeTaskBranch = multiRepo ? (activeRepo?.branch ?? null) : (task.branch ?? null);
+  const headerPrUrl = headerPr(scopePrs, [liveHeadNow, scopeTaskBranch])?.url ?? null;
+  // A multi task's workspace only exists after its first run (issue #291).
+  const openFolderUnavailable = openFolderUnavailableReason(task);
+  const prStatusPath = multiRepo
+    ? (activeRepo?.worktreePath ?? activeRepo?.path ?? task.workdir)
+    : task.workdir;
   const [importedBranchBusy, setImportedBranchBusy] = useState(false);
   const [importedBranchError, setImportedBranchError] = useState<string | null>(null);
   const [importRetryBusy, setImportRetryBusy] = useState(false);
@@ -3181,9 +3267,10 @@ function RunPanelBody({
   }, [task.id, task.pipelineParentId]);
 
   // PR mergeability for the composer-row "Resolve Conflicts" button. `parsedPrUrl`
-  // is derived once per `task.prUrl` change and reused for both the fetch
-  // effect and the render-time gate (`canOfferResolveConflicts`).
-  const parsedPrUrl = useMemo(() => parsePrUrl(task.prUrl), [task.prUrl]);
+  // is derived once per PR-URL change (the selected repository's for a multi
+  // task) and reused for both the fetch effect and the render-time gate
+  // (`canOfferResolveConflicts`).
+  const parsedPrUrl = useMemo(() => parsePrUrl(headerPrUrl), [headerPrUrl]);
   const [prStatus, setPrStatus] = useState<GitHubPullMergeability | null>(null);
   const [prStatusLoading, setPrStatusLoading] = useState(false);
   const [prStatusError, setPrStatusError] = useState<string | null>(null);
@@ -3261,7 +3348,7 @@ function RunPanelBody({
   // landing between the await and the fetch — `fetchPrStatus` itself would
   // otherwise fire for a task this effect instance no longer represents.
   useEffect(() => {
-    const parsed = parsePrUrl(task.prUrl);
+    const parsed = parsePrUrl(headerPrUrl);
     if (!parsed) {
       prStatusSeqRef.current++; // invalidate any in-flight fetch/retry
       prStatusRetriesRef.current = 0;
@@ -3274,11 +3361,11 @@ function RunPanelBody({
     prStatusRetriesRef.current = 0;
     void awaitStreamReady().then(() => {
       if (cancelled) return;
-      fetchPrStatus(task.workdir, parsed.number);
+      fetchPrStatus(prStatusPath, parsed.number);
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [task.id, task.prUrl]);
+  }, [task.id, headerPrUrl, prStatusPath]);
 
   // Re-check mergeability at turn-end: track whether the task was "running"
   // on the previous render and refetch once it transitions away from
@@ -3293,16 +3380,16 @@ function RunPanelBody({
     const wasRunning = wasRunningForPrStatusRef.current;
     wasRunningForPrStatusRef.current = task.column === "running";
     if (!wasRunning || task.column === "running") return;
-    const parsed = parsePrUrl(task.prUrl);
+    const parsed = parsePrUrl(headerPrUrl);
     if (!parsed) return;
     prStatusRetriesRef.current = 0;
-    fetchPrStatus(task.workdir, parsed.number);
-  }, [task.column, task.prUrl, task.workdir, fetchPrStatus]);
+    fetchPrStatus(prStatusPath, parsed.number);
+  }, [task.column, headerPrUrl, prStatusPath, fetchPrStatus]);
 
   const refreshPrStatus = () => {
     if (!parsedPrUrl) return;
     prStatusRetriesRef.current = 0;
-    fetchPrStatus(task.workdir, parsedPrUrl.number);
+    fetchPrStatus(prStatusPath, parsedPrUrl.number);
   };
 
   const send = async () => {
@@ -3674,7 +3761,11 @@ function RunPanelBody({
   // flag (rather than reusing `sending`) so the button's own disabled state
   // and "Sent to agent" confirmation don't get tangled up with the composer's.
   const [resolvingConflicts, setResolvingConflicts] = useState(false);
-  const [resolveConflictsSent, setResolveConflictsSent] = useState(false);
+  // The "Sent to agent" confirmation belongs to the repository tab it was
+  // sent from (a multi task has one PR per repository): switching tabs must
+  // not show it, or lock out, another repository's Resolve Conflicts. Null
+  // when nothing was sent; reset on task switch.
+  const [resolveConflictsSentKey, setResolveConflictsSentKey] = useState<string | null>(null);
   // Offer survives `!canSend` (e.g. an orphan-reconciled run) — the button
   // then renders disabled with its "start the task" tooltip instead of
   // vanishing from the row.
@@ -3682,14 +3773,157 @@ function RunPanelBody({
   // Head branch a "Create PR" would open from — agetor's worktree branch, or
   // the workdir's live non-default branch for an isolation:"none" task. `null`
   // means "nothing sensible to PR from", which is also the chip's gate.
-  const prHead = prHeadBranch(task.branch ?? null, gitStatus, task.branchSource);
-  // Live checkout vs the branch agetor created (5 s git-status poll). Drift is
-  // tolerated, never corrected — the header and details say where it is.
-  const branchDrift = driftOf(task.branch ?? null, gitStatus?.branch);
+  // ── Create all PRs ──────────────────────────────────────────────────────
+  //
+  // The button opens a confirm list (`CreatePrsDialog`): one row per pull
+  // request, each with the title and description the agent proposed for THAT
+  // (repository, head), and a base chosen by `chooseBase`
+  // (docs/architecture/multi-repo-tasks.md). Nothing is created until the user
+  // confirms. The gate parses proposals only while the task is idle, memoized on
+  // the event list, and reads each repository's forge identity from a module
+  // cache so a render is never a network call.
+  const [createPrsOpen, setCreatePrsOpen] = useState(false);
+  const [chipBusy, setChipBusy] = useState(false);
+  const [prMenu, setPrMenu] = useState<{ x: number; y: number } | null>(null);
+  const identityVersion = useSyncExternalStore(subscribeProviderInfo, providerInfoVersion);
+  const prRepos = useMemo(
+    () => planReposForTask(task, gitStatus).map((r) => ({ ...r, identity: cachedProviderIdentity(r.projectPath) })),
+    // `task` carries every field `planReposForTask` reads; `identityVersion` re-reads the cache.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [task, gitStatus, identityVersion],
+  );
+  const prRepoPathsKey = prRepos.map((r) => r.projectPath).join("\0");
+  // `gitStatus` re-polls every few seconds, which is the revalidation tick: a
+  // fresh entry makes `loadProviderIdentity` a no-op, an expired one refetches
+  // while `cachedProviderIdentity` keeps serving the stale identity.
+  useEffect(() => {
+    for (const path of prRepoPathsKey.split("\0")) if (path) void loadProviderIdentity(path);
+  }, [prRepoPathsKey, gitStatus]);
+  const proposalsIdle = task.column !== "running";
+  const runProposals = useMemo<readonly RunProposal[]>(
+    () => (proposalsIdle ? collectRunProposals(events) : []),
+    [events, proposalsIdle],
+  );
+  const proposalHeads = useMemo(
+    () => proposalHeadsNeedingPr({ taskId: task.id, repos: prRepos, proposals: runProposals, multi: multiRepo }),
+    // `allPrsBusy` flips when a walk ends, which is when the session's opened heads change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [task.id, prRepos, runProposals, multiRepo, allPrsBusy],
+  );
+  const liveHeadsNeedingPr = prRepos.filter((r) => r.liveHead !== null && !headHasPr(task.id, r, r.liveHead));
+  // A multi task: any repository without a PR on its live head, or a proposal
+  // for another branch. A single-repo task has no per-repository gap to fill, so
+  // the button only appears once two or more branches could open a PR.
+  // Hidden until the first git status lands: without it every live head reads
+  // "not pushed yet", and the confirm list would open on that.
+  const showCreateAllPrs = gitStatus === null
+    ? false
+    : multiRepo
+    ? liveHeadsNeedingPr.length > 0 || proposalHeads.length > 0
+    : new Set([...liveHeadsNeedingPr.map((r) => r.liveHead!), ...proposalHeads.map((h) => h.head)]).size >= 2;
+  const onPrsStamped = useCallback(
+    async (taskId: string) => {
+      // Pull the stamped PRs now rather than waiting for the board poll, so the
+      // header link and the button's gate update at once. `onTaskFieldsChanged`
+      // merges by id, so it is safe after a task switch.
+      try {
+        const fresh = await api.getTask(taskId);
+        onTaskFieldsChanged?.(taskId, { prs: fresh.prs, prUrl: fresh.prUrl, repositories: fresh.repositories });
+      } catch {
+        // The 2 s poll reconciles.
+      }
+    },
+    [onTaskFieldsChanged],
+  );
+  /** Open a PR page in the app when the URL names a PR, else in the browser. */
+  const viewPr = (url: string) => {
+    if (parsePullNumber(url) != null) {
+      onViewPullRequest({
+        projectPath: multiRepo ? (activeRepo?.worktreePath ?? activeRepo?.path ?? task.workdir) : task.workdir,
+        prUrl: url,
+      });
+    } else {
+      void api.openExternal(url).catch(() => {});
+    }
+  };
+  // The header PR menu's items are built once per set of PRs: `ContextMenu`
+  // re-places itself and re-focuses its first item whenever `items` changes
+  // identity, so a fresh array every render (SSE flush, board poll) would yank
+  // focus. The select handler reads the latest `viewPr` through a ref.
+  const viewPrRef = useRef(viewPr);
+  viewPrRef.current = viewPr;
+  const scopePrsKey = scopePrs.map((p) => `${p.url}\0${p.head ?? ""}\0${p.base ?? ""}`).join("\n");
+  const prMenuItems = useMemo(
+    () =>
+      scopePrs.map((p, n) => ({
+        id: `pr-${n}`,
+        label: p.head ? `View PR: ${p.head}${p.base ? ` → ${p.base}` : ""}` : "View pull request",
+        icon: GitPullRequest,
+        onSelect: () => viewPrRef.current(p.url),
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `scopePrsKey` stands in for `scopePrs`
+    [scopePrsKey],
+  );
+
+  const prHead = multiRepo
+    ? (activeRepo ? repositoryPrHead(activeRepo, activeGitStatus) : null)
+    : prHeadBranch(task.branch ?? null, gitStatus, task.branchSource);
+  // The branch agetor created for the SELECTED repository (single: the task's
+  // own). Live checkout vs that branch, read from the 5 s git-status poll —
+  // for a multi task `repositories[].checkoutBranch` is only the last-seen
+  // recorded value, so the banner must compare against the live branch the
+  // same way the single-repository path does. Drift is tolerated, never
+  // corrected — the header and details say where it is.
+  // The single "Create PR" chip: plan the live head only (the same attribution
+  // and base choice as Create all PRs), then open the composer prefilled with
+  // that row's title, description and base. A failed plan opens it unprefilled.
+  const openCreatePrChip = async () => {
+    const head = prHead;
+    if (!head || chipBusy) return;
+    const taskId = task.id;
+    const projectPath = multiRepo
+      ? (activeRepo?.worktreePath ?? activeRepo?.path ?? task.workdir)
+      : task.workdir;
+    setChipBusy(true);
+    let title = "";
+    let body = "";
+    let base: string | undefined;
+    try {
+      const rows = await buildPrPlan(
+        {
+          taskId,
+          repos: prRepos.filter((r) => !multiRepo || r.name === activeRepo?.name),
+          events,
+          rootTitle: task.title,
+          issueUrl: task.issueUrl ?? null,
+          multi: multiRepo,
+          liveHeadOnly: true,
+        },
+        { providerInfo: loadProviderIdentity, pullTargets: (q) => api.getPullTargets(q) },
+      );
+      const row = rows.find((r) => r.isLiveHead && r.head === head);
+      if (row) {
+        title = row.hasProposal ? row.title : "";
+        body = row.body;
+        if (row.base && !row.baseError) base = row.base;
+      }
+    } catch {
+      // The composer still opens; it fetches its own defaults.
+    } finally {
+      if (currentTaskIdRef.current === taskId) setChipBusy(false);
+    }
+    if (currentTaskIdRef.current !== taskId) return;
+    onOpenPullRequest({ projectPath, head, title, body, taskId, ...(base ? { base } : {}) });
+  };
+  const activeTaskBranch = multiRepo ? (activeRepo?.branch ?? null) : (task.branch ?? null);
+  const activeBranchSource = multiRepo ? (activeRepo?.branchSource ?? "created") : task.branchSource;
+  const branchDrift = multiRepo
+    ? driftOf(activeTaskBranch, activeGitStatus && !activeGitStatus.ignored ? activeGitStatus.branch : null)
+    : driftOf(activeTaskBranch, gitStatus?.branch);
   // Claude-only: an OpenCode import carries no transcript branch, so the
   // "Switch to <branch>" banner never shows for one.
   const importedGitBranch = importedSession?.kind === "claude-code" ? (task.importedClaude?.gitBranch ?? null) : null;
-  const folderBranch = gitStatus && !gitStatus.ignored ? gitStatus.branch : null;
+  const folderBranch = activeGitStatus && !activeGitStatus.ignored ? activeGitStatus.branch : null;
   // The import-time branch is only a hint until the session continues here.
   // After an Agetor turn the folder's branch is whatever that turn left, so
   // the banner would keep naming a branch the session has moved past.
@@ -3700,6 +3934,8 @@ function RunPanelBody({
     && !!folderBranch
     && importedGitBranch !== folderBranch;
   const resolveConflictsSentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resolveConflictsSent = resolveConflictsSentKey !== null
+    && resolveConflictsSentKey === resolveConflictsKey(multiRepo, activeRepo?.name);
   useEffect(() => () => {
     if (resolveConflictsSentTimerRef.current) clearTimeout(resolveConflictsSentTimerRef.current);
   }, []);
@@ -3761,15 +3997,24 @@ function RunPanelBody({
     // sync with the current task's PR, refuse to send unless it still
     // matches the PR the button is currently showing.
     if (!parsedPrUrl || !prStatus || prStatus.pullNumber !== parsedPrUrl.number) return;
+    // A multi-repository task runs at the workspace root, which is not a git
+    // repository: the prompt has to name this PR repository's checkout
+    // explicitly or every git command lands in the wrong place. The active
+    // tab is the one whose `prUrl` produced `parsedPrUrl`/`prStatus`.
+    const resolveRepo = multiRepo ? activeRepo : null;
     const prompt = buildResolveConflictsPrompt({
       repo: prStatus.repo,
       number: prStatus.pullNumber,
       title: null,
       headRef: prStatus.headRef,
       baseRef: prStatus.baseRef,
+      repositoryPath: resolveRepo ? (resolveRepo.worktreePath ?? resolveRepo.path) : null,
+      repositoryName: resolveRepo?.name ?? null,
     });
     // Captured before the first await — see `currentTaskIdRef`'s doc comment.
     const sentTaskId = task.id;
+    // The repository tab this prompt is for, so its confirmation stays there.
+    const sentKey = resolveConflictsKey(multiRepo, activeRepo?.name);
     setResolvingConflicts(true);
     setSendHint(null);
     try {
@@ -3790,8 +4035,8 @@ function RunPanelBody({
             logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
           });
           if (resolveConflictsSentTimerRef.current) clearTimeout(resolveConflictsSentTimerRef.current);
-          setResolveConflictsSent(true);
-          resolveConflictsSentTimerRef.current = setTimeout(() => setResolveConflictsSent(false), 5_000);
+          setResolveConflictsSentKey(sentKey);
+          resolveConflictsSentTimerRef.current = setTimeout(() => setResolveConflictsSentKey(null), 5_000);
         }
       } else if (res.withheld && res.savedToBacklog) {
         // Claude is showing a modal — the merge/resolve-conflicts prompt was
@@ -3849,10 +4094,21 @@ function RunPanelBody({
   // the same scope, so project-level skill/command/MCP discovery reads
   // exactly this tree too, never a stale `task.branch`-against-the-source-repo
   // scope.
+  // Multi-repository `@` scopes: the workspace root is not a git repo, so a
+  // multi task lists each repository's worktree instead (issue #291). The
+  // single-repository path is unchanged.
+  const multiRepoScopes = useMemo(
+    () => (multiRepo ? multiRepoFileScopes(task) : null),
+    [multiRepo, task.worktreePath, task.repositories, task.isolation],
+  );
   const fileScope = useMemo<FileScope>(() => {
+    if (multiRepoScopes && multiRepoScopes.length > 0) {
+      const active = multiRepoScopes.find((sc) => sc.name === activeRepo?.name) ?? multiRepoScopes[0]!;
+      return active.ref ? { dir: active.dir, ref: active.ref } : { dir: active.dir };
+    }
     const scope = fileScopeForTask(task);
     return scope.ref ? { dir: scope.dir, ref: scope.ref } : { dir: scope.dir };
-  }, [task.worktreePath, task.isolation, task.workdir, task.baseRef, task.branchSource, task.branch]);
+  }, [task.worktreePath, task.isolation, task.workdir, task.baseRef, task.branchSource, task.branch, multiRepoScopes, activeRepo?.name]);
   // Hoisted above the composer's own internal calls (passed down via
   // `capabilities`/`savedPrompts` below) so the dock's Main ↔ subagent tab
   // switches and the archived-without-canSend swap — which unmount and
@@ -3860,7 +4116,16 @@ function RunPanelBody({
   // the saved-prompts fetch on every round trip. See the comment above
   // `sendRef`. Scoped by `fileScope` (the same `{dir, ref?}` pair the `@`
   // popover uses), not a separate workdir/branch pair — see that memo above.
-  const capabilities = useAgentCapabilities(task.agent, fileScope);
+  // A multi-repository discovery is one request per repository: hold it until
+  // THIS task's event stream is ready (bound to `task.id`, like the composer's
+  // `awaitReady` and `TerminalsSection`), so the per-repository burst doesn't
+  // compete with the SSE subscription for the webview's connection budget on
+  // a task switch. A single scope never waits (see the hook's doc).
+  const capabilities = useAgentCapabilities(
+    task.agent,
+    multiScopesOrNull(multiRepoScopes) ?? fileScope,
+    { awaitReady: () => awaitStreamReady(task.id) },
+  );
   const savedPromptsState = useSavedPrompts();
   // Stable identity for RunEventList/UserMessageBlock's display-only path
   // shortening (see the `pathRoots` prop doc) — both are memoized, so a
@@ -3969,11 +4234,10 @@ function RunPanelBody({
     capture.handleResult(result);
   };
 
-  // Captured as a local const (not read via `task.prUrl` inline) so its
-  // narrowing to non-null survives into the onClick closure below — TS
-  // drops narrowing on a mutable property access once it's referenced
-  // inside a nested function expression.
-  const prUrl = task.prUrl;
+  // Captured as a local const (not read inline) so its narrowing to non-null
+  // survives into the onClick closure below — TS drops narrowing on a mutable
+  // property access once it's referenced inside a nested function expression.
+  const prUrl = headerPrUrl;
   // Same capture rationale as `prUrl` above, for the "View issue" header
   // affordance.
   const issueUrl = task.issueUrl;
@@ -3988,13 +4252,35 @@ function RunPanelBody({
               too. When the URL parses to a PR number, open the in-app detail
               subpage directly; otherwise (an unrecognized provider URL
               shape) fall back to the plain external link, as before. */}
-          {prUrl && (
+          {prUrl && scopePrs.length > 1 && (
+            <Tooltip align="end" label={`Open one of the ${scopePrs.length} pull requests created for this task`}>
+              <Button
+                size="icon"
+                variant="outline"
+                aria-label="View PR"
+                aria-haspopup="menu"
+                data-testid="view-pr-menu-button"
+                onClick={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setPrMenu({ x: r.left, y: r.bottom + 4 });
+                }}
+              >
+                <GitPullRequest className="size-4" />
+              </Button>
+            </Tooltip>
+          )}
+          {prUrl && scopePrs.length <= 1 && (
             <Tooltip align="end" label={t("Open the pull request created for this task")}>
               {parsePullNumber(prUrl) != null ? (
                 <Button
                   size="icon"
                   variant="outline"
-                  onClick={() => onViewPullRequest({ projectPath: task.workdir, prUrl })}
+                  onClick={() => onViewPullRequest({
+                    projectPath: multiRepo
+                      ? (activeRepo?.worktreePath ?? activeRepo?.path ?? task.workdir)
+                      : task.workdir,
+                    prUrl,
+                  })}
                   aria-label={t("View PR")}
                 >
                   <GitPullRequest className="size-4" />
@@ -4020,7 +4306,7 @@ function RunPanelBody({
                 <Button
                   size="icon"
                   variant="outline"
-                  onClick={() => onViewIssue({ projectPath: task.workdir, issueUrl })}
+                  onClick={() => onViewIssue({ projectPath: issueProjectPath(task, activeRepo), issueUrl })}
                   aria-label={t("View issue")}
                   data-testid="view-issue"
                 >
@@ -4066,20 +4352,34 @@ function RunPanelBody({
           <Tooltip
             align="end"
             label={
-              task.worktreePath
-                ? `Open the worktree in your file manager: ${task.worktreePath}`
-                : `Open the project workdir in your file manager: ${task.workdir}`
+              openFolderUnavailable
+                ?? (task.worktreePath
+                  ? `Open the worktree in your file manager: ${task.worktreePath}`
+                  : `Open the project workdir in your file manager: ${task.workdir}`)
             }
           >
             <Button
               size="icon"
               variant="outline"
-              onClick={() =>
+              // Not `disabled`: a disabled button gets no hover, and the
+              // tooltip is what explains why a never-started multi task has
+              // no folder yet. The click says so too.
+              aria-disabled={openFolderUnavailable ? true : undefined}
+              className={openFolderUnavailable ? "opacity-50" : undefined}
+              onClick={() => {
+                if (openFolderUnavailable) {
+                  toast.info(openFolderUnavailable);
+                  return;
+                }
                 void api.openPath({
                   path: task.worktreePath ?? task.workdir,
                   taskId: task.id,
-                }).catch(() => { /* swallowed — openPath failures are best-effort */ })
-              }
+                }).catch((err: unknown) => {
+                  // Single tasks stay best-effort and silent; a multi task's
+                  // workspace failing to open is worth saying out loud.
+                  if (multiRepo) toast.error(err instanceof Error ? err.message : "Could not open the workspace folder");
+                });
+              }}
               aria-label={t("Open working folder")}
             >
               <FolderOpen className="size-4" />
@@ -4146,7 +4446,46 @@ function RunPanelBody({
           </Tooltip>
         </div>
         <div className="mt-2 truncate text-sm font-semibold">{task.title}</div>
-        <HarnessStackBanner task={task} stacks={stacks} harnesses={harnesses} onRunTask={onRunTask} />
+        {multiRepo && (
+          // Per-repository selector (issue #291): the diff tabs' sibling for
+          // status, PR head/path and new terminal cwd.
+          <div className="mt-1 flex flex-wrap gap-1" role="tablist" aria-label="Repositories">
+            {(task.repositories ?? []).map((r) => {
+              // A repository whose checkout or source can't be read (deleted,
+              // no longer a git repository) is marked so the user can find
+              // the one to remove from the task details.
+              const problem = repositoryProblem(r, gitStatusForRepo(r.name));
+              return (
+                <button
+                  key={r.name}
+                  type="button"
+                  role="tab"
+                  aria-selected={(activeRepo?.name ?? null) === r.name}
+                  data-testid={`run-repo-tab-${r.name}`}
+                  data-repo-problem={problem ? "" : undefined}
+                  title={problem ?? undefined}
+                  onClick={() => setRepoTab(r.name)}
+                  className={cn(
+                    "inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 font-mono text-[10px]",
+                    (activeRepo?.name ?? null) === r.name
+                      ? (problem ? "bg-warning/15 text-warning" : "bg-info/15 text-info")
+                      : (problem ? "text-warning hover:bg-muted" : "text-muted-foreground hover:bg-muted"),
+                  )}
+                >
+                  {problem && <AlertTriangle className="size-2.5" aria-hidden />}
+                  {r.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <HarnessStackBanner
+          task={task}
+          stacks={stacks}
+          harnesses={harnesses}
+          onRunTask={onRunTask}
+          onOpenSettingsHarnesses={onOpenSettingsHarnesses}
+        />
         {importedSession && (
           <div
             className="mt-1 space-y-1 text-xs"
@@ -4211,27 +4550,33 @@ function RunPanelBody({
               return <span className="text-info"> · {at.text}</span>;
             })()}
             {" · "}{task.column}
-            {task.branch && !branchDrift.drifted && <> · <span className="font-mono">{task.branch}</span></>}
+            {activeTaskBranch && !branchDrift.drifted && <> · <span className="font-mono">{activeTaskBranch}</span></>}
             {branchDrift.drifted && (
               <>
                 {" · "}
-                <span className="font-mono" title={driftTitle(task.branch ?? null)}>{branchDrift.live}</span>{" "}
+                <span className="font-mono" title={driftTitle(activeTaskBranch)}>{branchDrift.live}</span>{" "}
                 <span
                   data-testid="run-panel-branch-drift"
-                  title={driftTitle(task.branch ?? null)}
+                  title={driftTitle(activeTaskBranch)}
                   className={cn(
                     "rounded px-1 py-px text-[10px] font-medium",
-                    task.branchSource === "existing" ? "bg-warning/15 text-warning" : "bg-info/15 text-info",
+                    activeBranchSource === "existing" ? "bg-warning/15 text-warning" : "bg-info/15 text-info",
                   )}
                 >
-                  {task.branchSource === "existing" ? "not on PR head" : "drifted"}
+                  {activeBranchSource === "existing" ? "not on PR head" : "drifted"}
                 </span>
               </>
             )}
-            {task.baseRef && (
-              <> · <span className="font-mono opacity-70">base {task.baseRef.slice(0, 7)}</span></>
+            {(multiRepo ? activeRepo?.baseRef : task.baseRef) && (
+              <> · <span className="font-mono opacity-70">base {(multiRepo ? activeRepo?.baseRef : task.baseRef)!.slice(0, 7)}</span></>
             )}
           </span>
+          <SwitchAccountControl
+            task={task}
+            stacks={stacks}
+            harnesses={harnesses}
+            onTaskFieldsChanged={onTaskFieldsChanged}
+          />
           {agentProfileDisplay && agentProfileForCard && (
             <span data-testid="task-agent-profile-chip" title={agentProfileDisplay.summary} className="shrink-0">
               <AgentProfileCard
@@ -4388,6 +4733,8 @@ function RunPanelBody({
         task={task}
         agents={agents}
         harnesses={harnesses}
+        stacks={stacks}
+        limitStates={limitStates}
         agentProfileDisplay={agentProfileDisplay}
         agentProfileForCard={agentProfileForCard}
         onOpenSettingsAgents={onOpenSettingsAgents}
@@ -4396,7 +4743,9 @@ function RunPanelBody({
         onRefreshModels={onRefreshModels}
         homeDir={homeDir}
         onTaskFieldsChanged={onTaskFieldsChanged}
-        liveBranch={gitStatus?.branch ?? null}
+        liveBranch={activeGitStatus?.branch ?? null}
+        repoStatusFor={gitStatusForRepo}
+        onViewPullRequest={onViewPullRequest}
         tmuxSession={latestRun?.tmuxSession ?? null}
         // "Has this task ever run" for the Agent-details dialog's status
         // line — the union of every signal in scope, since each is
@@ -4439,7 +4788,7 @@ function RunPanelBody({
           rule for this fragment: every keyed child carries its component's
           name in the key (`PlanDialog` below is the third one). See
           docs/plans/terminal-section-duplication.md. */}
-      <TerminalsSection key={`terminals-${task.id}`} task={task} awaitReady={awaitStreamReady} />
+      <TerminalsSection key={`terminals-${task.id}`} task={task} awaitReady={awaitStreamReady} activeRepo={multiRepo ? repoTab : null} />
 
       {showSubagentTabs && (
         <SubagentTabs
@@ -4625,6 +4974,7 @@ function RunPanelBody({
           // one key make React leak the earlier one on every re-render.
           key={`backlog-${task.id}`}
           fileScope={fileScope}
+          fileScopes={multiRepoScopes}
           items={backlogItems}
           canSend={canSend && !modalPending}
           busy={sending || backlogBusy}
@@ -4698,10 +5048,20 @@ function RunPanelBody({
             textareaRef={sendRef}
             capture={capture}
             fileScope={fileScope}
+            fileScopes={multiRepoScopes}
+            // Unprefixed `@tokens` resolve at the workspace root (the agent's
+            // cwd), which the per-repository listing can't see — stat that
+            // root before warning they won't resolve.
+            workspaceRoot={multiRepo ? (task.worktreePath ?? task.workdir) : null}
             // A column transition = a run settled (or started): the agent may
             // have just written files while focus never left the composer —
             // retrigger the listing fetch (see the prop's doc).
             fileScopeRefreshToken={task.column}
+            // A multi-repository listing is one request per repository: hold
+            // it until THIS task's event stream is ready. Bound to `task.id`
+            // because the composer's effects run before this body's reset
+            // effect on a switch (same reason as `TerminalsSection`).
+            awaitReady={() => awaitStreamReady(task.id)}
             // Pass the hoisted results down (see the comment above
             // `capabilities`'s declaration) so this dock's remounts don't
             // refire the composer's own internal fetches.
@@ -4740,16 +5100,19 @@ function RunPanelBody({
                   </Button>
                 )}
                 {/* Commit & push keys on live git state (uncommitted changes or
-                    unpushed commits), not run status — see `shouldOfferCommitPush`.
+                    unpushed commits), not run status — see
+                    `shouldOfferCommitPushForTask`. For a multi task the prompt
+                    is aggregate, so ANY repository having work offers the chip
+                    (gating on the selected tab hid it when a sibling was dirty).
                     Can surface even mid-run (a background agent dirtied the tree).
                     Hidden while `!canSend` — e.g. an imported session still
                     importing, or whose import failed — since the send would be refused. */}
-                {canSend && shouldOfferCommitPush(gitStatus) && !sending && (
+                {canSend && shouldOfferCommitPushForTask(gitStatus) && !sending && (
                   <Button
                     size="sm"
                     variant="secondary"
                     onClick={() => void sendCommitPush()}
-                    title={t("Ask the agent to commit the working-tree changes, push the current branch to origin, and reply with the link to open a PR plus a PR title and description in copyable code blocks.")}
+                    title="Ask the agent to commit the working-tree changes, push the current branch to origin, and reply with the base branch, a link that opens the PR against it, and a PR title and description in copyable code blocks."
                   >
                     <GitCommit className="mr-1 size-3" /> Commit &amp; push
                   </Button>
@@ -4762,26 +5125,30 @@ function RunPanelBody({
                     checked-out branch as long as it isn't the repo default,
                     which would degenerate to base == head. See
                     `prHeadBranch`. Gone once a PR exists (the durable
-                    "View PR" link lives in the panel header). The proposal
-                    parse runs on click, not per event flush — the stream can
-                    be long. */}
-                {!task.prUrl && prHead != null && shouldOfferOpenPr(gitStatus) && !sending && (
+                    "View PR" link lives in the panel header). The click plans the live head
+                    only (`buildPrPlan`): the proposal is read and its base chosen
+                    there, not per event flush — the stream can be long. */}
+                {canSend && !sending && showCreateAllPrs && (
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => {
-                      const proposal = latestPrProposal(events);
-                      onOpenPullRequest({
-                        projectPath: task.workdir,
-                        head: prHead,
-                        title: proposal?.title ?? "",
-                        body: appendIssueCloseDirective(proposal?.description ?? "", task.issueUrl),
-                        taskId: task.id,
-                      });
-                    }}
-                    title={t("Create a pull request for this task's branch — prefilled from the agent's summary when available")}
+                    onClick={() => setCreatePrsOpen(true)}
+                    disabled={allPrsBusy}
+                    title="Open one pull request per branch that doesn't have one yet. You review each title, description and base branch before anything is created."
+                    data-testid="create-all-prs"
                   >
-                    <GitPullRequest className="mr-1 size-3" /> Create PR
+                    <GitPullRequest className="mr-1 size-3" /> {allPrsBusy ? "Creating PRs…" : "Create all PRs"}
+                  </Button>
+                )}
+                {prHead != null && !livePr(scopePrs, [prHead]) && shouldOfferOpenPr(activeGitStatus) && !sending && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={chipBusy}
+                    onClick={() => void openCreatePrChip()}
+                    title="Create a pull request for this task's branch — prefilled from the agent's proposal and targeting the branch the task started from"
+                  >
+                    {chipBusy ? <Loader2 className="mr-1 size-3 animate-spin" /> : <GitPullRequest className="mr-1 size-3" />} Create PR
                   </Button>
                 )}
                 {/* Post-PR counterpart to "Open PR" above: offered once the
@@ -4982,6 +5349,30 @@ function RunPanelBody({
           focusComposer={focusComposer}
         />
       )}
+      {/* The Create-all-PRs confirm list. Keyed per task so a switch starts a
+          fresh plan; namespaced like the other keyed children of this fragment
+          (`plan-…`, `backlog-…`): no two children may share a key. */}
+      <CreatePrsDialog
+        key={`create-prs-dialog-${task.id}`}
+        open={createPrsOpen}
+        task={task}
+        events={events}
+        gitStatus={gitStatus}
+        onClose={() => setCreatePrsOpen(false)}
+        onPrsStamped={onPrsStamped}
+      />
+      {/* The header's PR picker for a task with several PRs. Portaled to
+          `document.body` by the primitive (this panel's `<aside>` is
+          transformed, which would rebase a `fixed` overlay onto itself). */}
+      <ContextMenu
+        open={prMenu !== null}
+        x={prMenu?.x ?? 0}
+        y={prMenu?.y ?? 0}
+        label="Pull requests"
+        testId="run-panel-pr-menu"
+        onClose={() => setPrMenu(null)}
+        items={prMenuItems}
+      />
     </>
   );
 }
@@ -5007,6 +5398,7 @@ const BACKLOG_ICON_BTN =
  */
 function BacklogTray({
   fileScope,
+  fileScopes,
   items,
   canSend,
   busy,
@@ -5021,6 +5413,10 @@ function BacklogTray({
    *  threaded into each row's inline editor for popover + highlight parity.
    *  Display/suggestion layer only; expansion stays server-side. */
   fileScope?: FileScope | null;
+  /** Every repository scope for a multi-repository task (issue #291) —
+   *  mirrors the send composer's merged, `<name>/…`-prefixed listing so a
+   *  saved draft's `@` editor sees the same files it will send. */
+  fileScopes?: NamedFileScope[] | null;
   items: BacklogMessage[];
   /** Whether "Send now" is available (task has a resumable run and no pending prompt). */
   canSend: boolean;
@@ -5143,6 +5539,7 @@ function BacklogTray({
               readOnly={readOnly}
               editing={editorVisible && editingId === item.id}
               fileScope={fileScope}
+              fileScopes={fileScopes}
               startingFolder={startingFolder}
               onStartEdit={() => setEditingId(item.id)}
               onCancelEdit={() => setEditingId(null)}
@@ -5165,6 +5562,7 @@ function BacklogTray({
  *  (textarea + references picker) when `editing` is true. */
 function BacklogItemRow({
   fileScope,
+  fileScopes,
   item,
   index,
   total,
@@ -5181,6 +5579,7 @@ function BacklogItemRow({
   onMove,
 }: {
   fileScope?: FileScope | null;
+  fileScopes?: NamedFileScope[] | null;
   item: BacklogMessage;
   index: number;
   total: number;
@@ -5203,9 +5602,20 @@ function BacklogItemRow({
   // `@` popover + highlight for the inline editor — scope gated on `editing`
   // so a tray full of closed rows fetches nothing (the module-level cache is
   // shared with the send composer anyway, so entering edit mode is a cache
-  // hit in practice). Expansion still happens server-side on send; this is
-  // the suggestion/validation layer only, same as every other composer.
-  const projectFiles = useProjectFiles(editing && !readOnly ? (fileScope ?? null) : null);
+  // hit in practice). Multi-repository tasks use the same merged, prefixed
+  // listing as the send composer (issue #291), so a draft's `@` editor can
+  // reference any repository instead of only the active tab's. Expansion
+  // still happens server-side on send; this is the suggestion/validation
+  // layer only, same as every other composer.
+  // Named scopes are passed only for a multi task (one entry for a multi task
+  // left with one repository), so their presence, not a count, decides.
+  const multiScopes = multiScopesOrNull(fileScopes);
+  const singleScopeFiles = useProjectFiles(editing && !readOnly ? (fileScope ?? null) : null);
+  const multiScopeFiles = useProjectFileScopes(editing && !readOnly ? multiScopes : null);
+  const projectFiles = multiScopes ? multiScopeFiles : singleScopeFiles;
+  const hasFileScope = multiScopes
+    ? multiScopes.every((s) => !!s.dir)
+    : !!fileScope?.dir;
   // Re-seed the edit form only when we *enter* edit mode. We deliberately do
   // NOT depend on `item.text` / `item.references`: the 2s task poll rebuilds
   // `task.backlog` into fresh objects (new array references) on every tick, so
@@ -5236,7 +5646,7 @@ function BacklogItemRow({
             paint, see AtHighlightBackdrop's doc. Popover anchors above (the
             tray sits at the panel's bottom edge). */}
         <div className="relative">
-          {fileScope && (
+          {hasFileScope && (
             <AtHighlightBackdrop textareaRef={editorRef} value={draft} validPaths={projectFiles.validPaths} />
           )}
           <Textarea
@@ -5247,7 +5657,7 @@ function BacklogItemRow({
             autoFocus
             className="relative min-h-0 w-full resize-none text-xs"
           />
-          {fileScope && (
+          {hasFileScope && (
             <AtFileAutocomplete
               entries={projectFiles.entries}
               truncated={projectFiles.truncated}
@@ -5257,6 +5667,7 @@ function BacklogItemRow({
               textareaRef={editorRef}
               placement="above"
               fileScope={fileScope}
+              fileScopes={multiScopes}
             />
           )}
         </div>
@@ -5728,7 +6139,7 @@ function RunsList({
  * themselves live on the bun side and survive the panel closing entirely.
  * Defaults open when the task already has terminals (`openTerminalCount`).
  */
-function TerminalsSection({ task, awaitReady }: { task: Task; awaitReady: (forTaskId: string) => Promise<void> }) {
+function TerminalsSection({ task, awaitReady, activeRepo }: { task: Task; awaitReady: (forTaskId: string) => Promise<void>; activeRepo?: string | null }) {
   const count = task.openTerminalCount;
   // Seed open from the count at mount, then let the user own the toggle —
   // binding `open` to the polled count would re-expand the section whenever
@@ -5781,7 +6192,14 @@ function TerminalsSection({ task, awaitReady }: { task: Task; awaitReady: (forTa
         </span>
       </summary>
       <div className="h-80 border-t border-border/60">
-        {ready && <TerminalView taskId={task.id} archived={task.archivedAt != null} />}
+        {ready && (
+          <TerminalView
+            taskId={task.id}
+            archived={task.archivedAt != null}
+            repositories={isMultiRepoTask(task) ? (task.repositories ?? []).map((r) => r.name) : undefined}
+            activeRepo={activeRepo ?? null}
+          />
+        )}
       </div>
     </details>
   );
@@ -6986,16 +7404,21 @@ function HarnessStackBanner({
   stacks,
   harnesses,
   onRunTask,
+  onOpenSettingsHarnesses,
 }: {
   task: Task;
   stacks: HarnessStack[];
   harnesses: Harness[];
-  onRunTask?: (task: Task) => void;
+  onRunTask?: (task: Task) => void | Promise<void>;
+  onOpenSettingsHarnesses?: () => void;
 }) {
   const target = task.harnessState?.allExhausted?.nextAttemptAt ?? null;
   // One shared ticking clock (also used by the fx countdown); reset per task
   // and per target so a previous task's time never paints on the next one.
   const now = useNowTicker(target != null && target > 0, `${task.id}:${target ?? ""}`);
+  // In-flight guard for "Run now", tagged with the task id so a switch to
+  // another task never inherits the previous task's disabled button.
+  const [runningNowFor, setRunningNowFor] = useState<string | null>(null);
   const labelOf = (id: string) =>
     stacks.flatMap((s) => s.members).find((m) => m.harnessId === id)?.label
       ?? harnesses.find((h) => h.id === id)?.label
@@ -7023,25 +7446,144 @@ function HarnessStackBanner({
       </div>
     );
   }
+  const runBusy = runningNowFor === task.id;
+  const runNow = () => {
+    if (!onRunTask || runBusy) return;
+    const id = task.id;
+    setRunningNowFor(id);
+    // App's start handler reports its own failures (toast); this only clears
+    // the in-flight guard, so a rejection is swallowed here, not left unhandled.
+    void Promise.resolve(onRunTask(task))
+      .catch(() => {})
+      .finally(() => {
+        setRunningNowFor((cur) => (cur === id ? null : cur));
+      });
+  };
   return (
-    <div
-      className="mt-1 flex flex-wrap items-center gap-2 text-xs text-warning"
-      data-testid="harness-stack-exhausted"
-    >
-      <span>{view.text}</span>
-      {onRunTask && view.runNow && (
+    <div className="mt-1 space-y-1 text-xs text-warning" data-testid="harness-stack-exhausted">
+      <div className="flex flex-wrap items-center gap-2">
+        <span>{view.text}</span>
+        {onRunTask && view.runNow && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 border-warning/40 px-2 text-[11px] text-warning hover:bg-warning/10"
+            data-testid="harness-stack-run-now"
+            title={t("Run now on a cooling account and reset the retry cap")}
+            disabled={runBusy}
+            onClick={runNow}
+          >
+            <Play className="mr-1 size-3" /> {runBusy ? "Starting…" : "Run now"}
+          </Button>
+        )}
+        {onOpenSettingsHarnesses && view.openHarnesses && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 border-warning/40 px-2 text-[11px] text-warning hover:bg-warning/10"
+            data-testid="harness-stack-open-harnesses"
+            onClick={onOpenSettingsHarnesses}
+          >
+            Open Harnesses
+          </Button>
+        )}
+      </div>
+      {view.reasons.length > 0 && (
+        <ul className="list-disc space-y-0.5 pl-4 text-[11px]" data-testid="harness-stack-member-reasons">
+          {view.reasons.map((line, i) => (
+            <li key={`${i}:${line}`}>{line}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * "Switch to next account" for a task in a stack of two or more accounts
+ * (D12), next to the account line. The core decides whether the move happens
+ * now (idle task) or when the live turn ends (`scheduled`); this only
+ * reflects the answer. The in-flight and scheduled flags live in the core's
+ * answer and `task.harnessState.scheduledSwitch`, so a reload or a CLI
+ * request shows the same state; the busy flag is tagged with the task id so
+ * switching tasks mid-request leaks nothing. An archived task offers no
+ * switch (the core refuses it); a switch still scheduled on one keeps its
+ * Cancel. Exported for its render test.
+ */
+export function SwitchAccountControl({
+  task,
+  stacks,
+  harnesses,
+  onTaskFieldsChanged,
+}: {
+  task: Task;
+  stacks: HarnessStack[];
+  harnesses: Harness[];
+  onTaskFieldsChanged?: (taskId: string, partial: Partial<Task>) => void;
+}) {
+  const [busy, setBusy] = useState<{ taskId: string; op: "switch" | "cancel" } | null>(null);
+  const scheduled = task.harnessState?.scheduledSwitch != null;
+  const offerSwitch = task.archivedAt == null && stackPositionFor(stacks, task.agent) !== null;
+  if (!offerSwitch && !scheduled) return null;
+  const taskBusy = busy?.taskId === task.id ? busy.op : null;
+  const mergeResult = (updated: Task) => {
+    onTaskFieldsChanged?.(task.id, { agent: updated.agent, harnessState: updated.harnessState });
+  };
+  const run = async (op: "switch" | "cancel") => {
+    if (busy?.taskId === task.id) return;
+    const id = task.id;
+    setBusy({ taskId: id, op });
+    try {
+      if (op === "cancel") {
+        const res = await api.cancelScheduledAccountSwitch(id);
+        mergeResult(res.task);
+      } else {
+        const res = await api.switchTaskAccount(id);
+        mergeResult(res.task);
+        if (res.status === "switched") {
+          const label = harnesses.find((h) => h.id === res.task.agent)?.label ?? res.task.agent;
+          toast.success(`Switched to ${label}`);
+        }
+      }
+    } catch (e) {
+      const failure = switchAccountFailureToast(e);
+      toast.error(failure.title, { description: failure.description });
+    } finally {
+      setBusy((cur) => (cur?.taskId === id ? null : cur));
+    }
+  };
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5" data-testid="switch-account-control">
+      {scheduled ? (
+        <>
+          <span className="text-info" data-testid="switch-account-scheduled">
+            Switch scheduled for the end of this turn
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-5 px-1.5 text-[10px]"
+            data-testid="switch-account-cancel"
+            disabled={taskBusy !== null}
+            onClick={() => void run("cancel")}
+          >
+            {taskBusy === "cancel" ? "Cancelling…" : "Cancel"}
+          </Button>
+        </>
+      ) : (
         <Button
           size="sm"
           variant="outline"
-          className="h-6 border-warning/40 px-2 text-[11px] text-warning hover:bg-warning/10"
-          data-testid="harness-stack-run-now"
-          title={t("Run now on a cooling account and reset the retry cap")}
-          onClick={() => onRunTask(task)}
+          className="h-5 px-1.5 text-[10px]"
+          data-testid="switch-account-button"
+          title="Move this task to the next account in its stack, keeping the conversation"
+          disabled={taskBusy !== null}
+          onClick={() => void run("switch")}
         >
-          <Play className="mr-1 size-3" /> Run now
+          {taskBusy === "switch" ? "Switching…" : "Switch to next account"}
         </Button>
       )}
-    </div>
+    </span>
   );
 }
 
@@ -7747,6 +8289,8 @@ function TaskDetails({
   task,
   agents,
   harnesses,
+  stacks,
+  limitStates,
   agentProfileDisplay,
   agentProfileForCard,
   onOpenSettingsAgents,
@@ -7756,12 +8300,18 @@ function TaskDetails({
   homeDir,
   onTaskFieldsChanged,
   liveBranch,
+  repoStatusFor,
+  onViewPullRequest,
   tmuxSession,
   hasRun,
 }: {
   task: Task;
   agents: AgentStatus[];
   harnesses: Harness[];
+  /** Stacks + cooldowns: a stacked task's account picker lists only its
+   *  stack's members, with position and a cooling mark (D18). */
+  stacks: HarnessStack[];
+  limitStates: HarnessLimitState[];
   /** Resolved agent-profile chip data for this task (`null` when the task
    *  was never bound to a profile) — see `RunPanelBody`'s own computation,
    *  reused here so the lock/hint/Detach affordances below and the header
@@ -7787,6 +8337,12 @@ function TaskDetails({
    *  git-status poll), `null` when unknown/detached. When it differs from
    *  `task.branch` the Branch row splits into "Checked out" + "Task branch". */
   liveBranch: string | null;
+  /** One repository's live status from the panel's batched multi-repo git
+   *  status poll (`null` when unknown) — the Repositories rows read each
+   *  repository's live branch and whether its checkout is readable. */
+  repoStatusFor: (name: string) => TaskGitStatus | null;
+  /** The panel's in-app PR view (same handler as the header's PR button). */
+  onViewPullRequest: (input: { projectPath: string; prUrl: string }) => void;
   /** Tmux session name from the latest run (claude-code only). `null` when
    *  no run has spawned a session yet — the Tmux row hides itself in that
    *  case rather than presenting an Attach button that's guaranteed to 404. */
@@ -7807,6 +8363,45 @@ function TaskDetails({
   const profileLock = task.agentProfileId != null;
   const editable = !runningLock && !profileLock;
   const [detaching, setDetaching] = useState(false);
+  // "Remove from task" for one repository of a multi-repository task (issue
+  // #291). The busy marker is stamped with the task id, so a switch to
+  // another task mid-request can't leave that task's buttons disabled
+  // (`TaskDetails` is not remounted per task).
+  const confirm = useConfirm();
+  const [removingRepo, setRemovingRepo] = useState<{ taskId: string; name: string } | null>(null);
+  const removingHere = removingRepo !== null && removingRepo.taskId === task.id;
+  const multiRepo = isMultiRepoTask(task);
+  const removeBlockReason = multiRepo ? removeRepositoryBlockReason(task) : null;
+  const removeRepository = async (repo: TaskRepository) => {
+    const taskId = task.id;
+    const copy = removeRepositoryConfirmCopy(repo);
+    const ok = await confirm({
+      title: copy.title,
+      description: (
+        <div className="space-y-1">
+          {copy.lines.map((line) => <p key={line}>{line}</p>)}
+        </div>
+      ),
+      confirmLabel: copy.confirmLabel,
+      variant: "destructive",
+    });
+    if (!ok) return;
+    setRemovingRepo({ taskId, name: repo.name });
+    try {
+      const updated = await api.removeTaskRepository(taskId, repo.name);
+      // Merge only what the removal changed, keyed by the task it was sent
+      // for (`onTaskFieldsChanged` merges by id, so a task switch mid-request
+      // is safe); the panel drops a tab that pointed at the removed repository.
+      onTaskFieldsChanged?.(taskId, removalMergeFields(updated));
+      toast.success(`Removed ${repo.name} from this task`, {
+        description: repo.branch ? `Branch ${repo.branch} was kept.` : undefined,
+      });
+    } catch (e) {
+      toast.error(`Couldn't remove ${repo.name}`, { description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setRemovingRepo((cur) => (cur?.taskId === taskId && cur.name === repo.name ? null : cur));
+    }
+  };
   // Agent-details modal (plan D2), opened by clicking the chip in the Agent
   // row below. Closed defensively if the task becomes unbound while open —
   // Detach clears `task.agentProfileId`/`agentProfile` out from under it, and
@@ -7844,7 +8439,27 @@ function TaskDetails({
 
   const save = async (patch: Partial<Task>) => {
     try {
-      await api.updateTask(task.id, patch);
+      // An account switch is never replayed after a lost response: the core
+      // copies the transcript before answering, and `taskPatchFailureToast`
+      // tells the user the switch may have landed.
+      const updated = await api.updateTask(
+        task.id,
+        patch,
+        typeof patch.agent === "string" ? { retry: false } : undefined,
+      );
+      if (typeof patch.agent === "string") {
+        // Show the new account at once rather than the old one until the next
+        // 2 s poll (only the fields a switch owns, never the whole snapshot).
+        onTaskFieldsChanged?.(task.id, {
+          agent: updated.agent,
+          harnessState: updated.harnessState,
+          mode: updated.mode,
+          model: updated.model,
+          effort: updated.effort,
+          speed: updated.speed,
+          maxMode: updated.maxMode,
+        });
+      }
     } catch (e) {
       // A dropdown PATCH stays quiet: the parent's poll picks the row back up
       // on the next 2s tick and the dropdown reverts on its own. An account
@@ -7893,13 +8508,9 @@ function TaskDetails({
   // `harnessModels`/`agentModels` maps — `mergeModelOptions` already applies
   // rule 7 (a logged-out harness's discovered catalog is untrustworthy), and
   // this is the single source that distrust must flow through.
-  const discoveredEffortsForTask = useMemo(
-    () => discoveredEffortsFor(modelOptions, task.model),
-    [modelOptions, task.model],
-  );
   const supportedEffortsForModel = useMemo(
-    () => supportedEfforts(kind, task.model, discoveredEffortsForTask),
-    [kind, task.model, discoveredEffortsForTask],
+    () => effortOptionsFor(kind, task.model, modelOptions),
+    [kind, task.model, modelOptions],
   );
   const allowedEfforts = useMemo(
     () => new Set(supportedEffortsForModel.map((o) => o.id)),
@@ -7908,54 +8519,46 @@ function TaskDetails({
   // `task.effort` rides along so OpenCode keeps a stored variant while its
   // model's variants are still unknown (see `retainableEfforts`).
   const retainable = useMemo(
-    () => retainableEfforts(kind, task.model, discoveredEffortsForTask, task.effort),
-    [kind, task.model, discoveredEffortsForTask, task.effort],
+    () => retainableEffortsFor(kind, task.model, modelOptions, task.effort),
+    [kind, task.model, modelOptions, task.effort],
   );
   // Mirrors `mergeModelOptions` rule 6: a task's current effort can be
   // retained (kept valid by the cascade above) without being one the picker
   // would otherwise offer — e.g. a discovery refresh that omits `none`.
-  // Built in `EFFORT_OPTIONS` order (highest→lowest) rather than appended
-  // last, so a retained `ultra` still sorts above `Low` instead of trailing
-  // the whole list; the "kept as you chose it" hint names the harness the
-  // task is actually running on instead of hardcoding "Codex".
+  // Built from the offered rows (which already include any effort the CLI
+  // reported that agetor has no row for) in display order, with the retained
+  // one slotted in by `orderEfforts` rather than appended last, so a retained
+  // `ultra` still sorts above `Low`; the "kept as you chose it" hint names the
+  // harness the task is actually running on instead of hardcoding "Codex".
   const effortSelectOptions = useMemo(() => {
     const harnessLabel = harnesses.find((h) => h.id === task.agent)?.label ?? kind;
-    const known = EFFORT_OPTIONS.some((o) => o.id === task.effort);
-    const options = EFFORT_OPTIONS
-      .filter((o) => allowedEfforts.has(o.id) || (o.id === task.effort && retainable.has(o.id)))
-      .map((o) => (
-        allowedEfforts.has(o.id)
-          ? o
-          : {
-              ...o,
-              unlisted: true,
-              hint: `Not in ${harnessLabel}'s discovered effort menu — kept as you chose it.`,
-            }
-      ));
-    // `task.effort` may be an id with no `EFFORT_OPTIONS` row at all (an
-    // unknown/future effort id) — the filter above can't represent it, so
-    // fall back to a raw row labelled by the id itself.
-    if (task.effort && !known && retainable.has(task.effort)) {
-      return [
-        ...options,
-        {
-          id: task.effort,
-          label: task.effort,
-          hint: `Not in ${harnessLabel}'s discovered effort menu — kept as you chose it.`,
-          unlisted: true,
-        },
-      ];
-    }
-    return options;
-  }, [allowedEfforts, retainable, task.effort, harnesses, task.agent, kind]);
+    const retained =
+      task.effort && !allowedEfforts.has(task.effort) && retainable.has(task.effort) ? task.effort : null;
+    if (!retained) return supportedEffortsForModel;
+    const retainedRow = {
+      id: retained,
+      label: effortLabelFor(retained),
+      hint: `Not in ${harnessLabel}'s discovered effort menu — kept as you chose it.`,
+      unlisted: true,
+    };
+    const byId = new Map<string, { id: string; label: string; hint?: string; unlisted?: boolean }>(
+      supportedEffortsForModel.map((o) => [o.id, o] as const),
+    );
+    byId.set(retained, retainedRow);
+    const ordered = orderEfforts([...supportedEffortsForModel.map((o) => o.id), retained]);
+    return ordered.map((id) => byId.get(id)!);
+  }, [allowedEfforts, retainable, task.effort, harnesses, task.agent, kind, supportedEffortsForModel]);
   const maxModeAvailable = kind === "cursor" && cursorModelSupportsMaxMode(task.model);
-  // Speed tiers for the task's model: cursor's come from the curated
-  // fast-variant table, fx's only from discovery (the merged row's
-  // `fast`/`ultrafast` flags, rule 8), every other kind offers `off` only.
-  const speedOptions = useMemo(() => {
-    const option = modelOptions.find((o) => o.id === (task.model ?? DEFAULT_MODEL[kind]));
-    return supportedSpeeds(kind, task.model, task.effort, option);
-  }, [kind, task.model, task.effort, modelOptions]);
+  // Speed tiers for the task's model: cursor's come from its variant map,
+  // fx's, codex's and claude's only from discovery (the merged row's flags,
+  // rule 8), every other kind offers `off` only.
+  const speedOptions = useMemo(
+    () => speedOptionsFor(kind, task.model ?? DEFAULT_MODEL[kind], task.effort, modelOptions),
+    [kind, task.model, task.effort, modelOptions],
+  );
+  const speedNotice = speedNoticeFor(kind, task.model ?? DEFAULT_MODEL[kind], task.speed, modelOptions);
+  // Fast is a launch flag: a change to a running task lands on the next spawn.
+  const speedNote = kind === "claude-code" || kind === "codex" ? "Applies on the next run." : undefined;
   useEffect(() => {
     // A profile-bound task's effort is owned by the profile, not this
     // cascade — mutating it here would PATCH a field the profile lock is
@@ -7968,9 +8571,7 @@ function TaskDetails({
       if (task.effort !== null) void save({ effort: null });
       return;
     }
-    const fallback = allowedEfforts.has(DEFAULT_EFFORT[kind])
-      ? DEFAULT_EFFORT[kind]
-      : supportedEffortsForModel[0]!.id;
+    const fallback = resolveDefaultEffort(kind, task.model, modelOptions) ?? supportedEffortsForModel[0]!.id;
     if (task.effort !== fallback) void save({ effort: fallback });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allowedEfforts, retainable, task.effort, supportedEffortsForModel, task.agentProfileId, harnessKnown]);
@@ -7994,8 +8595,28 @@ function TaskDetails({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [maxModeAvailable, task.maxMode, task.agentProfileId, harnessKnown]);
 
+  // The account PATCH awaits the transcript copy (seconds on a long
+  // conversation): the picker is disabled and says "Switching…" meanwhile.
+  // Tagged with the task id so another task's panel never inherits it.
+  const [switchingAgentFor, setSwitchingAgentFor] = useState<string | null>(null);
+  const switchingAgent = switchingAgentFor === task.id;
+  // Cooling marks are time-based: a slow tick lets an expired cooldown drop
+  // off the picker without waiting for `limitStates` to change.
+  const [pickerNow, setPickerNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (limitStates.length === 0) return;
+    setPickerNow(Date.now());
+    const t = setInterval(() => setPickerNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, [limitStates]);
+  const pickerOptions = useMemo(
+    () => stackPickerOptions({ task, stacks, harnesses, agents, limitStates, now: pickerNow }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [task.agent, task.model, stacks, harnesses, agents, limitStates, pickerNow],
+  );
+
   const onAgentChange = (nextId: string) => {
-    if (nextId === task.agent) return;
+    if (nextId === task.agent || switchingAgent) return;
     // Switching to another KIND wipes the current mode / model / effort
     // context — those ids belong to the old harness's kind option set. Reset
     // to the new harness's kind defaults (DEFAULT_MODEL + DEFAULT_EFFORT) and
@@ -8003,46 +8624,45 @@ function TaskDetails({
     // switch sends only `{ agent }` (`agentSwitchPatch`). Sent as one PATCH
     // so the server-side reconcile only fires once.
     const nextHarness = harnesses.find((h) => h.id === nextId);
+    const id = task.id;
+    setSwitchingAgentFor(id);
     void save(agentSwitchPatch({
       nextId,
       currentKind: harnessKnown ? kind : null,
       nextKind: nextHarness?.kind ?? null,
       kindDefaults: () => kindDefaultsFor(nextId),
-    }));
+    })).finally(() => {
+      setSwitchingAgentFor((cur) => (cur === id ? null : cur));
+    });
   };
 
   const kindDefaultsFor = (nextId: string) => {
     const nextKind = harnessKindOf(nextId, harnesses);
     const nextMode = defaultModeFor(nextKind);
-    const nextModel = DEFAULT_MODEL[nextKind];
     // Same merged-rows source `modelOptions` reads from (rule 7's
     // logged-out distrust), but for the harness being switched TO rather
     // than the task's current one.
     const nextLoggedIn = agents.find((a) => a.harnessId === nextId)?.loggedIn ?? null;
+    const nextDiscovered = harnessModels[nextId] ?? agentModels[nextKind] ?? [];
+    const nextModel = resolveDefaultModel(nextKind, nextDiscovered, nextLoggedIn);
     const nextModelRows = mergedModels(nextKind, nextId, agentModels, harnessModels, nextModel, nextLoggedIn);
-    const nextEfforts = supportedEfforts(
-      nextKind,
-      nextModel,
-      discoveredEffortsFor(nextModelRows, nextModel),
-    );
-    const nextEffort = nextEfforts.length === 0
-      ? null
-      : nextEfforts.some((e) => e.id === DEFAULT_EFFORT[nextKind])
-        ? DEFAULT_EFFORT[nextKind]
-        : nextEfforts[0]!.id;
+    const nextEffort = resolveDefaultEffort(nextKind, nextModel, nextModelRows);
     return { mode: nextMode, model: nextModel, effort: nextEffort, speed: "off" as const, maxMode: false };
   };
 
   const onModelChange = (model: string) => {
-    // fx speed reset rule (plan §3.1): drop a stored tier to `off` only on a
+    // Speed reset rule (plan §3.1): drop a stored tier to `off` only on a
     // user model change, and only when the new model's tiers are actually
     // known — the model is in this harness's discovered catalog and that
     // catalog is trusted (rule 7: not a logged-out harness) — and exclude
     // it. Cursor's own clear runs in the effect above.
-    if (kind === "fx" && task.speed !== "off" && selectedStatus?.loggedIn !== false) {
+    if (task.speed !== "off") {
       const discovered = harnessModels[task.agent] ?? agentModels[kind] ?? [];
-      const option = modelOptions.find((o) => o.id === model);
-      if (discovered.some((m) => m.id === model) && !supportedSpeeds(kind, model, task.effort, option).includes(task.speed)) {
+      if (
+        speedTiersKnown(kind, discovered, selectedStatus?.loggedIn ?? null)
+        && discovered.some((m) => m.id === model)
+        && !speedOptionsFor(kind, model, task.effort, modelOptions).includes(task.speed)
+      ) {
         void save({ model, speed: "off" });
         return;
       }
@@ -8177,15 +8797,27 @@ function TaskDetails({
             <dt className="text-muted-foreground">{t("Harness")}</dt>
             <dd className="min-w-0">
               {editable ? (
-                <AgentSelect
-                  value={task.agent}
-                  harnesses={harnesses}
-                  agents={agents}
-                  onChange={onAgentChange}
-                />
+                <div className="flex items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <AgentSelect
+                      value={task.agent}
+                      harnesses={harnesses}
+                      agents={agents}
+                      stackOptions={pickerOptions}
+                      disabled={switchingAgent}
+                      onChange={onAgentChange}
+                    />
+                  </div>
+                  {switchingAgent && (
+                    <span className="shrink-0 text-[10px] text-muted-foreground" data-testid="task-agent-switching">
+                      Switching…
+                    </span>
+                  )}
+                </div>
               ) : (
                 <span className="inline-flex items-center gap-1">
-                  <AgentIcon kind={kind} className="size-3" /> {task.agent}
+                  <AgentIcon kind={kind} className="size-3" />{" "}
+                  {harnesses.find((h) => h.id === task.agent)?.label ?? task.agent}
                 </span>
               )}
             </dd>
@@ -8240,7 +8872,7 @@ function TaskDetails({
                   onChange={onModelChange}
                 />
               ) : (
-                <span>{task.model ?? "—"}</span>
+                <span>{task.model ? modelDisplayName(kind, task.model, modelOptions) : "—"}</span>
               )}
             </dd>
 
@@ -8287,6 +8919,8 @@ function TaskDetails({
                     value={task.speed}
                     onChange={(speed) => void save({ speed })}
                     disabled={!editable}
+                    {...speedNotice}
+                    {...(speedNote ? { note: speedNote } : {})}
                   />
                 </dd>
               </>
@@ -8296,6 +8930,82 @@ function TaskDetails({
             <dd className="min-w-0 truncate font-mono" title={task.workdir}>
               {abbreviateHome(task.workdir, homeDir)}
             </dd>
+
+            {multiRepo && (
+              <>
+                <dt className="text-muted-foreground">Repositories</dt>
+                <dd className="min-w-0 space-y-1" data-testid="task-details-repositories">
+                  {repositoryDetails(task.repositories ?? [], repoStatusFor).map((d) => {
+                    const repo = (task.repositories ?? []).find((r) => r.name === d.name)!;
+                    const busy = removingHere && removingRepo!.name === d.name;
+                    return (
+                      <div
+                        key={d.name}
+                        data-testid={`task-details-repo-${d.name}`}
+                        data-repo-problem={d.problem ? "" : undefined}
+                        className={cn(
+                          "min-w-0 rounded border px-1.5 py-1",
+                          d.problem ? "border-warning/50 bg-warning/10" : "border-border/60",
+                        )}
+                      >
+                        <div className="flex min-w-0 items-center justify-between gap-2">
+                          <span className="min-w-0 truncate font-mono font-medium">{d.name}</span>
+                          <Tooltip align="end" label={removeBlockReason ?? "Detach this repository's checkout and drop it from the task"}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-5 shrink-0 px-1.5 text-[10px] text-muted-foreground hover:text-danger"
+                              data-testid={`task-details-repo-remove-${d.name}`}
+                              disabled={removeBlockReason !== null || removingHere}
+                              onClick={() => { void removeRepository(repo); }}
+                            >
+                              {busy ? "Removing…" : "Remove from task"}
+                            </Button>
+                          </Tooltip>
+                        </div>
+                        {d.problem && (
+                          <div className="flex items-center gap-1 text-[10px] text-warning" data-testid={`task-details-repo-problem-${d.name}`}>
+                            <AlertTriangle className="size-3 shrink-0" aria-hidden /> {d.problem}
+                          </div>
+                        )}
+                        <div className="truncate font-mono text-muted-foreground" title={d.path}>
+                          {abbreviateHome(d.path, homeDir)}
+                        </div>
+                        <div className="truncate font-mono">
+                          <span className="text-muted-foreground">branch </span>
+                          <span className={d.drifted ? "text-warning" : undefined}>{d.branchText ?? "—"}</span>
+                          {d.baseText && <span className="text-muted-foreground"> · base {d.baseText}</span>}
+                        </div>
+                        <div className="truncate font-mono" title={d.checkoutCreated ? d.checkoutText : undefined}>
+                          <span className="text-muted-foreground">checkout </span>
+                          {d.checkoutCreated
+                            ? abbreviateHome(d.checkoutText, homeDir)
+                            : <span className="italic text-muted-foreground">{d.checkoutText}</span>}
+                        </div>
+                        {d.prs.map((p, n) => (
+                          <button
+                            key={p.url}
+                            type="button"
+                            className="block max-w-full truncate text-info underline-offset-2 hover:underline"
+                            title={p.url}
+                            data-testid={`task-details-repo-pr-${d.name}-${n}`}
+                            onClick={() => {
+                              if (parsePullNumber(p.url) != null) {
+                                onViewPullRequest({ projectPath: repo.worktreePath ?? repo.path, prUrl: p.url });
+                              } else {
+                                void api.openExternal(p.url).catch(() => {});
+                              }
+                            }}
+                          >
+                            {p.head ? `${p.head} → ${p.base ?? "?"}` : p.url}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </dd>
+              </>
+            )}
 
             <dt className="text-muted-foreground">{t("Isolation")}</dt>
             <dd className="min-w-0">{task.isolation}</dd>
@@ -8413,9 +9123,9 @@ function TaskDetails({
   );
 }
 
-/** Merge curated AGENT_OPTIONS models with this harness's CLI-discovered
- *  catalog via the shared `mergeModelOptions` helper (same rules NewTaskForm
- *  uses — plan `fx-model-catalog-refresh.md` §3 D3) so the inline editor
+/** The picker rows for a harness's kind: curated models merged with its
+ *  CLI-discovered catalog by the shared `buildModelOptions` (the same
+ *  composition NewTaskForm and `agetor add` use), so the inline editor
  *  surfaces every model the user can pick. Prefers the per-harness catalog
  *  (keyed by `harnessId`, e.g. `task.agent`) over the kind-level map, which
  *  only exists as a fallback for an older daemon predating
@@ -8424,19 +9134,24 @@ function mergedModels(
   kind: AgentKind,
   harnessId: string,
   agentModels: AgentModelMap,
-  harnessModels: Record<string, { id: string; label?: string }[]>,
+  harnessModels: Record<string, DiscoveredModel[]>,
   selected: string | null,
   loggedIn: boolean | null,
 ) {
-  const discovered = (harnessModels[harnessId] ?? agentModels[kind] ?? [])
-    .filter((m) => kind !== "cursor" || !cursorModelIdCoveredByCatalog(m.id));
-  return mergeModelOptions({
-    curated: AGENT_OPTIONS[kind].models,
-    discovered,
+  return buildModelOptions(kind, {
+    discovered: harnessModels[harnessId] ?? agentModels[kind] ?? [],
     selected,
-    scoped: CATALOG_SCOPED_KINDS.has(kind),
     loggedIn,
   });
+}
+
+const EFFORT_LABELS: ReadonlyMap<string, string> = new Map(EFFORT_OPTIONS.map((o) => [o.id, o.label] as const));
+
+/** Label for an effort id with no `EFFORT_OPTIONS` row: its id, title-cased. */
+function effortLabelFor(id: string): string {
+  const known = EFFORT_LABELS.get(id);
+  if (known) return known;
+  return id.split(/[-_]+/).filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ") || id;
 }
 
 function CompactSelect({
@@ -8480,21 +9195,32 @@ function AgentSelect({
   value,
   harnesses,
   agents,
+  stackOptions = null,
+  disabled = false,
   onChange,
 }: {
   /** Current harness id stored on the task. */
   value: string;
   harnesses: Harness[];
   agents: AgentStatus[];
+  /** A stacked task lists only its stack's members (`stackPickerOptions`,
+   *  already labelled with position / cooling / availability); null keeps the
+   *  full account list. */
+  stackOptions?: { id: string; label: string }[] | null;
+  disabled?: boolean;
   onChange: (next: string) => void;
 }) {
   return (
     <Select
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
+      aria-label="Harness account"
       className="h-6 text-[11px]"
     >
-      {harnesses.map((h) => {
+      {stackOptions
+        ? stackOptions.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)
+        : harnesses.map((h) => {
         const status = agents.find((a) => a.harnessId === h.id);
         const available = status?.available ?? true;
         const loggedOut = available && status?.loggedIn === false;
@@ -8949,7 +9675,18 @@ function TmuxPromptCard({
   // `PlanCard` summary button now (see `RunEventList`'s `blocks` memo),
   // not an inline expanded body, so this card is the only place the full
   // text is shown at decision time.
-  const isPlan = CLAUDE_PLAN_PROMPT_RE.test(req.paneText);
+  // `req.unparsable` must win over the plan layout: an unparsable card's only
+  // correct action is the terminal hand-off below, even if its pane text
+  // happens to quote plan wording.
+  // `hideKeys` is set only for an UNNUMBERED menu (the Chrome startup prompt,
+  // the workspace-trust dialog). A genuine ExitPlanMode approval is a
+  // NUMBERED prompt, so it can never carry the flag — while an unnumbered
+  // card's wider preview could quote "written up a plan" / "Would you like to
+  // proceed" from scrollback above the dialog. Without this guard that quote
+  // would swap the card to the plan layout, whose button filter keeps only
+  // `Yes …` rows and would drop the Chrome prompt's "No, keep browser tools
+  // off" choice.
+  const isPlan = req.unparsable !== true && !req.hideKeys && CLAUDE_PLAN_PROMPT_RE.test(req.paneText);
   if (isPlan) {
     const planLabel = (label: string): string => {
       const l = label.toLowerCase();
@@ -9092,7 +9829,7 @@ function TmuxPromptCard({
               variant={isNegative ? "outline" : "secondary"}
               disabled={submitting !== null}
             >
-              {submitting === c.key ? "Sending…" : `${c.key}. ${c.label}`}
+              {submitting === c.key ? "Sending…" : tmuxChoiceLabel(c, req.hideKeys)}
             </Button>
           );
         })}

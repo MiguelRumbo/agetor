@@ -97,3 +97,7 @@ Cuando supere ~2000 líneas, archivar en `bitacora/<año>-Q<n>.md` y dejar aquí
 - [Claude] El contenedor fijo (sticky) del mensaje del usuario en el RunPanel pasa a tener el fondo del panel (`bg-card`) de borde a borde y a cubrir el padding superior del log. Antes era transparente y la burbuja solo ocupa el 85 % derecho, así que el texto que pasaba por debajo se veía a su lado. No se desactiva el modo sticky.
 
 **Verificado:** `bun run typecheck` y tests de `sticky-sections` y `user-message-display`. Sin comprobación visual: el usuario pidió no compilar ni reiniciar mientras Agetor estaba en uso.
+
+## 2026-11-19 — Sincronización del fork con upstream
+
+- [Codex] Se integró `alamops/agetor@baaf699` sobre el historial del fork para conservar el port de Linux y la telemetría. La migración propia se registra como 093 con alias de `087_run_usage`, y el nuevo selector de proyectos mantiene la opción de escribir una ruta en modo headless.

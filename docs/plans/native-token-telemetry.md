@@ -16,7 +16,7 @@ This plan introduces native token telemetry:
 
 ## Schema & Migration
 
-Migration `087_run_usage.sql`:
+Migration `093_run_usage.sql`:
 ```sql
 CREATE TABLE IF NOT EXISTS run_usage (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -458,6 +458,17 @@ export interface HarnessStackInput {
   kind: HarnessStackKind;
   members: string[];
   mirrorMode?: HarnessMirrorMode;
+  /** Optimistic concurrency on edit: the `updatedAt` the caller's draft was
+   *  based on. A mismatch answers 409 `HarnessStackChanged`. Omitted = last
+   *  write wins (older clients). Ignored on create. */
+  expectedUpdatedAt?: number;
+}
+
+/** 409 body when an edit's `expectedUpdatedAt` no longer matches. */
+export interface HarnessStackChanged {
+  error: string;
+  code: "stack-changed";
+  stack: HarnessStack;
 }
 
 /** Conservative limit vocabulary: provider quota, HTTP 429, 402/credits. */
@@ -471,9 +482,13 @@ export interface HarnessLimitSignal {
   /** Human-readable notice text. Never contains a token or an email. */
   message: string;
   source: "claude-pane" | "claude-api-error" | "codex-error";
+  /** Set when the provider scoped the limit to one model (Codex "You've hit
+   *  your usage limit for <model>"). Absent/null = the whole account. */
+  model?: string | null;
 }
 
-/** An account-global cooldown row. Written only by the stack store. */
+/** A cooldown row. Written only by the stack store. `model` null = the whole
+ *  account is cooling; a model id = only tasks on that model skip it. */
 export interface HarnessLimitState {
   harnessId: string;
   reason: HarnessLimitReason;
@@ -481,6 +496,110 @@ export interface HarnessLimitState {
   message: string | null;
   exhaustedUntilMs: number;
   updatedAt: number;
+  /** Optional only so pre-087 payloads still type-check; the store always sets it. */
+  model?: string | null;
+}
+
+/** Why a stack member can't take a task right now (banners, refusals). */
+export interface HarnessMemberReason {
+  harnessId: string;
+  label: string;
+  /** Short human text: "cooling until 15:00", "logged out", "disabled", … */
+  reason: string;
+}
+
+/** What caused a row in the per-stack swap history. */
+export type HarnessSwapTrigger =
+  | "limit"        // a provider limit moved a live task
+  | "retry"        // an automatic retry after a reset (may stay on the same account)
+  | "manual"       // a same-stack account change from the picker/CLI, or switch-now on an idle task
+  | "scheduled"    // switch-now requested during a live turn, applied when the turn ended
+  | "unavailable"  // Run/message found the account removed/disabled/logged out and moved on
+  | "boot-resume"  // a swap or manual switch the core completed after a restart
+  | "blocked";     // no move: every account was out of quota or unusable
+
+/** One row of `harness_swap_events`. Labels and the task title are
+ *  denormalized so the row still reads after the task or account is deleted. */
+export interface HarnessSwapEvent {
+  id: string;
+  stackId: string;
+  taskId: string | null;
+  taskTitle: string | null;
+  fromHarnessId: string | null;
+  fromLabel: string | null;
+  /** Null for a `blocked` row. */
+  toHarnessId: string | null;
+  toLabel: string | null;
+  trigger: HarnessSwapTrigger;
+  /** Limit reason, `no-usable-member`, a `lastMove` member reason, or `user`. */
+  reason: HarnessLimitReason | "no-usable-member" | "member-removed" | "member-disabled" | "member-unavailable" | "user" | null;
+  source: HarnessLimitSignal["source"] | null;
+  message: string | null;
+  model: string | null;
+  resetsAtMs: number | null;
+  fromRunId: string | null;
+  toRunId: string | null;
+  continuation: "transferred" | "restarted" | null;
+  at: number;
+}
+
+/** `GET /harness-stacks/:id/history`: newest first, cursor-paged. */
+export interface HarnessSwapHistoryPage {
+  events: HarnessSwapEvent[];
+  /** Opaque; pass back as `?before=` for the next page. Null on the last page. */
+  nextCursor: string | null;
+}
+
+/** One key a mirror run would add/update/remove in a merged file. Names only —
+ *  values never leave the core (they can be secrets). */
+export interface MirrorKeyChange {
+  file: string;
+  key: string;
+  action: "add" | "update" | "remove";
+}
+
+/** The planned (dry-run) or applied mirror changes for one backup account. */
+export interface MirrorPlan {
+  harnessId: string;
+  label: string;
+  files: { add: string[]; update: string[]; remove: string[] };
+  keys: MirrorKeyChange[];
+  /** Files/keys the backup already had that this run overwrites or removes;
+   *  each is saved under the data dir's mirror backups first. */
+  backups: string[];
+  /** Items the mirror wrote earlier that the backup edited since: kept, and
+   *  no longer owned by the mirror. */
+  kept: string[];
+  warnings: string[];
+}
+
+/** `POST /harness-stacks/mirror-preview`. `overwrites` is true when any plan
+ *  has a `backups` entry or a removal — the webview asks before saving then. */
+export interface MirrorPreview {
+  plans: MirrorPlan[];
+  overwrites: boolean;
+}
+
+/** `PATCH /harnesses/:id` refusal body (409 `mirror-records`): the edit moves
+ *  the account away from a config folder the config mirror keeps records and
+ *  saved originals for, which the next mirror into the account would drop.
+ *  Re-sending the same body with `confirmMirrorDrop: true` saves it. */
+export interface HarnessEditMirrorRefusal {
+  error: string;
+  code: "mirror-records";
+  folders: Array<{ what: string; was: string; now: string; records: number; savedOriginals: number }>;
+}
+
+/** `POST /harnesses/:id/mirror-restore`. */
+export interface MirrorRestoreResult {
+  harnessId: string;
+  /** Originals put back from the backup store. */
+  restored: string[];
+  /** Mirror-added items removed (unedited since the mirror wrote them). */
+  removed: string[];
+  /** Mirror-written items the account edited since: left in place. */
+  kept: string[];
+  warnings: string[];
 }
 
 /** The visible divider emitted into the new run's `status` stream when a swap
@@ -525,6 +644,10 @@ export interface TaskHarnessState {
      *  failover). Boot completes or visibly reports it instead of treating it
      *  as a quota swap (review R15-S3). */
     manual?: boolean;
+    /** Set on a manual switch that is the "Switch to next account" action
+     *  (`manual` = an idle request, `scheduled` = applied at turn end), so a
+     *  switch the core finishes after a restart keeps the `switch-now` label. */
+    switchNow?: "manual" | "scheduled";
   } | null;
   /** Set when every usable account is exhausted or unusable. */
   allExhausted: {
@@ -543,16 +666,41 @@ export interface TaskHarnessState {
      *  non-limit reason, stop retrying" from "the core died mid-spawn, retry
      *  again". Optional so older state still parses (legacy = re-arm). */
     attemptRunId?: string;
+    /** Set when the armed retry is a clean retry (first turn, no tool call):
+     *  the limited run whose user rows the retry will replay. Every path that
+     *  ends the retry without running it (cancel, manual message, cap) stashes
+     *  that run's unread follow-ups to the backlog from these persisted rows. */
+    cleanRetryOf?: string;
+    /** Why each member could not take the task when it blocked (banners,
+     *  `agetor show`). Optional so older state still parses. */
+    memberReasons?: HarnessMemberReason[];
   } | null;
   /** The last automatic move, for a visible note in the UI. `manual-switch`
    *  is the user switching accounts inside one stack (which preserves the
-   *  conversation) — not a member leaving or being unavailable. */
+   *  conversation) — not a member leaving or being unavailable. `switch-now`
+   *  is the "Switch to next account" action (idle, or scheduled at turn end). */
   lastMove: {
     from: string;
     to: string;
     at: number;
-    reason: "member-removed" | "member-disabled" | "member-unavailable" | "manual-switch";
+    reason: "member-removed" | "member-disabled" | "member-unavailable" | "manual-switch" | "switch-now";
   } | null;
+  /** "Switch to next account" requested while a run was live: applied when
+   *  the turn ends (unless the user pressed Stop). Survives a restart.
+   *  Optional so older state still parses. */
+  scheduledSwitch?: { requestedAt: number } | null;
+}
+
+/** `POST /tasks/:id/switch-account` success. */
+export type SwitchAccountResult =
+  | { status: "switched"; task: Task }
+  | { status: "scheduled"; task: Task };
+
+/** `POST /tasks/:id/switch-account` refusal body (409). */
+export interface SwitchAccountRefusal {
+  error: string;
+  code: "no-usable-member" | "background-agents" | "not-in-stack" | "busy" | "archived" | "launches-frozen";
+  reasons?: HarnessMemberReason[];
 }
 
 /** Defensive parser for `tasks.harness_state`: malformed or absent → null. */
@@ -587,6 +735,9 @@ export function parseTaskHarnessState(raw: string | null | undefined): TaskHarne
           runId: p.runId,
           startedAt: p.startedAt,
           ...(p.manual === true ? { manual: true } : {}),
+          ...(p.manual === true && (p.switchNow === "manual" || p.switchNow === "scheduled")
+            ? { switchNow: p.switchNow as "manual" | "scheduled" }
+            : {}),
         };
       })()
     : null;
@@ -610,6 +761,12 @@ export function parseTaskHarnessState(raw: string | null | undefined): TaskHarne
           ...(typeof e.attemptRunId === "string" && e.attemptRunId.length > 0
             ? { attemptRunId: e.attemptRunId }
             : {}),
+          ...(typeof e.cleanRetryOf === "string" && e.cleanRetryOf.length > 0
+            ? { cleanRetryOf: e.cleanRetryOf }
+            : {}),
+          ...(Array.isArray(e.memberReasons)
+            ? { memberReasons: parseMemberReasons(e.memberReasons) }
+            : {}),
         };
       })()
     : null;
@@ -618,15 +775,43 @@ export function parseTaskHarnessState(raw: string | null | undefined): TaskHarne
     ? (() => {
         const m = move as Record<string, unknown>;
         if (typeof m.from !== "string" || typeof m.to !== "string" || typeof m.at !== "number") return null;
-        const moveReason: "member-removed" | "member-disabled" | "member-unavailable" | "manual-switch" =
-          m.reason === "member-removed" || m.reason === "member-disabled" || m.reason === "member-unavailable" || m.reason === "manual-switch"
+        const moveReason: NonNullable<TaskHarnessState["lastMove"]>["reason"] =
+          m.reason === "member-removed" || m.reason === "member-disabled" || m.reason === "member-unavailable"
+            || m.reason === "manual-switch" || m.reason === "switch-now"
             ? m.reason
             : "member-unavailable";
         return { from: m.from, to: m.to, at: m.at, reason: moveReason };
       })()
     : null;
   const count = typeof o.count === "number" && Number.isFinite(o.count) ? o.count : undefined;
-  return { stackId: o.stackId, position: o.position, ...(count !== undefined ? { count } : {}), tried, pendingSwap, allExhausted, lastMove };
+  const sched = o.scheduledSwitch;
+  // Omitted when absent so persisted-state equality stays stable for tasks
+  // that never scheduled a switch.
+  const scheduledSwitch = sched && typeof sched === "object"
+    && typeof (sched as Record<string, unknown>).requestedAt === "number"
+    ? { requestedAt: (sched as Record<string, unknown>).requestedAt as number }
+    : null;
+  return {
+    stackId: o.stackId,
+    position: o.position,
+    ...(count !== undefined ? { count } : {}),
+    tried,
+    pendingSwap,
+    allExhausted,
+    lastMove,
+    ...(scheduledSwitch ? { scheduledSwitch } : {}),
+  };
+}
+
+function parseMemberReasons(raw: unknown[]): HarnessMemberReason[] {
+  const out: HarnessMemberReason[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const r = item as Record<string, unknown>;
+    if (typeof r.harnessId !== "string" || typeof r.reason !== "string") continue;
+    out.push({ harnessId: r.harnessId, label: typeof r.label === "string" ? r.label : r.harnessId, reason: r.reason });
+  }
+  return out;
 }
 
 function isHarnessLimitReason(v: unknown): v is HarnessLimitReason {
@@ -1875,6 +2060,97 @@ export function branchCommitType(
   return conventionalCommitType(taskType);
 }
 
+/**
+ * One pull request opened from a task, recorded by `POST /github/pull-create`
+ * when the request carries the task's id. `head` and `base` are null only on
+ * an entry converted from a legacy `prUrl` (migration 092's backfill, or the
+ * read-time conversion of an old `repositories[]` entry), which never knew
+ * them. See `docs/architecture/multi-repo-tasks.md`.
+ */
+export interface TaskPr {
+  url: string;
+  head: string | null;
+  base: string | null;
+  number: number | null;
+  createdAt: number;
+}
+
+/** One branch as a forge lists it. `sha` is the tip when the forge reports it. */
+export interface ForgeBranch {
+  name: string;
+  sha: string | null;
+}
+
+/**
+ * One repository a task was created against (issue #291). A multi-repository
+ * task stores two or more of these in `tasks.repositories` (migration 091) —
+ * one or more once repositories were removed (`Task.multiRepo` stays true);
+ * a single-repository task stores `[]` and derives its one entry from the
+ * scalar `workdir`/`branch`/`worktreePath`/`baseRef`/`checkoutBranch`/`prUrl`
+ * columns, so those stay authoritative for every legacy row.
+ *
+ * Every entry is server-managed: `createTask` rebuilds it from
+ * `TaskRepositoryInput` and never trusts a client-supplied `worktreePath`,
+ * `checkoutBranch`, `prUrl` or `branchSource`. The set is chosen at creation;
+ * the only later change is removing one repository
+ * (`DELETE /tasks/:id/repositories/:name`). `PATCH /tasks/:id` rejects
+ * `repositories`.
+ */
+export interface TaskRepository {
+  /**
+   * The registered project path the user selected (not necessarily the git
+   * root — git operations resolve the root through `repoRoot(path)`). Also
+   * the identity used to dedupe a selection: two paths under one git root
+   * collapse to the first selected one.
+   */
+  path: string;
+  /**
+   * Workspace subdirectory name: the sanitized basename of `path`, made
+   * unique across the set on collision (`-2`, `-3`, …). Predictable on both
+   * sides of the wire — the client uses it for `@` prefixes.
+   */
+  name: string;
+  /** The branch agetor created for this repository (`null` before materialization). */
+  branch: string | null;
+  /** `"created"` for every multi-repo entry in v1; kept for symmetry with `Task`. */
+  branchSource: "created" | "existing";
+  /** This repository's linked worktree, under the task workspace; `null` until materialized. */
+  worktreePath: string | null;
+  /** Pinned base sha resolved at create time in this repository. */
+  baseRef: string | null;
+  /** Last-seen live checkout in this worktree (drift is recorded, never corrected). */
+  checkoutBranch: string | null;
+  /**
+   * Deprecated and derived: the URL of `prs[0]`, kept so older clients keep
+   * working. Agetor code reads {@link TaskRepository.prs} through
+   * `taskPrsOf` (`src/shared/task-prs.ts`), never this field.
+   */
+  prUrl: string | null;
+  /**
+   * Every pull request opened from this repository, oldest first. Append-only
+   * and server-managed (`tasks.appendRepositoryPr`). Optional at the type
+   * level only for fixture compatibility (same reason as `Task.issueUrl`);
+   * `parseTaskRepositories` always sets it.
+   */
+  prs?: TaskPr[];
+  /**
+   * The branch NAME this repository was based on at create time (the sha is
+   * `baseRef`), or null when it wasn't a local or remote branch (a tag, a sha,
+   * isolation `none`, `existingBranch`). Same optionality as `prs`.
+   */
+  baseBranch?: string | null;
+}
+
+/**
+ * The create-time input shape for one repository (`POST /tasks` body
+ * `repositories[]`). Only `path` (required) and `baseRef` are read; every
+ * other `TaskRepository` field is computed server-side.
+ */
+export interface TaskRepositoryInput {
+  path: string;
+  baseRef?: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -1916,14 +2192,29 @@ export interface Task {
    */
   baseRef: string | null;
   /**
-   * URL of the pull request opened for this task's branch, or null if none
-   * has been created yet. Set server-side, atomically with creation, by
-   * `POST /github/pull-create` when the request carries this task's id —
-   * never patchable directly (kept out of the PATCH allow-list, same
-   * treatment as `branch`/`worktreePath`/`baseRef`). Once set, the UI shows
-   * a durable "View PR" link instead of re-offering "Open PR".
+   * Deprecated and derived: the URL of `prs[0]` (null for a multi-repository
+   * task, whose PRs live on `repositories[].prs`). Kept in the JSON so older
+   * clients keep working; agetor code reads {@link Task.prs} through
+   * `taskPrsOf` (`src/shared/task-prs.ts`) and never this field.
    */
   prUrl: string | null;
+  /**
+   * Every pull request opened for this task's branch, oldest first. Appended
+   * server-side, atomically with creation, by `POST /github/pull-create` when
+   * the request carries this task's id (`tasks.appendPr`), never patchable
+   * (kept out of the PATCH allow-list, same treatment as
+   * `branch`/`worktreePath`/`baseRef`). Always `[]` for a multi-repository
+   * task. Optional at the type level only for fixture compatibility (same
+   * reason as `issueUrl`) — `toTask` always sets it.
+   */
+  prs?: TaskPr[];
+  /**
+   * The branch NAME `baseRef` was resolved from at create time (`develop`,
+   * `release/1.2`), or null when it was a tag, a sha, a non-git directory, an
+   * `existingBranch` task or a task created before migration 092. Written only
+   * by `tasks.insert`, never patchable. Same optionality as `prs`.
+   */
+  baseBranch?: string | null;
   /**
    * URL of the issue this task was created from, or null. Set only at create
    * time by `createTask` (validated with `parseIssueUrl` and same-repo-
@@ -2216,6 +2507,46 @@ export interface Task {
    */
   checkoutBranch?: string | null;
   /**
+   * Every repository this task works on, in selection order (issue #291). For
+   * a multi-repository task (`multiRepo`) this is the source of truth: two or
+   * more entries at creation, at least one after `removeTaskRepository`;
+   * `workdir`/`worktreePath` both point at the per-task workspace root
+   * (`<dataDir>/worktrees/<task-id>`), and `branch`/`baseRef`/`prUrl`/
+   * `checkoutBranch` are `null`. A single-repository row stores `[]` in the
+   * column and derives a one-entry array from those scalar columns here, so
+   * the scalars stay authoritative as they update.
+   *
+   * Server-managed: written by `createTask` (at creation),
+   * `tasks.setRepositories` (after worktree preparation) and the targeted
+   * `setRepository*` writers; skipped by the generic `tasks.update` SET
+   * clause and not patchable. Optional at the type level for the same
+   * fixture-compatibility reason as `checkoutBranch` — `toTask` always sets it.
+   */
+  repositories?: TaskRepository[];
+  /**
+   * Whether this is a multi-repository task (issue #291): true iff the row
+   * STORES its `repositories` set (only multi rows do; a single row stores
+   * `[]` and derives its one entry on read). A task created with two or more
+   * repositories stays multi after repositories are removed down to one, so
+   * "multi" can't be read off `repositories.length`; go through
+   * `isMultiRepoTask` (`src/shared/multi-repo.ts`), which falls back to the
+   * count for an older core's JSON that lacks this field.
+   *
+   * Derived in `db.ts`'s `toTask`, never stored in its own column, never
+   * patchable, never bumps `updated_at`. Optional at the type level for the
+   * same fixture-compatibility reason as `repositories`.
+   */
+  multiRepo?: boolean;
+  /**
+   * The `repositories[].path` whose remote matches `issueUrl`, or null. Only
+   * that repository's PR body gets `Closes #N`; every other repository gets a
+   * plain reference. Set at create time; cleared (set to null) when that
+   * repository is removed from the task (`removeTaskRepository`). Never
+   * patchable. Optional for the same fixture-compatibility reason as
+   * `repositories`.
+   */
+  issueRepoPath?: string | null;
+  /**
    * Provenance for a Claude Code session imported from outside Agetor.
    * Server-managed: written only by `tasks.setImportedClaude` (a targeted
    * UPDATE, no `updated_at` bump), skipped by the generic `tasks.update`
@@ -2374,6 +2705,12 @@ export interface WorktreeInfo {
   stale: boolean;
   /** Every reason this worktree is considered stale; empty when not stale. */
   staleReasons: WorktreeStaleReason[];
+  /**
+   * For a multi-repository task, the workspace subdirectory name this row
+   * represents (issue #291); `null`/absent for a single-repository task or an
+   * orphan. The row's `id` is `<taskId>__<repoName>` when this is set.
+   */
+  repoName?: string | null;
 }
 
 /**
@@ -2398,8 +2735,27 @@ export interface WorktreeInfo {
 export interface WorktreeTeardownResult {
   /** True when the worktree directory is no longer on disk after the teardown. */
   removed: boolean;
-  /** Why `removed` is false. Absent when `removed` is true. */
-  reason?: "dirty" | "no-worktree" | "already-absent" | "failed";
+  /**
+   * Why `removed` is false. Absent when `removed` is true.
+   *
+   * `workspace-not-empty` is multi-repository-only: every repository checkout
+   * was removed (or was already absent) but the task's workspace root still
+   * holds user/agent files outside the repositories, so the root — and the
+   * Worktrees row that represents it — survives. It is NOT "already absent";
+   * reporting it as success left the row silently present after a delete.
+   *
+   * `source-missing` is per-repository (multi-repository teardown): the
+   * repository's source is gone or no longer a git repository, so git can't
+   * vouch for its checkout, which is left on disk untouched; the other
+   * repositories tear down as usual.
+   */
+  reason?: "dirty" | "no-worktree" | "already-absent" | "failed" | "workspace-not-empty" | "source-missing";
+  /**
+   * Per-repository outcomes for a multi-repository task (issue #291). The
+   * top-level fields mirror the aggregate: `removed` is true only when every
+   * repository was detached. Absent for a single-repository task.
+   */
+  repositories?: { name: string; result: WorktreeTeardownResult }[];
 }
 
 /**
@@ -2445,6 +2801,33 @@ export interface TaskTeardownPreview {
   /** Candidates deliberately left alone, with why: the repo's default branch,
    *  a pull request's head branch, or a branch another task still holds. */
   excluded: { branch: string; reason: "default-branch" | "pr-head" | "held-by-task" }[];
+  /**
+   * Per-repository plans for a multi-repository task (issue #291). The
+   * top-level fields above then summarize every plan for old clients:
+   * `branches` is the deduplicated union of every repository's branches and
+   * `excluded` concatenates every repository's exclusions, while `liveBranch`
+   * and `source` are `repositories[0]`'s and `taskBranch` is null (there is
+   * no single task branch). Absent for a single-repository task.
+   */
+  repositories?: RepoTeardownPlan[];
+}
+
+/** One repository's share of a {@link TaskTeardownPreview} (issue #291). */
+export interface RepoTeardownPlan {
+  /** Workspace subdirectory name. */
+  name: string;
+  /** The selected project path this repository came from. */
+  path: string;
+  /** Branches delete would remove in this repository. */
+  branches: string[];
+  /** The branch currently checked out in this repository's worktree, when readable. */
+  liveBranch: string | null;
+  /** This repository's own branch, null for a non-worktree task. */
+  taskBranch: string | null;
+  /** Where the non-task branch name came from. */
+  source: TaskTeardownPreview["source"];
+  /** Candidates deliberately left alone in this repository. */
+  excluded: TaskTeardownPreview["excluded"];
 }
 
 /**
@@ -2491,6 +2874,20 @@ export interface TaskGitStatus {
    *  `HeadBranchState.isDefaultBranch` in `worktree.ts` for why unknown
    *  resolves to offering the affordance rather than hiding it. */
   isDefaultBranch: boolean;
+  /**
+   * Per-repository status for a multi-repository task (issue #291). The
+   * top-level fields above mirror `repositories[0]` for old clients. Absent
+   * for a single-repository task.
+   */
+  repositories?: TaskRepoGitStatus[];
+}
+
+/** One repository's status inside a multi-repository {@link TaskGitStatus}. */
+export interface TaskRepoGitStatus extends TaskGitStatus {
+  /** Workspace subdirectory name (e.g. `frontend`). */
+  name: string;
+  /** The selected project path this repository came from. */
+  path: string;
 }
 
 /** A live terminal tab for a task. Returned by the terminal REST endpoints;
@@ -2503,6 +2900,12 @@ export interface TerminalTab {
   /** Working directory the shell was spawned in (worktree path or workdir). */
   cwd: string;
   createdAt: number;
+  /**
+   * For a multi-repository task, the workspace subdirectory the shell was
+   * spawned in (issue #291); `null`/absent for a terminal at the workspace
+   * root or for a single-repository task.
+   */
+  repoName?: string | null;
 }
 
 /**
@@ -3246,6 +3649,11 @@ export const DEFAULT_EFFORT: Record<AgentKind, string> = {
  * assumed to be gated the same way, and `AGETOR_SKIP_CLI_VERSION_FLOOR=1` is
  * the override when one isn't.
  * See docs/plans/add-gpt-6-sol-and-luna.md §3 D4.
+ *
+ * FROZEN FALLBACK — add no new rows. A kind whose CLI reports its own catalog
+ * (codex, copilot) is checked against that catalog first
+ * (`modelCatalogVerdict`, `src/shared/model-catalog.ts`); these floors apply
+ * only when discovery has nothing to say (offline, logged out, old CLI).
  */
 export const MODEL_MIN_CLI_VERSION: Partial<Record<AgentKind, Record<string, string>>> = {
   codex: {
@@ -3726,8 +4134,29 @@ export const CURSOR_MODEL_SPECS: Record<string, CursorModelSpec> = {
   },
 };
 
-export function cursorModelSupportsFast(model: string | null, effort: string | null): boolean {
-  const spec = CURSOR_MODEL_SPECS[model ?? DEFAULT_MODEL.cursor];
+/**
+ * The variant map of a cursor base the CLI reported but `CURSOR_MODEL_SPECS`
+ * does not cover (`DiscoveredModel.cursor`, built by `parseCursorModelList`).
+ * A curated spec for the same id always wins over it.
+ */
+export type CursorVariantSpec = Pick<CursorModelSpec, "effortIds" | "fastEfforts" | "fastId">;
+
+/** What the cursor helpers accept as a discovered variant map: structurally
+ *  `CursorVariantSpec`, tolerant of the readonly arrays the shared
+ *  `DiscoveredModel.cursor` shape carries. */
+export type CursorVariantSpecInput = {
+  effortIds?: Readonly<Partial<Record<string, string>>>;
+  fastEfforts?: readonly string[];
+  fastId?: string;
+};
+
+export function cursorModelSupportsFast(
+  model: string | null,
+  effort: string | null,
+  discovered?: CursorVariantSpecInput,
+): boolean {
+  const key = model ?? DEFAULT_MODEL.cursor;
+  const spec: CursorVariantSpecInput | undefined = CURSOR_MODEL_SPECS[key] ?? discovered;
   if (!spec) return false;
   if (spec.fastId && !spec.effortIds) return true;
   if (!effort) return false;
@@ -3746,8 +4175,15 @@ export function cursorModelIdCoveredByCatalog(id: string): boolean {
   });
 }
 
-export function cursorModelArg(model: string, effort: string | null, fast: boolean, maxMode = false): string {
-  const spec = CURSOR_MODEL_SPECS[model];
+export function cursorModelArg(
+  model: string,
+  effort: string | null,
+  fast: boolean,
+  maxMode = false,
+  discovered?: CursorVariantSpecInput,
+): string {
+  const curated = CURSOR_MODEL_SPECS[model];
+  const spec: (CursorVariantSpecInput & { supportsMaxMode?: boolean }) | undefined = curated ?? discovered;
   if (!spec) return model;
   if (!spec.effortIds) {
     const baseId = fast && spec.fastId ? spec.fastId : model;
@@ -3763,7 +4199,7 @@ export function cursorModelArg(model: string, effort: string | null, fast: boole
   const baseId = spec.effortIds[desiredEffort] ?? model;
   if (maxMode && spec.supportsMaxMode) {
     const params = [`context=1m`, `effort=${desiredEffort}`];
-    if (cursorModelSupportsFast(model, desiredEffort)) params.push(`fast=${fast ? "true" : "false"}`);
+    if (cursorModelSupportsFast(model, desiredEffort, discovered)) params.push(`fast=${fast ? "true" : "false"}`);
     return `${model}[${params.join(",")}]`;
   }
   return fast && spec.fastEfforts?.includes(desiredEffort) ? `${baseId}-fast` : baseId;
@@ -3924,7 +4360,10 @@ export const MODEL_EFFORT_SUPPORT: Record<AgentKind, Record<string, string[]>> =
     "opus-5": ["max", "xhigh", "high", "medium", "low"],
     "opus-4.8": ["max", "xhigh", "high", "medium", "low"],
     "opus-4.7": ["max", "xhigh", "high", "medium", "low"],
-    "opus-4.6": ["max", "xhigh", "high", "medium", "low"],
+    // Opus 4.6 has no `xhigh`: the CLI's own `initialize` catalog (2.1.326)
+    // reports low/medium/high/max for it. A stored `xhigh` on an existing
+    // task is still retained (`retainableEfforts`).
+    "opus-4.6": ["max", "high", "medium", "low"],
     // Sonnet 5.5's docs: like Opus 5.5, thinking can't be disabled
     // ({type:"disabled"} 400s — the API's between_tools off switch is nothing
     // agetor ever sends, since effort rides CLAUDE_CODE_EFFORT_LEVEL), so
@@ -4276,24 +4715,21 @@ export function supportedEfforts(
   agent: AgentKind,
   model: string | null,
   discoveredEfforts?: readonly string[] | null,
+  opts?: { labels?: Readonly<Record<string, string>> },
 ): AgentOption[] {
+  const hasDiscovered = Boolean(discoveredEfforts && discoveredEfforts.length > 0);
   // Cursor encodes effort in the model id itself (`cursorModelArg`), so an
   // unknown cursor id has no way to receive an effort at all — this guard
   // must run BEFORE the discovered-effort short-circuit below, or a
   // non-empty `discoveredEfforts` for an unknown cursor id would defeat it
-  // and offer effort choices that would silently never reach the CLI.
-  if (agent === "cursor" && model !== null && !(model in MODEL_EFFORT_SUPPORT.cursor)) return [];
+  // and offer effort choices that would silently never reach the CLI. The
+  // one carve-out is a discovered-only base: the cursor probe attaches its
+  // variant map (`DiscoveredModel.cursor`) and efforts together, and
+  // `cursorModelArg` resolves them through that map.
+  if (agent === "cursor" && model !== null && !(model in MODEL_EFFORT_SUPPORT.cursor) && !hasDiscovered) return [];
   if (agent === "opencode") return opencodeEfforts(model, discoveredEfforts);
-  if (discoveredEfforts && discoveredEfforts.length > 0) {
-    const discoveredAllowed = new Set(discoveredEfforts);
-    // `auto` belongs only to `MODEL_DEFAULT_EFFORT_KINDS` (fx, copilot, opencode — see
-    // the EFFORT_OPTIONS row comment): any other harness that happens to
-    // discover an "auto" id (e.g. codex's `model/list supportedReasoningEfforts`)
-    // must not surface a "Model default" row or pass `auto` through to a flag
-    // that doesn't understand it, so it's dropped from the discovered set
-    // before filtering for every other kind.
-    const fromDiscovery = EFFORT_OPTIONS.filter((o) =>
-      discoveredAllowed.has(o.id) && (MODEL_DEFAULT_EFFORT_KINDS.has(agent) || o.id !== "auto"));
+  if (hasDiscovered && discoveredEfforts) {
+    const fromDiscovery = discoveredEffortOptions(agent, discoveredEfforts, opts?.labels);
     if (fromDiscovery.length > 0) return fromDiscovery;
   }
   const key = model ?? DEFAULT_MODEL[agent];
@@ -4303,6 +4739,126 @@ export function supportedEfforts(
     ?? [];
   const allowed = new Set(ids);
   return EFFORT_OPTIONS.filter((o) => allowed.has(o.id));
+}
+
+/**
+ * Effort ids a CLI reports that agetor has no `EFFORT_OPTIONS` row for are
+ * offered as synthesized rows on these kinds — the ones whose spawn path
+ * validates the id before it reaches argv/env (`effortPassesSpawnCheck`,
+ * `src/shared/effort-check.ts`). Other kinds keep dropping them.
+ */
+const SYNTHESIZED_EFFORT_KINDS: ReadonlySet<AgentKind> = new Set<AgentKind>(["claude-code", "codex", "copilot", "cursor"]);
+
+/** A CLI-reported effort id that is safe to put in argv/env or an effort
+ *  value: lowercase letters, digits, `_` and `-`, 1–32 characters. */
+export const EFFORT_ID_RE = /^[a-z0-9_-]{1,32}$/;
+
+const EFFORT_RANK = new Map(EFFORT_OPTIONS.map((o, i) => [o.id, i] as const));
+
+function titleCaseEffort(id: string): string {
+  return id
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+/**
+ * Order a CLI-reported effort list for display: ids agetor knows follow the
+ * canonical `EFFORT_OPTIONS` order (highest first); an id it does not know is
+ * placed between its nearest known neighbours in the CLI's own list, on the
+ * side the CLI's direction implies, and last when the list has too few known
+ * ids to tell a direction. Duplicates collapse (first wins).
+ */
+export function orderEfforts(ids: readonly string[]): string[] {
+  const list: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of ids) {
+    if (typeof raw !== "string" || seen.has(raw)) continue;
+    seen.add(raw);
+    list.push(raw);
+  }
+  const known = list.filter((id) => EFFORT_RANK.has(id));
+  const unknown = list.filter((id) => !EFFORT_RANK.has(id));
+  const sortedKnown = [...known].sort((a, b) => (EFFORT_RANK.get(a) ?? 0) - (EFFORT_RANK.get(b) ?? 0));
+  if (unknown.length === 0) return sortedKnown;
+  const rankOf = (id: string) => EFFORT_RANK.get(id) ?? 0;
+  // The CLI's direction: ascending when its first known id ranks lower
+  // (a larger rank number) than its last known one.
+  const first = known[0];
+  const last = known[known.length - 1];
+  const direction =
+    known.length >= 2 && first !== undefined && last !== undefined && rankOf(first) !== rankOf(last)
+      ? (rankOf(first) > rankOf(last) ? "ascending" : "descending")
+      : null;
+  if (direction === null) return [...sortedKnown, ...unknown];
+  const before = new Map<string, string[]>();
+  const after = new Map<string, string[]>();
+  const push = (m: Map<string, string[]>, k: string, v: string) => {
+    const arr = m.get(k);
+    if (arr) arr.push(v);
+    else m.set(k, [v]);
+  };
+  const top = sortedKnown[0] as string;
+  const bottom = sortedKnown[sortedKnown.length - 1] as string;
+  list.forEach((id, i) => {
+    if (EFFORT_RANK.has(id)) return;
+    let prev: string | undefined;
+    for (let j = i - 1; j >= 0; j--) {
+      const c = list[j] as string;
+      if (EFFORT_RANK.has(c)) { prev = c; break; }
+    }
+    let next: string | undefined;
+    for (let j = i + 1; j < list.length; j++) {
+      const c = list[j] as string;
+      if (EFFORT_RANK.has(c)) { next = c; break; }
+    }
+    if (prev !== undefined && next !== undefined) {
+      // Between two known ids: sit just below the higher-level one.
+      push(after, rankOf(prev) < rankOf(next) ? prev : next, id);
+    } else if (prev !== undefined) {
+      // After the last known id: above it when the CLI ascends, else below.
+      if (direction === "ascending") push(before, top, id);
+      else push(after, bottom, id);
+    } else if (next !== undefined) {
+      // Before the first known id: below it when the CLI ascends, else above.
+      if (direction === "ascending") push(after, bottom, id);
+      else push(before, top, id);
+    }
+  });
+  const slot = (m: Map<string, string[]>, k: string): string[] => {
+    const arr = m.get(k) ?? [];
+    return direction === "ascending" ? [...arr].reverse() : arr;
+  };
+  const out: string[] = [];
+  for (const id of sortedKnown) {
+    out.push(...slot(before, id), id, ...slot(after, id));
+  }
+  return out;
+}
+
+/** The discovered-wins branch of {@link supportedEfforts}: known ids keep
+ *  their curated row, unknown ids that pass the spawn charset become
+ *  synthesized rows on the kinds that validate them, `auto` is dropped
+ *  outside `MODEL_DEFAULT_EFFORT_KINDS`. */
+function discoveredEffortOptions(
+  agent: AgentKind,
+  discoveredEfforts: readonly string[],
+  labels: Readonly<Record<string, string>> | undefined,
+): AgentOption[] {
+  const known = new Map(EFFORT_OPTIONS.map((o) => [o.id, o] as const));
+  const synthesize = SYNTHESIZED_EFFORT_KINDS.has(agent);
+  const accepted = discoveredEfforts.filter((raw) => {
+    if (typeof raw !== "string") return false;
+    if (known.has(raw)) return raw !== "auto" || MODEL_DEFAULT_EFFORT_KINDS.has(agent);
+    return synthesize && EFFORT_ID_RE.test(raw);
+  });
+  return orderEfforts(accepted).map((id) => {
+    const row = known.get(id);
+    if (row) return row;
+    const label = labels?.[id];
+    return { id, label: label && label.trim() ? label.trim() : titleCaseEffort(id) };
+  });
 }
 
 const AUTO_EFFORT_OPTION: AgentOption = EFFORT_OPTIONS.find((o) => o.id === "auto") ?? {
@@ -4782,7 +5338,7 @@ export const AGENT_OPTIONS: Record<AgentKind, AgentOptions> = {
   },
   copilot: {
     models: [
-      { id: "auto", label: "Auto", hint: "Default — Copilot's own model router. Available on every plan, a 10% credit discount, and it never picks a model your organisation has disabled. A status line names the model Copilot actually used." },
+      { id: "auto", label: "Auto", pinned: true, hint: "Default — Copilot's own model router. Available on every plan, a 10% credit discount, and it never picks a model your organisation has disabled. A status line names the model Copilot actually used." },
       { id: "claude-opus-5.5", label: "Claude Opus 5.5", hint: "Anthropic's Opus 5.5 through Copilot. Needs Copilot CLI 1.0.89 or newer." },
       { id: "claude-sonnet-5.5", label: "Claude Sonnet 5.5", hint: "Faster, lower-cost complement to Opus 5.5." },
       { id: "claude-haiku-5.5", label: "Claude Haiku 5.5", hint: "Cheapest, fastest Claude. Needs Copilot CLI 1.0.94 or newer." },
@@ -4964,6 +5520,12 @@ export interface TaskDiff {
    * `files` is non-empty.
    */
   note?: string;
+  /**
+   * The workspace subdirectory this diff belongs to for a multi-repository
+   * task (issue #291); `null`/absent for a single-repository task. Echoes the
+   * `repo` query parameter the caller asked for.
+   */
+  repo?: string | null;
 }
 
 export type GitHubItemKind = "pulls" | "issues";
@@ -6357,12 +6919,15 @@ export interface ToolResultEventData {
  * prefix. The branch is shell-quoted because git ref names may legally contain
  * shell metacharacters; `'\''` is the POSIX escape for an embedded quote.
  *
- * After the commit/push, the prompt first asks for the full link to open a
- * pull request for the branch — as plain text above the code blocks, not
- * fenced, so react-markdown's GFM autolinking renders it clickable (git prints
- * the link in the push output for GitHub/GitLab/Bitbucket; otherwise it can be
- * built from the remote URL). It then asks the agent to propose a pull
- * request title and description, each emitted in its own fenced code block so
+ * After the commit/push, the prompt first asks for a `Base: <branch>` line
+ * (the task's stored `baseBranch`, with an escape clause for work the agent
+ * moved onto another base) and then the full link to open a pull request from
+ * the branch into that base — as plain text above the code blocks, not fenced,
+ * so react-markdown's GFM autolinking renders it clickable. The link is built
+ * by the agent per forge (`PR_LINK_FORMS`), because the one git prints in the
+ * push output always targets the default branch. The Create-all-PRs planner
+ * (`src/mainview/lib/pr-plan.ts`) reads the `Base:` line and the link back. It
+ * then asks the agent to propose a pull request title and description, each emitted in its own fenced code block so
  * agetor renders a one-click copy button per field — the user copies the title
  * into the New PR composer's Title field and the description into its
  * Description field without a second turn. Two blocks (not one) because the
@@ -6375,28 +6940,103 @@ export interface ToolResultEventData {
  * blocks survive verbatim (verified against micromark, react-markdown's parser:
  * 4-tick outer -> one <pre>; 3-tick outer -> two, split at the inner fence).
  */
-export function commitPushPrompt(task: Pick<Task, "branch" | "taskType">): string {
+export function commitPushPrompt(
+  task: Pick<Task, "branch" | "taskType"> &
+    Pick<Partial<Task>, "repositories" | "issueRepoPath" | "multiRepo" | "baseBranch">,
+): string {
   const ccType = branchCommitType(task.branch, task.taskType);
-  const branchLabel = task.branch ? `'${task.branch.replace(/'/g, "'\\''")}'` : "<branch>";
+  // Same decision as `isMultiRepoTask` (src/shared/multi-repo.ts), inlined
+  // because that module imports this one's types: a one-repository multi task
+  // still gets the per-repository prompt (its cwd is the non-git workspace).
+  const multi = task.multiRepo ?? (task.repositories?.length ?? 0) > 1;
+  const repos = multi && task.repositories && task.repositories.length > 0 ? task.repositories : null;
+  if (repos) {
+    const repoLines = repos
+      .map((r) => {
+        const branch = r.branch ? `'${shellQuoteInner(r.branch)}'` : "<branch>";
+        return `- ${r.name}: branch ${branch}${r.baseBranch ? `, base '${shellQuoteInner(r.baseBranch)}'` : ""}`;
+      })
+      .join("\n");
+    return (
+      `Commit all changes in every repository with a clear commit message ` +
+      `(prefix each subject with "${ccType}:", e.g. "${ccType}: ...") summarizing the work, ` +
+      `then push each repository's current branch to origin. ` +
+      `If a branch has no upstream yet, set it with \`git push -u origin <branch>\` in that repository. ` +
+      `Repositories:\n${repoLines}\n` +
+      `After pushing, for each repository print, in this order and each on its own line as plain ` +
+      `text — not inside a code block: a "Repository: <name>" line; a "Base: <branch>" line naming ` +
+      `the branch the pull request should merge into (the base listed for that repository above, ` +
+      `unless you moved the work onto a different base — then that one; if none is listed, the ` +
+      `branch the work started from, or the repository's default branch if unsure); then the full ` +
+      `link to open a pull request from that repository's branch into that base. ${PR_LINK_FORMS} ` +
+      `Build the link yourself from the remote URL: the link git prints in the push output always ` +
+      `targets the default branch, so do not use it when the base is another branch. ` +
+      `Below each link, propose that pull request as two fenced code blocks so each can be ` +
+      `copied with one click: first a "PR title:" line followed by a \`\`\` block containing ` +
+      `only the concise one-line title, then a "PR description:" line followed by a ` +
+      `\`\`\`\` four-backtick block containing the description in markdown (what changed and ` +
+      `why) — use four backticks so any \`\`\` code fences inside the description don't ` +
+      `close the block early. ` +
+      `If you propose more than one pull request for a repository, repeat the block for each pull request ` +
+      `(Repository, Base, link, PR title, PR description). ` +
+      `Do not include any AI attribution in the commit message, PR title, or PR description — ` +
+      `no "Generated with Claude Code" / "Generated by AI" footers, robot emoji, or ` +
+      `Co-Authored-By trailers crediting an AI tool.`
+    );
+  }
+  const branchLabel = task.branch ? `'${shellQuoteInner(task.branch)}'` : "<branch>";
+  const baseHint = task.baseBranch
+    ? `the base recorded for this task, '${shellQuoteInner(task.baseBranch)}', unless you moved the work onto a different base — then that one`
+    : `the branch this work started from, or the repository's default branch if unsure`;
   return (
     `Commit all changes with a clear commit message ` +
     `(prefix the subject with "${ccType}:", e.g. "${ccType}: ...") summarizing the work, ` +
     `then push the current branch to origin. ` +
     `If the branch has no upstream yet, set it with \`git push -u origin ${branchLabel}\`. ` +
-    `After pushing, first print the full link to open a pull request for the branch ` +
-    `(git prints one in the push output; otherwise build it from the remote URL) as ` +
-    `plain text on its own line — not inside a code block. ` +
+    `After pushing, print a "Base: <branch>" line on its own line as plain text naming the branch ` +
+    `the pull request should merge into (${baseHint}), and then print the full link to open a ` +
+    `pull request from the branch into that base (build it from the remote URL) as plain text on its ` +
+    `own line — not inside a code block. ${PR_LINK_FORMS} ` +
+    `The link git prints in the push output always targets the default branch, so do not use it when ` +
+    `the base is another branch. ` +
     `Below the link, propose the pull request as two fenced code blocks so each can be ` +
     `copied with one click: first a "PR title:" line followed by a \`\`\` block containing ` +
     `only the concise one-line title, then a "PR description:" line followed by a ` +
     `\`\`\`\` four-backtick block containing the description in markdown (what changed and ` +
     `why) — use four backticks so any \`\`\` code fences inside the description don't ` +
     `close the block early. ` +
+    `If you propose more than one pull request, repeat the block for each pull request ` +
+    `(Base, link, PR title, PR description). ` +
     `Do not include any AI attribution in the commit message, PR title, or PR description — ` +
     `no "Generated with Claude Code" / "Generated by AI" footers, robot emoji, or ` +
     `Co-Authored-By trailers crediting an AI tool.`
   );
 }
+
+/** POSIX escape for text placed between single quotes (`'\''`). */
+function shellQuoteInner(s: string): string {
+  return s.replace(/'/g, "'\\''");
+}
+
+/**
+ * The per-forge link shapes the Commit & push prompt asks for. The Create-all-
+ * PRs parser (`src/mainview/lib/pr-link.ts`) reads exactly these, plus GitHub's
+ * legacy `pull/new/<head>`. Names are URL-encoded; `<base>...<head>` is split on
+ * the three dots (git forbids `..` in a ref name). The host may be an ssh alias
+ * or its real web host: `linkMatchesRepo` canonicalizes both sides, so either
+ * attributes, but only the web host opens when clicked in the transcript. The
+ * forges' documented SSH-over-443 endpoints (`ssh.github.com`,
+ * `altssh.gitlab.com`, `altssh.bitbucket.org`) are named so the agent maps
+ * them to the web host instead of copying them from a HostName line.
+ */
+const PR_LINK_FORMS =
+  `For GitHub use https://<host>/<owner>/<repo>/compare/<base>...<head>?quick_pull=1; ` +
+  `for GitLab use https://<host>/<namespace>/<project>/-/merge_requests/new?merge_request[source_branch]=<head>&merge_request[target_branch]=<base>; ` +
+  `for Bitbucket use https://<host>/<workspace>/<repo>/pull-requests/new?source=<head>&dest=<base>. ` +
+  `<host> is the forge's web host: when the remote uses an ssh host alias from ~/.ssh/config, ` +
+  `use the HostName that alias points to, so the link opens in a browser. ` +
+  `A forge's SSH-only endpoint is not its web host: ssh.github.com means github.com, ` +
+  `altssh.gitlab.com means gitlab.com, and altssh.bitbucket.org means bitbucket.org.`;
 
 /**
  * A working directory the user has registered as a "project". Surfaced in the
@@ -6454,7 +7094,7 @@ export type AgentStatus = HarnessStatus;
 
 /**
  * Multi-provider git-forge support (docs/plans/multi-provider-git-modal.md).
- * `canonicalGitHost` in `src/bun/github.ts` already maps any host containing
+ * `canonicalGitHost` in `src/shared/git-host.ts` already maps any host containing
  * "github"/"gitlab"/"bitbucket" to the provider's cloud hostname — this is
  * the provider identifier that maps to that canonical host 1:1.
  */
@@ -6476,6 +7116,31 @@ export interface ProviderRepoInfo {
   remoteHost: string;
   owner: string;
   name: string;
+}
+
+/**
+ * Answer of `GET /github/pull-targets` (`src/bun/pr-targets.ts`): everything the
+ * Create-all-PRs planner needs to know about one repository's remote, read from
+ * the forge's REST API (never `git ls-remote`, no `git fetch`).
+ */
+export interface PullTargetsResult {
+  provider: GitProvider;
+  host: string;
+  owner: string;
+  name: string;
+  /** The git remote the identity came from. */
+  remote: string;
+  /** Every configured remote name. */
+  remotes: string[];
+  /** `<remote>/HEAD`, else the forge default; never a guessed "main". */
+  defaultBranch: string | null;
+  /** Forge branch names (capped at 1000). */
+  branches: string[];
+  branchesTruncated: boolean;
+  /** Listing failed; existence below is then `null` (unknown). */
+  branchesError: string | null;
+  heads: Array<{ name: string; onRemote: boolean | null }>;
+  storedBase: { name: string; onRemote: boolean | null; stale: boolean | null } | null;
 }
 
 /**

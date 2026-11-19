@@ -211,6 +211,7 @@ const DESKTOP_ONLY = [
   "POST /harnesses/:id/usage/refresh",
   "POST /open-external",
   "POST /open-path",
+  "GET /projects/repo-root",
   "POST /projects/pick",
   "POST /refs/drag",
   "POST /refs/pick",
@@ -255,6 +256,18 @@ const HEADLESS_501 = [
   "POST /window/focus",
 ].sort();
 
+describe("repository removal route (issue #291)", () => {
+  it("DELETE /tasks/:id/repositories/:name is app+cli with no path gate (`:name` is a workspace name, not a path)", () => {
+    const policy = policyFor("/tasks/:id/repositories/:name", "DELETE");
+    expect(policy?.callers).toBe("app+cli");
+    expect(policy?.pathParams).toBeUndefined();
+    expect(policy?.pathParamsExempt).toBeUndefined();
+    expect(SERVER_ROUTES.find((r) => r.key === "/tasks/:id/repositories/:name")?.handlers.DELETE).toContain(
+      "removeTaskRepository(",
+    );
+  });
+});
+
 describe("harness-stack routes", () => {
   it("are CLI-managed (the CLI creates/edits stacks, the app may read them)", () => {
     expect(ROUTE_POLICY["/harness-stacks"]).toEqual({ GET: CLI_POLICY, POST: CLI_POLICY });
@@ -267,6 +280,107 @@ describe("harness-stack routes", () => {
     // actual answer), not just an equal-looking policy object.
     const entry = ROUTE_POLICY["/harness-stacks"] as Record<string, RoutePolicy>;
     expect(resolveCaller(req("http://x/harness-stacks", { token: CLI_TOKEN }), entry.GET!)).toBe("cli");
+  });
+});
+
+// Fix round (TT-E): every route the round added is classified app+cli, the three
+// that reach an account's config root probe it in the handler BEFORE doing
+// anything else, and the deny-by-default startup checks hold for them.
+describe("harness-stack fix-round routes", () => {
+  const NEW_ROUTES: Array<{ key: string; methods: string[] }> = [
+    { key: "/harness-stacks/:id/history", methods: ["GET"] },
+    { key: "/harness-stacks/mirror-preview", methods: ["POST"] },
+    { key: "/harnesses/:id/limit-state", methods: ["DELETE"] },
+    { key: "/harnesses/:id/mirror-restore", methods: ["POST"] },
+    { key: "/tasks/:id/switch-account", methods: ["POST", "DELETE"] },
+  ];
+  const scanned = (key: string) => {
+    const route = SERVER_ROUTES.find((r) => r.key === key);
+    expect(route, `server.ts has ${key}`).toBeDefined();
+    return route!;
+  };
+
+  it("each is registered in server.ts and classified app+cli (CLI token resolves to cli) with exactly its methods", () => {
+    for (const { key, methods } of NEW_ROUTES) {
+      expect(scanned(key).methods.sort()).toEqual([...methods].sort());
+      const entry = ROUTE_POLICY[key] as Record<string, RoutePolicy>;
+      expect(Object.keys(entry).sort()).toEqual([...methods].sort());
+      for (const m of methods) {
+        expect(entry[m]).toEqual(CLI_POLICY);
+        expect(resolveCaller(req(`http://x${key}`, { token: CLI_TOKEN }), entry[m]!)).toBe("cli");
+        expect(resolveCaller(req(`http://x${key}`, { token: API_TOKEN }), entry[m]!)).toBe("app");
+        expect(resolveCaller(req(`http://x${key}`), entry[m]!)).toBeNull();
+      }
+    }
+  });
+
+  it("no harness-stack, limit-state, mirror or switch-account route is desktop-only or carries a pathParams entry (they take ids; the handler gates the roots)", () => {
+    for (const { method, key, policy } of policyEntries()) {
+      if (!/harness-stacks|limit-state|mirror|switch-account/.test(key)) continue;
+      expect(policy.callers, `${method} ${key}`).toBe("app+cli");
+      expect(policy.pathParams, `${method} ${key}`).toBeUndefined();
+    }
+  });
+
+  it("preview, restore and switch-account probe the account roots in the handler for the CLI token", () => {
+    for (const [key, method] of [
+      ["/harness-stacks/mirror-preview", "POST"],
+      ["/harnesses/:id/mirror-restore", "POST"],
+      ["/tasks/:id/switch-account", "POST"],
+    ] as const) {
+      expect(scanned(key).handlers[method], `${method} ${key}`).toContain("gateStackMemberRoots(");
+    }
+    // The cooldown clear, history read and cancel touch no files.
+    for (const [key, method] of [
+      ["/harnesses/:id/limit-state", "DELETE"],
+      ["/harness-stacks/:id/history", "GET"],
+      ["/tasks/:id/switch-account", "DELETE"],
+    ] as const) {
+      expect(scanned(key).handlers[method], `${method} ${key}`).not.toContain("gateStackMemberRoots(");
+    }
+  });
+
+  it("security M1: the preview handler gates the roots BEFORE it validates the draft (validation realpaths account roots)", () => {
+    const src = scanned("/harness-stacks/mirror-preview").handlers.POST!;
+    const gate = src.indexOf("gateStackMemberRoots(");
+    const validate = src.indexOf("validateStackInput(");
+    expect(gate).toBeGreaterThan(-1);
+    expect(validate).toBeGreaterThan(-1);
+    expect(gate).toBeLessThan(validate);
+    // ...and before the dry run itself.
+    expect(gate).toBeLessThan(src.indexOf("previewMirror("));
+  });
+
+  it("startup validation still denies by default for them: a missing route, a missing method, an extra method and an unclassified sibling all throw", () => {
+    const standIn = (): Record<string, unknown> => {
+      const out: Record<string, unknown> = {};
+      for (const [key, entry] of Object.entries(ROUTE_POLICY)) {
+        if (typeof (entry as RoutePolicy).callers === "string") out[key] = ok(key);
+        else out[key] = Object.fromEntries(Object.keys(entry).map((m) => [m, ok(`${m} ${key}`)]));
+      }
+      return out;
+    };
+    const opts = {
+      headless: false,
+      cors: () => ({}),
+      gate: async () => null,
+      notAvailableHeadless: () => new Response(null, { status: 501 }),
+    };
+    expect(() => applyRoutePolicy(standIn(), opts)).not.toThrow();
+    for (const { key } of NEW_ROUTES) {
+      const without = standIn();
+      delete without[key];
+      expect(() => applyRoutePolicy(without, opts), `without ${key}`).toThrow(new RegExp(`policy entry ${key.replace(/[/:]/g, "\\$&")} has no route`));
+    }
+    const noDelete = standIn();
+    noDelete["/tasks/:id/switch-account"] = { POST: ok("p") };
+    expect(() => applyRoutePolicy(noDelete, opts)).toThrow(/route \/tasks\/:id\/switch-account handles \[POST\] but its policy entry lists \[DELETE, POST\]/);
+    const extra = standIn();
+    extra["/harnesses/:id/limit-state"] = { DELETE: ok("d"), POST: ok("p") };
+    expect(() => applyRoutePolicy(extra, opts)).toThrow(/limit-state handles \[DELETE, POST\]/);
+    const sibling = standIn();
+    sibling["/harness-stacks/:id/restore"] = { POST: ok("x") };
+    expect(() => applyRoutePolicy(sibling, opts)).toThrow(/route \/harness-stacks\/:id\/restore has no policy entry/);
   });
 });
 
@@ -525,6 +639,8 @@ describe("routes the CLI (and the daemon handoff) call", () => {
       "POST /background/start",
       "GET /remote-access",
       "DELETE /remote-access",
+      // `agetor` repository removal (AgetorClient.removeTaskRepository).
+      "DELETE /tasks/:id/repositories/:name",
     ]) {
       expect(seen.has(expected), expected).toBe(true);
     }
@@ -630,11 +746,13 @@ describe("path-valued fields (D24)", () => {
 
   // The handlers below take their path through shapes the source scan above
   // can't see (`Partial<Task>` + a rest spread, a shared `dir` variable…), so
-  // they are pinned here by name. Full list of declared gates:
+  // they are pinned here by name. Full list of declared gates. An `itemField`
+  // param renders as `name[].field`: without the field the walker reads the
+  // array of objects as no strings at all, so dropping it must change this list.
   it("pins the declared pathParams", () => {
     const declared = policyEntries()
       .filter((e) => e.policy.pathParams)
-      .map((e) => `${e.method} ${e.key}: ${e.policy.pathParams!.map((p: PathParam) => `${p.in}.${p.name}(${p.mode})`).join(", ")}`)
+      .map((e) => `${e.method} ${e.key}: ${e.policy.pathParams!.map((p: PathParam) => `${p.in}.${p.name}${p.itemField ? `[].${p.itemField}` : ""}(${p.mode})`).join(", ")}`)
       .sort();
     const nonGithub = declared.filter((d) => !d.includes(" /github/"));
     expect([...nonGithub].sort()).toEqual([
@@ -649,7 +767,7 @@ describe("path-valued fields (D24)", () => {
       "POST /projects/fetch: body.path(exists)",
       "POST /projects/pull: body.path(exists)",
       "POST /projects/push: body.path(exists)",
-      "POST /tasks: body.workdir(exists)",
+      "POST /tasks: body.workdir(exists), body.repositories[].path(exists)",
     ].sort());
     // Every /github/* route except the token store takes a repo directory.
     const github = declared.filter((d) => d.includes(" /github/"));
@@ -926,6 +1044,63 @@ describe("applyRoutePolicy: path gate (D24)", () => {
       "exists:/p",
       "nearest-ancestor:/d/new",
     ]);
+  });
+
+  it("gates an array of objects through itemField (POST /tasks repositories[].path)", async () => {
+    const calls: GateCall[] = [];
+    const table = {
+      "/tasks": {
+        POST: {
+          ...CLI_POLICY,
+          pathParams: [
+            { in: "body", name: "workdir", mode: "exists" },
+            { in: "body", name: "repositories", mode: "exists", itemField: "path" },
+          ] as PathParam[],
+        },
+      },
+    };
+    const routes = { "/tasks": { POST: ok("created") } };
+    const w = applyRoutePolicy(routes, makeOpts({ calls, policy: table }));
+    const res = await call(
+      w["/tasks"].POST,
+      req("http://x/tasks", {
+        method: "POST",
+        token: CLI_TOKEN,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          workdir: "/w",
+          repositories: [{ path: "/a", baseRef: "main" }, { path: "/b" }, { nope: 1 }, null],
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(calls.map((c) => c.p).sort()).toEqual(["/a", "/b", "/w"]);
+  });
+
+  it("refuses a CLI POST /tasks whose repository path is protected", async () => {
+    const table = {
+      "/tasks": {
+        POST: {
+          ...CLI_POLICY,
+          pathParams: [{ in: "body", name: "repositories", mode: "exists", itemField: "path" }] as PathParam[],
+        },
+      },
+    };
+    const w = applyRoutePolicy({ "/tasks": { POST: ok("created") } }, makeOpts({
+      refuse: (p) => p === "/protected",
+      policy: table,
+    }));
+    const res = await call(
+      w["/tasks"].POST,
+      req("http://x/tasks", {
+        method: "POST",
+        token: CLI_TOKEN,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ repositories: [{ path: "/protected" }] }),
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "blocked /protected", code: "path-not-accessible" });
   });
 
   it("the handler still reads the body after the gate (the walker only reads a clone)", async () => {

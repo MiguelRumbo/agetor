@@ -2,6 +2,8 @@ import type { Task } from "../../shared/types.ts";
 import { isTaskFxPaused } from "../../shared/fx-recovery.ts";
 import { importedSessionOf } from "../../shared/imported-session.ts";
 import { t } from "@/lib/i18n";
+import { isMultiRepoTask } from "../../shared/multi-repo.ts";
+import { taskPrsOf } from "../../shared/task-prs.ts";
 
 /** Every action the task context menu can offer. A subset of App.tsx's
  *  existing card callbacks (`start`/`cancel`/`markDone`/`archive`/
@@ -23,11 +25,14 @@ export type TaskMenuAction =
   | "diff"
   | "open-in-finder"
   | "view-pr"
+  | "view-repo-pr"
   | "view-issue"
   | "mark-read"
   | "mark-unread"
   | "copy-branch"
   | "copy-worktree-path"
+  | "copy-repo-branch"
+  | "copy-repo-worktree"
   | "delete";
 
 /** Visual/semantic grouping — T3 inserts a separator between consecutive
@@ -45,7 +50,20 @@ export interface TaskMenuEntry {
   group: TaskMenuGroup;
   /** Danger-styled entry (destructive text color). Only `delete` sets this. */
   danger?: boolean;
+  /** For `copy-repo-*` / `view-repo-pr` on a multi-repository task: which
+   *  repository entry the action targets. */
+  repoName?: string;
+  /** Item id when it differs from the action (`view-pr-<n>`, `view-prs`): a
+   *  task can list several PRs, so the action alone isn't unique. */
+  id?: string;
+  /** For `view-pr` / `view-repo-pr`: the pull request this entry opens. */
+  prUrl?: string;
+  /** Present on the `view-prs` entry: the PRs it groups into a submenu. */
+  children?: TaskMenuEntry[];
 }
+
+/** More pull requests than this collapse into one "View pull requests" submenu. */
+export const MAX_FLAT_PR_ENTRIES = 3;
 
 /**
  * Builds the task card's right-click quick-action list, in display order,
@@ -138,8 +156,49 @@ export function buildTaskContextMenu(task: Task, ctx: { isOpen: boolean }): Task
   // inspect
   entries.push({ action: "diff", label: t("View changes"), group: "inspect" });
   entries.push({ action: "open-in-finder", label: t("Open in Finder"), group: "inspect" });
-  if (task.prUrl) {
-    entries.push({ action: "view-pr", label: t("View pull request"), group: "inspect" });
+  // One entry per pull request the task opened (a task can open several, one
+  // per branch and per repository). A legacy PR converted from the old single
+  // `prUrl` has no head and keeps the plain label. Past MAX_FLAT_PR_ENTRIES the
+  // entries move into one submenu.
+  const prEntries: TaskMenuEntry[] = [];
+  if (isMultiRepoTask(task)) {
+    // Per-repository PRs (issue #291): a multi row has no task-level PRs; each
+    // repository records its own. The board handler resolves `repoName` back to
+    // that entry's worktree path.
+    for (const repo of task.repositories ?? []) {
+      for (const pr of taskPrsOf(repo)) {
+        prEntries.push({
+          action: "view-repo-pr",
+          label: pr.head ? `View ${repo.name} PR: ${pr.head}` : `View ${repo.name} pull request`,
+          group: "inspect",
+          repoName: repo.name,
+          prUrl: pr.url,
+        });
+      }
+    }
+  } else {
+    for (const pr of taskPrsOf(task)) {
+      prEntries.push({
+        action: "view-pr",
+        label: pr.head ? `View PR: ${pr.head}` : "View pull request",
+        group: "inspect",
+        prUrl: pr.url,
+      });
+    }
+  }
+  prEntries.forEach((e, n) => {
+    e.id = `view-pr-${n}`;
+  });
+  if (prEntries.length > MAX_FLAT_PR_ENTRIES) {
+    entries.push({
+      action: prEntries[0]!.action,
+      id: "view-prs",
+      label: "View pull requests",
+      group: "inspect",
+      children: prEntries,
+    });
+  } else {
+    entries.push(...prEntries);
   }
   if (task.issueUrl) {
     entries.push({ action: "view-issue", label: t("View issue"), group: "inspect" });
@@ -156,11 +215,34 @@ export function buildTaskContextMenu(task: Task, ctx: { isOpen: boolean }): Task
   if (!task.unread && !ctx.isOpen && task.hasAssistantMessages === true) {
     entries.push({ action: "mark-unread", label: t("Mark as unread"), group: "utility" });
   }
-  if (task.branch) {
-    entries.push({ action: "copy-branch", label: t("Copy branch name"), group: "utility" });
-  }
-  if (task.worktreePath) {
-    entries.push({ action: "copy-worktree-path", label: t("Copy worktree path"), group: "utility" });
+  if (isMultiRepoTask(task)) {
+    // Per-repository copy entries (issue #291): the multi row has no single
+    // branch/worktree path, so name each repository.
+    for (const repo of task.repositories!) {
+      if (repo.branch) {
+        entries.push({
+          action: "copy-repo-branch",
+          label: `Copy ${repo.name} branch`,
+          group: "utility",
+          repoName: repo.name,
+        });
+      }
+      if (repo.worktreePath) {
+        entries.push({
+          action: "copy-repo-worktree",
+          label: `Copy ${repo.name} worktree path`,
+          group: "utility",
+          repoName: repo.name,
+        });
+      }
+    }
+  } else {
+    if (task.branch) {
+      entries.push({ action: "copy-branch", label: t("Copy branch name"), group: "utility" });
+    }
+    if (task.worktreePath) {
+      entries.push({ action: "copy-worktree-path", label: t("Copy worktree path"), group: "utility" });
+    }
   }
 
   // danger — always last. A step task can't be deleted individually — the

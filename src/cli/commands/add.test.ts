@@ -1,4 +1,6 @@
 import { test, expect, mock, afterAll, describe } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AgetorClient, CreateTaskInput } from "../api-client.ts";
 import type { Flags } from "../context.ts";
@@ -29,9 +31,11 @@ import { buildIssueTaskPrompt, issueTaskTitle, renderIssueThreadMarkdown } from 
 
 import * as realContext from "../context.ts";
 import * as realOutput from "../output.ts";
+import * as realClack from "@clack/prompts";
 
 const realContextSnapshot = { ...realContext };
 const realOutputSnapshot = { ...realOutput };
+const realClackSnapshot = { ...realClack };
 
 let currentClient: AgetorClient | null = null;
 
@@ -50,6 +54,8 @@ mock.module("../output.ts", () => ({
   ...realOutputSnapshot,
   // Force the non-interactive branch regardless of the runner's real tty
   // state, matching every other agetor-launched (headless) invocation.
+  // The wizard describe calls `wizard()` directly instead of routing
+  // through `cmdAdd` + `chooseAddPath`.
   isTTY: false,
   out: (msg = "") => {
     outputs.push(msg);
@@ -59,14 +65,59 @@ mock.module("../output.ts", () => ({
   },
 }));
 
+// `@clack/prompts` drives the interactive `add` wizard. Only the wizard
+// tests below use these scripted answers; the rest of this suite goes
+// non-interactively. Restored in `afterAll` because `mock.module` mutates the
+// shared registry for the whole `bun test` process.
+type ClackPromptKind = "text" | "select" | "multiselect" | "confirm";
+interface ClackAnswer {
+  kind: ClackPromptKind;
+  value: unknown;
+  message?: string;
+  options?: unknown;
+}
+let clackQueue: ClackAnswer[] = [];
+// `initialValue` is the option a select pre-selects (the wizard's seed).
+const clackCalls: Array<Pick<ClackAnswer, "kind" | "message" | "options"> & { initialValue?: unknown }> = [];
+
+function takeClack(kind: ClackPromptKind, message: string, options: unknown, initialValue?: unknown): unknown {
+  clackCalls.push({ kind, message, options, initialValue });
+  const next = clackQueue.shift();
+  if (!next || next.kind !== kind) {
+    throw new Error(`wizard asked ${kind} (${message}) but the script expected ${next?.kind ?? "nothing"}`);
+  }
+  return next.value;
+}
+
+mock.module("@clack/prompts", () => ({
+  ...realClackSnapshot,
+  intro: () => {},
+  outro: () => {},
+  cancel: () => {},
+  // A text prompt's placeholder is recorded as its `options`, so tests can
+  // pin what an empty answer falls back to.
+  text: async (opts: { message: string; placeholder?: string }) => takeClack("text", opts.message, opts.placeholder),
+  select: async (opts: { message: string; options: unknown; initialValue?: unknown }) =>
+    takeClack("select", opts.message, opts.options, opts.initialValue),
+  multiselect: async (opts: { message: string; options: unknown }) =>
+    takeClack("multiselect", opts.message, opts.options),
+  confirm: async (opts: { message: string }) => takeClack("confirm", opts.message, undefined),
+}));
+
 afterAll(() => {
   mock.module("../context.ts", () => realContextSnapshot);
   mock.module("../output.ts", () => realOutputSnapshot);
+  mock.module("@clack/prompts", () => realClackSnapshot);
 });
 
 const {
   parseAdd,
+  parseRepoSpec,
+  normalizeRepoSelection,
+  repositorySetOutcome,
+  collapsedRepositoriesNote,
   cmdAdd,
+  wizard,
   chooseAddPath,
   resolveInitialModel,
   defaultNonInteractiveMode,
@@ -153,12 +204,24 @@ function makeClient(thread: GitHubIssueThreadResult) {
  *  `cmdAdd` path — just `createTask`, with a call recorder, matching
  *  `makeClient`'s `createTask` stub exactly but without the issue-thread
  *  machinery those tests don't need. */
+/** What a core that understands `repositories` answers for a created task:
+ *  the requested entries (a current core always returns the field). Only set
+ *  when the input carried a repository set, so single-repository fixtures
+ *  keep their exact shape. */
+function createdTask(id: string, input: CreateTaskInput, keep?: number): Task {
+  const repositories = input.repositories?.slice(0, keep ?? input.repositories.length).map((r) => ({
+    path: r.path,
+    name: path.basename(r.path),
+  }));
+  return { id, title: input.title, ...(repositories ? { repositories } : {}) } as unknown as Task;
+}
+
 function makePlainClient() {
   const createTaskCalls: CreateTaskInput[] = [];
   const client = {
     createTask: async (input: CreateTaskInput) => {
       createTaskCalls.push(input);
-      return { id: "plain-task-id", title: input.title } as unknown as Task;
+      return createdTask("plain-task-id", input);
     },
   } as unknown as AgetorClient;
   return { client, createTaskCalls };
@@ -309,6 +372,103 @@ test("cmdAdd: --issue --workdir --json derives title/prompt/issueUrl/issueSnapsh
   expect((jsonOutputs[0] as { started: boolean }).started).toBe(false);
 });
 
+test("cmdAdd: --issue uses --repo as the match target when --workdir is omitted", async () => {
+  // Review nit: the issue thread was always resolved against cwd without
+  // --workdir, so `agetor add --issue <url> --repo ~/src/widgets` run from a
+  // different checkout failed with "belongs to a different repository".
+  reset();
+  const thread = makeThread();
+  const { client, getIssueThreadCalls, createTaskCalls } = makeClient(thread);
+  currentClient = client;
+  const repo = "/tmp/agetor-issue-repo";
+
+  await cmdAdd(["--issue", thread.item.htmlUrl, "--repo", repo], flags({ json: true }));
+
+  expect(getIssueThreadCalls).toEqual([{ path: repo, number: 7 }]);
+  expect(createTaskCalls).toHaveLength(1);
+  // One repository is an ordinary task: sent as its workdir, not as a
+  // one-entry `repositories` set (review S14).
+  expect(createTaskCalls[0]!.repositories).toBeUndefined();
+  expect(createTaskCalls[0]!.workdir).toBe(repo);
+});
+
+test("cmdAdd: --issue with several --repo entries tries each until one matches", async () => {
+  reset();
+  const thread = makeThread();
+  const other = makeThread({ item: makeItem({ htmlUrl: "https://github.com/someone-else/other/issues/7" }) });
+  const getIssueThreadCalls: Array<{ path: string; number: number }> = [];
+  const createTaskCalls: CreateTaskInput[] = [];
+  currentClient = {
+    getIssueThread: async (dir: string, number: number) => {
+      getIssueThreadCalls.push({ path: dir, number });
+      return { ok: true as const, ...(dir === "/tmp/b-repo" ? thread : other) };
+    },
+    createTask: async (input: CreateTaskInput) => {
+      createTaskCalls.push(input);
+      return createdTask("multi-issue", input);
+    },
+  } as unknown as AgetorClient;
+
+  await cmdAdd(
+    ["--issue", thread.item.htmlUrl, "--repo", "/tmp/a-repo", "--repo", "/tmp/b-repo"],
+    flags({ json: true }),
+  );
+
+  expect(getIssueThreadCalls.map((c) => c.path)).toEqual(["/tmp/a-repo", "/tmp/b-repo"]);
+  expect(createTaskCalls).toHaveLength(1);
+  expect(createTaskCalls[0]!.repositories?.map((r) => r.path)).toEqual(["/tmp/a-repo", "/tmp/b-repo"]);
+});
+
+test("cmdAdd: --issue tries the --repo set after an explicit --workdir that doesn't match", async () => {
+  // Review R11-S2: an explicit --workdir replaced the --repo candidates
+  // entirely, so `--issue <url> --workdir <scratch> --repo <issue repo>`
+  // failed even though the issue lives in one of the selected repositories.
+  // Since review S16 the --workdir is the first repository of the set.
+  reset();
+  const thread = makeThread();
+  const other = makeThread({ item: makeItem({ htmlUrl: "https://github.com/someone-else/other/issues/7" }) });
+  const getIssueThreadCalls: Array<{ path: string; number: number }> = [];
+  const createTaskCalls: CreateTaskInput[] = [];
+  currentClient = {
+    getIssueThread: async (dir: string, number: number) => {
+      getIssueThreadCalls.push({ path: dir, number });
+      return { ok: true as const, ...(dir === "/tmp/b-repo" ? thread : other) };
+    },
+    createTask: async (input: CreateTaskInput) => {
+      createTaskCalls.push(input);
+      return createdTask("workdir-and-repo", input);
+    },
+  } as unknown as AgetorClient;
+
+  await cmdAdd(
+    [
+      "--issue",
+      thread.item.htmlUrl,
+      "--workdir",
+      "/tmp/elsewhere",
+      "--repo",
+      "/tmp/a-repo",
+      "--repo",
+      "/tmp/b-repo",
+    ],
+    flags({ json: true }),
+  );
+
+  expect(getIssueThreadCalls.map((c) => c.path)).toEqual([
+    "/tmp/elsewhere",
+    "/tmp/a-repo",
+    "/tmp/b-repo",
+  ]);
+  expect(createTaskCalls).toHaveLength(1);
+  // --workdir is the first repository, so nothing the user typed is dropped.
+  expect(createTaskCalls[0]!.workdir).toBe("/tmp/elsewhere");
+  expect(createTaskCalls[0]!.repositories?.map((r) => r.path)).toEqual([
+    "/tmp/elsewhere",
+    "/tmp/a-repo",
+    "/tmp/b-repo",
+  ]);
+});
+
 test("cmdAdd: --issue --workdir --start --json also starts the created task", async () => {
   reset();
   const thread = makeThread();
@@ -422,6 +582,21 @@ test("cmdAdd: --issue whose thread points at a different repo throws, never call
     ),
   ).rejects.toThrow(/different repository/);
   expect(createTaskCalls).toEqual([]);
+});
+
+test("cmdAdd: --issue with no --workdir/--repo names the current directory in the mismatch error", async () => {
+  // Round-12 N1: the sole candidate is cwd, but the error named --repo.
+  reset();
+  const thread = makeThread({
+    item: makeItem({ htmlUrl: "https://github.com/someone-else/other-repo/issues/7" }),
+  });
+  const { client, getIssueThreadCalls } = makeClient(thread);
+  currentClient = client;
+
+  await expect(
+    cmdAdd(["--issue", "https://github.com/acme/widgets/issues/7"], flags()),
+  ).rejects.toThrow(/different repository than the current directory/);
+  expect(getIssueThreadCalls).toEqual([{ path: path.resolve(process.cwd()), number: 7 }]);
 });
 
 test("cmdAdd: no --issue, no --title, non-TTY throws an error that mentions --issue as an option", async () => {
@@ -646,6 +821,25 @@ test("resolveInitialModel: but the base cursor id is kept", () => {
   // A covered variant of Argon is not a picker row; the bare id is.
   expect(resolveInitialModel("cursor", "gemini-4-argon-high", [])).toBe(DEFAULT_MODEL.cursor);
   expect(resolveInitialModel("cursor", "gemini-4-argon", [])).toBe("gemini-4-argon");
+});
+
+test("resolveInitialModel: codex/copilot — a built-in id their trusted catalog lacks is not a seed (it would be refused at start); no catalog or a logged-out one keeps it", () => {
+  const codex: DiscoveredModel[] = [{ id: "gpt-6.1-sol" }, { id: "gpt-6.2-sol", cliDefault: true }];
+  expect(resolveInitialModel("codex", "gpt-5.6-sol", codex)).toBe(DEFAULT_MODEL.codex);
+  expect(DEFAULT_MODEL.codex).toBe("gpt-6.1-sol");
+  // The owner's default is missing too: the CLI's own default row.
+  expect(resolveInitialModel("codex", "gpt-5.6-sol", [{ id: "gpt-6.2-sol", cliDefault: true }])).toBe("gpt-6.2-sol");
+  // Nothing trustworthy to judge by: the built-in row still seeds.
+  expect(resolveInitialModel("codex", "gpt-5.6-sol", [])).toBe("gpt-5.6-sol");
+  expect(resolveInitialModel("codex", "gpt-5.6-sol", codex, false)).toBe("gpt-5.6-sol");
+  // A built-in id the catalog lists is kept.
+  expect(resolveInitialModel("codex", "gpt-6.1-sol", codex)).toBe("gpt-6.1-sol");
+
+  const copilot: DiscoveredModel[] = [{ id: "gpt-6.1-sol" }];
+  expect(resolveInitialModel("copilot", "kimi-k3", copilot)).toBe(DEFAULT_MODEL.copilot);
+  expect(resolveInitialModel("copilot", "kimi-k3", [])).toBe("kimi-k3");
+  // Copilot's pinned Auto row is never dropped, so it always seeds.
+  expect(resolveInitialModel("copilot", "auto", copilot)).toBe("auto");
 });
 
 test("resolveInitialModel: a logged-out harness's discovered catalog is not consulted (mirrors mergeModelOptions rule 7) — discovered-only pref falls back, curated pref survives", () => {
@@ -1462,5 +1656,541 @@ describe("opencode ask mode", () => {
 
   test("the wizard's Mode step (AGENT_OPTIONS) offers ask for opencode", () => {
     expect(AGENT_OPTIONS.opencode.modes.map((m) => m.id)).toContain("ask");
+  });
+});
+
+// ── --repo (multi-repository, issue #291) ────────────────────────────────
+
+test("parseAdd: --repo is repeatable and splits an optional =ref", () => {
+  const o = parseAdd(["--title", "T", "--prompt", "P", "--repo", "/a", "--repo", "/b=main"]);
+  expect(o.repos).toEqual([{ path: "/a" }, { path: "/b", baseRef: "main" }]);
+});
+
+test("parseAdd: no --repo leaves the list empty", () => {
+  expect(parseAdd(["--title", "T", "--prompt", "P"]).repos).toEqual([]);
+});
+
+test("parseRepoSpec: an existing path containing '=' is not split into a different repo", () => {
+  // A real directory name may contain '='. Splitting on the last one silently
+  // targeted the parent path (or a sibling) with a bogus base ref.
+  const dir = mkdtempSync(path.join(tmpdir(), "agetor-repo="));
+  try {
+    mkdirSync(path.join(dir, "work"), { recursive: true });
+    expect(parseRepoSpec(dir)).toEqual({ path: dir });
+    expect(parseRepoSpec(path.join(dir, "work"))).toEqual({ path: path.join(dir, "work") });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("parseRepoSpec: a non-existent <path>=<ref> still splits, and a bare path stays whole", () => {
+  expect(parseRepoSpec("/definitely/missing/app=main")).toEqual({
+    path: "/definitely/missing/app",
+    baseRef: "main",
+  });
+  expect(parseRepoSpec("/definitely/missing/app")).toEqual({ path: "/definitely/missing/app" });
+  // An empty ref after '=' is treated as "no ref" rather than an empty string.
+  expect(parseRepoSpec("/definitely/missing/app=")).toEqual({ path: "/definitely/missing/app" });
+});
+
+test("cmdAdd: --repo sends repositories and forces worktree isolation", async () => {
+  const { client, createTaskCalls } = makePlainClient();
+  currentClient = client;
+  await cmdAdd(
+    ["--title", "Multi", "--prompt", "Do it", "--workdir", "/tmp/frontend", "--repo", "/tmp/frontend", "--repo", "/tmp/backend=b1"],
+    flags(),
+  );
+  expect(createTaskCalls).toHaveLength(1);
+  const input = createTaskCalls[0]!;
+  expect(input.repositories).toEqual([
+    { path: "/tmp/frontend" },
+    { path: "/tmp/backend", baseRef: "b1" },
+  ]);
+  expect(input.isolation).toBe("worktree");
+  expect(input.workdir).toBe("/tmp/frontend");
+});
+
+test("cmdAdd: --workdir alongside --repo is the first repository, not silently dropped (review S16)", async () => {
+  // `--workdir A --repo B` used to send only B: A vanished without a word.
+  const { client, createTaskCalls } = makePlainClient();
+  currentClient = client;
+  await cmdAdd(
+    ["--title", "Pair", "--prompt", "Do it", "--repo", "/tmp/second", "--workdir", "/tmp/first"],
+    flags(),
+  );
+  expect(createTaskCalls).toHaveLength(1);
+  const input = createTaskCalls[0]!;
+  expect(input.repositories).toEqual([{ path: "/tmp/first" }, { path: "/tmp/second" }]);
+  expect(input.workdir).toBe("/tmp/first");
+  expect(input.isolation).toBe("worktree");
+});
+
+test("normalizeRepoSelection: --workdir leads, duplicates collapse, a duplicate's ref fills the kept entry", () => {
+  expect(normalizeRepoSelection(undefined, [])).toEqual([]);
+  // No --repo: --workdir keeps its single-repository meaning.
+  expect(normalizeRepoSelection("/w", [])).toEqual([]);
+  expect(normalizeRepoSelection("/w", [{ path: "/a" }])).toEqual([{ path: "/w" }, { path: "/a" }]);
+  expect(normalizeRepoSelection("/w", [{ path: "/a" }, { path: "/w/", baseRef: "main" }, { path: "/a", baseRef: "x" }])).toEqual([
+    { path: "/w", baseRef: "main" },
+    { path: "/a", baseRef: "x" },
+  ]);
+});
+
+test("cmdAdd: one --repo is sent as an ordinary single-repository task (review S14)", async () => {
+  // A one-entry `repositories` made the server validate the path as a git
+  // repo, refusing the plain folder `--isolation none` has always accepted.
+  const { client, createTaskCalls } = makePlainClient();
+  currentClient = client;
+  await cmdAdd(
+    ["--title", "One", "--prompt", "Do it", "--repo", "/tmp/plain-folder=release", "--isolation", "none", "--base-ref", "main"],
+    flags(),
+  );
+  const input = createTaskCalls[0]!;
+  expect(input.repositories).toBeUndefined();
+  expect(input.workdir).toBe("/tmp/plain-folder");
+  expect(input.isolation).toBe("none");
+  // The entry's own =ref wins over --base-ref, as it does server-side.
+  expect(input.baseRef).toBe("release");
+
+  // The same path twice (or --workdir naming it again) is still one repository.
+  createTaskCalls.length = 0;
+  await cmdAdd(
+    ["--title", "One", "--prompt", "Do it", "--workdir", "/tmp/plain-folder", "--repo", "/tmp/plain-folder", "--base-ref", "main"],
+    flags(),
+  );
+  expect(createTaskCalls[0]!.repositories).toBeUndefined();
+  expect(createTaskCalls[0]!.workdir).toBe("/tmp/plain-folder");
+  expect(createTaskCalls[0]!.baseRef).toBe("main");
+});
+
+test("cmdAdd: --isolation none with two repositories is a usage error, never a silent override (review S15)", async () => {
+  const { client, createTaskCalls } = makePlainClient();
+  currentClient = client;
+  await expect(
+    cmdAdd(
+      ["--title", "T", "--prompt", "P", "--repo", "/tmp/a", "--repo", "/tmp/b", "--isolation", "none"],
+      flags(),
+    ),
+  ).rejects.toThrow("--isolation none cannot be used with two or more repositories");
+  expect(createTaskCalls).toHaveLength(0);
+});
+
+test("cmdAdd: an older core that ignores repositories fails loudly and does not start the task (review S18)", async () => {
+  const createTaskCalls: CreateTaskInput[] = [];
+  const startTaskCalls: string[] = [];
+  currentClient = {
+    // A pre-multi-repository core drops the unknown field: no `repositories`.
+    createTask: async (input: CreateTaskInput) => {
+      createTaskCalls.push(input);
+      return { id: "oldcore-task-id", title: input.title, workdir: input.workdir } as unknown as Task;
+    },
+    startTask: async (id: string) => {
+      startTaskCalls.push(id);
+      return {};
+    },
+  } as unknown as AgetorClient;
+  await expect(
+    cmdAdd(["--title", "T", "--prompt", "P", "--repo", "/tmp/a", "--repo", "/tmp/b", "--start"], flags()),
+  ).rejects.toThrow(/core is too old for multi-repository tasks.*oldcore-.*\/tmp\/a/);
+  expect(createTaskCalls).toHaveLength(1);
+  expect(startTaskCalls).toEqual([]);
+});
+
+test("cmdAdd: selections the core collapsed to one git root get a note, not an error (review S18)", async () => {
+  outputs.length = 0;
+  currentClient = {
+    createTask: async (input: CreateTaskInput) => createdTask("collapsed-task", input, 1),
+  } as unknown as AgetorClient;
+  await cmdAdd(["--title", "T", "--prompt", "P", "--repo", "/tmp/mono/a", "--repo", "/tmp/mono/b"], flags());
+  expect(outputs.some((l) => l.includes("created as a single-repository task"))).toBe(true);
+});
+
+test("repositorySetOutcome: only a missing field on a 2+ request means an old core", () => {
+  const two = { repositories: [{ path: "/a" }, { path: "/b" }] };
+  expect(repositorySetOutcome({}, {})).toBe("ok");
+  expect(repositorySetOutcome(two, {})).toBe("core-too-old");
+  expect(repositorySetOutcome(two, { repositories: [] })).toBe("collapsed");
+  expect(repositorySetOutcome(two, { repositories: [{} as never, {} as never] })).toBe("ok");
+});
+
+test("collapsedRepositoriesNote follows the core's multiRepo verdict, not the kept count (round 15)", () => {
+  const three = { repositories: [{ path: "/a" }, { path: "/b" }, { path: "/c" }] };
+  const one = [{ path: "/a", name: "a" } as never];
+  // The core kept one entry but made it a multi task: not "single-repository".
+  expect(collapsedRepositoriesNote(three, { repositories: one, multiRepo: true })).toBe(
+    "2 selected paths shared a git repository with another selection; the task has 1 repository",
+  );
+  expect(collapsedRepositoriesNote(three, { repositories: one, multiRepo: false })).toContain(
+    "created as a single-repository task",
+  );
+  // An older core's answer (no `multiRepo`) still decides by the count.
+  expect(collapsedRepositoriesNote(three, { repositories: one })).toContain("created as a single-repository task");
+});
+
+// ── add wizard: multi-select repositories (issue #291 review M1) ─────────
+//
+// The owner chose full CLI + TUI parity, which includes picking several
+// repositories in the interactive wizard — not only the repeatable
+// `--repo` flag. These tests drive `cmdAdd` through the real `wizard()` with
+// `@clack/prompts` scripted above.
+
+function makeWizardClient(projects: Array<{ path: string; name?: string }>) {
+  const createTaskCalls: CreateTaskInput[] = [];
+  const client = {
+    listHarnesses: async () => ({ harnesses: [], statuses: [] }),
+    getPreferences: async () => ({}),
+    agentModels: async () => ({}),
+    harnessModels: async () => ({ ready: true, byHarness: {} }),
+    listPipelines: async () => [] as Pipeline[],
+    listAgentProfiles: async () => [] as AgentProfile[],
+    listProjects: async () => projects,
+    setPreference: async () => true,
+    createTask: async (input: CreateTaskInput) => {
+      createTaskCalls.push(input);
+      return { id: "wizard-task-id", title: input.title } as unknown as Task;
+    },
+  } as unknown as AgetorClient;
+  return { client, createTaskCalls };
+}
+
+const wizardLaunchFlags = [
+  "--agent",
+  "claude-code",
+  "--model",
+  DEFAULT_MODEL["claude-code"],
+  "--mode",
+  "auto",
+  "--effort",
+  "high",
+  "--speed",
+  "off",
+];
+
+function resetWizardScript(answers: ClackAnswer[]): void {
+  clackQueue = answers;
+  clackCalls.length = 0;
+}
+
+describe("add wizard multi-repository (issue #291)", () => {
+  const projects = [
+    { path: "/src/frontend", name: "frontend" },
+    { path: "/src/backend", name: "backend" },
+  ];
+
+  test("multi-select sends every repository, per-repo base refs, and forces worktree isolation", async () => {
+    const { client } = makeWizardClient(projects);
+    resetWizardScript([
+      { kind: "text", value: "Multi wizard" },
+      { kind: "text", value: "make the change" },
+      { kind: "multiselect", value: ["/src/frontend", "/src/backend"] },
+      { kind: "text", value: "" }, // frontend: default HEAD
+      { kind: "text", value: "release" }, // backend: pinned
+      { kind: "confirm", value: false },
+    ]);
+
+    const input = await wizard(client, parseAdd([...wizardLaunchFlags]), undefined);
+
+    expect(clackCalls.map((c) => c.kind)).toEqual([
+      "text",
+      "text",
+      "multiselect",
+      "text",
+      "text",
+      "confirm",
+    ]);
+    expect(clackCalls[2]!.message).toContain("Repositories");
+    expect(input!.repositories).toEqual([
+      { path: "/src/frontend" },
+      { path: "/src/backend", baseRef: "release" },
+    ]);
+    expect(input!.isolation).toBe("worktree");
+    expect(input!.workdir).toBe("/src/frontend");
+  });
+
+  test("a single selection keeps the single-repository wire shape (no forced isolation)", async () => {
+    const { client } = makeWizardClient(projects);
+    resetWizardScript([
+      { kind: "text", value: "Single wizard" },
+      { kind: "text", value: "make the change" },
+      { kind: "multiselect", value: ["/src/backend"] },
+      { kind: "confirm", value: false },
+    ]);
+
+    const input = await wizard(client, parseAdd([...wizardLaunchFlags]), undefined);
+
+    // Review S14: one pick is an ordinary task — no `repositories` entry, so
+    // the server doesn't hold a plain folder to the git-repo check.
+    expect(input!.repositories).toBeUndefined();
+    expect(input!.isolation).toBeUndefined();
+    expect(input!.workdir).toBe("/src/backend");
+  });
+
+  test("--repo skips the picker and uses the flags' set", async () => {
+    const { client } = makeWizardClient(projects);
+    resetWizardScript([
+      { kind: "text", value: "Flagged wizard" },
+      { kind: "text", value: "make the change" },
+      { kind: "confirm", value: false },
+    ]);
+
+    const input = await wizard(
+      client,
+      parseAdd([...wizardLaunchFlags, "--repo", "/src/frontend", "--repo", "/src/backend=main"]),
+      undefined,
+    );
+
+    // No `multiselect` prompt — the flags are authoritative.
+    expect(clackCalls.map((c) => c.kind)).toEqual(["text", "text", "confirm"]);
+    expect(input!.repositories).toEqual([
+      { path: "/src/frontend" },
+      { path: "/src/backend", baseRef: "main" },
+    ]);
+    expect(input!.workdir).toBe("/src/frontend");
+  });
+
+  test("the per-repository base prompt names the --base-ref default, not HEAD (review N5)", async () => {
+    const { client } = makeWizardClient(projects);
+    resetWizardScript([
+      { kind: "text", value: "Multi wizard" },
+      { kind: "text", value: "make the change" },
+      { kind: "multiselect", value: ["/src/frontend", "/src/backend"] },
+      { kind: "text", value: "" },
+      { kind: "text", value: "" },
+      { kind: "confirm", value: false },
+    ]);
+
+    const input = await wizard(client, parseAdd([...wizardLaunchFlags, "--base-ref", "develop"]), undefined);
+
+    const basePrompts = clackCalls.filter((c) => c.kind === "text" && (c.message ?? "").startsWith("Base ref for"));
+    expect(basePrompts.map((c) => c.options)).toEqual(["default (develop)", "default (develop)"]);
+    expect(input!.baseRef).toBe("develop");
+    expect(input!.repositories).toEqual([{ path: "/src/frontend" }, { path: "/src/backend" }]);
+  });
+
+  test("without --base-ref the per-repository base prompt still says HEAD", async () => {
+    const { client } = makeWizardClient(projects);
+    resetWizardScript([
+      { kind: "text", value: "Multi wizard" },
+      { kind: "text", value: "make the change" },
+      { kind: "multiselect", value: ["/src/frontend", "/src/backend"] },
+      { kind: "text", value: "" },
+      { kind: "text", value: "" },
+      { kind: "confirm", value: false },
+    ]);
+    await wizard(client, parseAdd([...wizardLaunchFlags]), undefined);
+    const basePrompts = clackCalls.filter((c) => c.kind === "text" && (c.message ?? "").startsWith("Base ref for"));
+    expect(basePrompts.map((c) => c.options)).toEqual(["default (HEAD)", "default (HEAD)"]);
+  });
+
+  test("picking two repositories under --isolation none is refused before the base prompts (review S15)", async () => {
+    const { client } = makeWizardClient(projects);
+    resetWizardScript([
+      { kind: "text", value: "Multi wizard" },
+      { kind: "text", value: "make the change" },
+      { kind: "multiselect", value: ["/src/frontend", "/src/backend"] },
+    ]);
+    await expect(
+      wizard(client, parseAdd([...wizardLaunchFlags, "--isolation", "none"]), undefined),
+    ).rejects.toThrow("--isolation none cannot be used with two or more repositories");
+  });
+
+  test("an --issue matched against cwd keeps that repository first and can add more (review N5)", async () => {
+    const issueDir = "/src/widgets";
+    const { client } = makeWizardClient([{ path: issueDir, name: "widgets" }, ...projects]);
+    resetWizardScript([
+      { kind: "multiselect", value: ["/src/backend"] },
+      { kind: "text", value: "" }, // widgets base
+      { kind: "text", value: "" }, // backend base
+      { kind: "confirm", value: false },
+    ]);
+
+    const o = parseAdd([...wizardLaunchFlags, "--title", "Issue task"]);
+    o.workdir = issueDir; // what cmdAdd sets after matching the issue against cwd
+    const input = await wizard(client, o, "issue prompt", { issueRepoDir: issueDir });
+
+    const picker = clackCalls.find((c) => c.kind === "multiselect")!;
+    expect(picker.message).toContain("widgets is always included");
+    // The issue's own repository is not offered (it can't be dropped).
+    expect((picker.options as Array<{ value: string }>).map((opt) => opt.value)).not.toContain(issueDir);
+    expect(input!.repositories).toEqual([{ path: issueDir }, { path: "/src/backend" }]);
+    expect(input!.workdir).toBe(issueDir);
+    expect(input!.isolation).toBe("worktree");
+  });
+
+  test("an --issue wizard that adds nothing stays an ordinary single-repository task", async () => {
+    const issueDir = "/src/widgets";
+    const { client } = makeWizardClient([{ path: issueDir, name: "widgets" }, ...projects]);
+    resetWizardScript([
+      { kind: "multiselect", value: [] },
+      { kind: "confirm", value: false },
+    ]);
+    const o = parseAdd([...wizardLaunchFlags, "--title", "Issue task"]);
+    o.workdir = issueDir;
+    const input = await wizard(client, o, "issue prompt", { issueRepoDir: issueDir });
+    expect(input!.repositories).toBeUndefined();
+    expect(input!.workdir).toBe(issueDir);
+  });
+
+  test("an --issue matched against an explicit --workdir skips the picker", async () => {
+    const issueDir = "/src/widgets";
+    const { client } = makeWizardClient([{ path: issueDir, name: "widgets" }, ...projects]);
+    resetWizardScript([{ kind: "confirm", value: false }]);
+    const o = parseAdd([...wizardLaunchFlags, "--title", "Issue task", "--workdir", issueDir]);
+    // cmdAdd passes no issueRepoDir when --workdir named the project.
+    const input = await wizard(client, o, "issue prompt", {});
+    expect(clackCalls.map((c) => c.kind)).toEqual(["confirm"]);
+    expect(input!.workdir).toBe(issueDir);
+  });
+});
+
+// ── dynamic model catalog: the wizard offers what the CLI's catalog lists ──────
+
+describe("add wizard — models, efforts and Speed the CLI's own catalog reports", () => {
+  const catalog: Record<string, DiscoveredModel[]> = {
+    "claude-code": [
+      { id: "opus-6", label: "Opus 6", efforts: ["low", "turbo", "max"], fast: true },
+      { id: "opus-5.5", label: "Opus 5.5", efforts: ["low", "medium", "high", "xhigh", "max"] },
+    ],
+    codex: [{ id: "gpt-6.2-sol", label: "GPT-6.2-Sol", efforts: ["low", "high"], fast: true, fastTier: "priority", cliDefault: true }],
+  };
+
+  function clientWith(models: Record<string, DiscoveredModel[]>) {
+    const { client, createTaskCalls } = makeWizardClient([{ path: "/src/backend", name: "backend" }]);
+    (client as unknown as { agentModels: () => Promise<Record<string, DiscoveredModel[]>> }).agentModels = async () => models;
+    return { client, createTaskCalls };
+  }
+
+  test("a model only the CLI lists leads the Model picker, its own effort ladder (with the unknown level) follows, and Speed is offered", async () => {
+    const { client } = clientWith(catalog);
+    resetWizardScript([
+      { kind: "text", value: "T" },
+      { kind: "text", value: "P" },
+      { kind: "select", value: "opus-6" }, // Model
+      { kind: "select", value: "turbo" }, // Effort
+      { kind: "select", value: "fast" }, // Speed
+      { kind: "multiselect", value: ["/src/backend"] },
+      { kind: "confirm", value: false },
+    ]);
+    const input = await wizard(client, parseAdd(["--agent", "claude-code", "--mode", "auto"]), undefined);
+    const select = (message: string) => clackCalls.find((c) => c.kind === "select" && c.message === message)!;
+    const modelRows = select("Model").options as { value: string; label: string }[];
+    expect(modelRows[0]).toMatchObject({ value: "opus-6", label: "Opus 6" });
+    expect(modelRows.map((r) => r.value)).toContain("mythos-5.2"); // curated-only rows still follow
+    const effortRows = select("Effort").options as { value: string; label: string }[];
+    expect(effortRows.map((r) => r.value)).toEqual(["max", "turbo", "low"]);
+    expect(effortRows.find((r) => r.value === "turbo")?.label).toBe("Turbo");
+    expect((select("Speed").options as { value: string }[]).map((r) => r.value)).toEqual(["off", "fast"]);
+    expect(input).toMatchObject({ model: "opus-6", effort: "turbo", speed: "fast" });
+  });
+
+  test("a hostile CLI label is escaped before it reaches the picker", async () => {
+    const hostile: Record<string, DiscoveredModel[]> = {
+      "claude-code": [{ id: "opus-6", label: "Opus\u001b[31m 6", description: "evil\u001b]0;pwned\u0007", efforts: ["high"] }],
+    };
+    const { client } = clientWith(hostile);
+    resetWizardScript([
+      { kind: "text", value: "T" },
+      { kind: "text", value: "P" },
+      { kind: "select", value: "opus-6" },
+      { kind: "select", value: "high" },
+      { kind: "multiselect", value: ["/src/backend"] },
+      { kind: "confirm", value: false },
+    ]);
+    await wizard(client, parseAdd(["--agent", "claude-code", "--mode", "auto"]), undefined);
+    const rows = clackCalls.find((c) => c.kind === "select" && c.message === "Model")!.options as { label: string; hint?: string }[];
+    const row = rows.find((r) => r.label.includes("Opus"))!;
+    expect(JSON.stringify(row)).not.toContain("\u001b");
+    expect(JSON.stringify(row)).not.toContain("\u0007");
+  });
+
+  test("codex: the Speed step appears from the discovered tier flag, and the CLI's default model is the picker's seed when the owner's pick is missing", async () => {
+    const { client } = clientWith(catalog);
+    (client as unknown as { listHarnesses: () => Promise<unknown> }).listHarnesses = async () => ({
+      harnesses: [{ id: "codex", kind: "codex", label: "Codex", isBuiltin: true, home: null, bin: null, env: {}, enabled: true }],
+      statuses: [],
+    });
+    resetWizardScript([
+      { kind: "text", value: "T" },
+      { kind: "text", value: "P" },
+      { kind: "select", value: "gpt-6.2-sol" },
+      { kind: "select", value: "high" },
+      { kind: "select", value: "fast" },
+      { kind: "multiselect", value: ["/src/backend"] },
+      { kind: "confirm", value: false },
+    ]);
+    const input = await wizard(client, parseAdd(["--agent", "codex", "--mode", "auto"]), undefined);
+    expect(clackCalls.some((c) => c.message === "Speed")).toBe(true);
+    expect(input).toMatchObject({ model: "gpt-6.2-sol", speed: "fast" });
+  });
+
+  /** The built-in codex harness, enabled, with `model` remembered as `lastModel:codex`. */
+  function rememberCodexModel(client: AgetorClient, model: string): void {
+    (client as unknown as { listHarnesses: () => Promise<unknown> }).listHarnesses = async () => ({
+      harnesses: [{ id: "codex", kind: "codex", label: "Codex", isBuiltin: true, home: null, bin: null, env: {}, enabled: true }],
+      statuses: [],
+    });
+    (client as unknown as { getPreferences: () => Promise<Record<string, string>> }).getPreferences = async () => ({
+      "lastModel:codex": model,
+    });
+  }
+
+  test("codex: a remembered built-in model the trusted catalog lacks is not offered, and the Model picker starts on the default", async () => {
+    const { client } = clientWith({
+      codex: [
+        { id: "gpt-6.1-sol", label: "GPT-6.1 Sol", efforts: ["low", "high"] },
+        { id: "gpt-6.2-sol", label: "GPT-6.2 Sol", efforts: ["low", "high"], cliDefault: true },
+      ],
+    });
+    rememberCodexModel(client, "gpt-5.6-sol");
+    resetWizardScript([
+      { kind: "text", value: "T" },
+      { kind: "text", value: "P" },
+      { kind: "select", value: "gpt-6.1-sol" }, // Model
+      { kind: "select", value: "high" }, // Effort
+      { kind: "multiselect", value: ["/src/backend"] },
+      { kind: "confirm", value: false },
+    ]);
+    await wizard(client, parseAdd(["--agent", "codex", "--mode", "auto"]), undefined);
+    const picker = clackCalls.find((c) => c.kind === "select" && c.message === "Model")!;
+    expect(picker.initialValue).toBe("gpt-6.1-sol");
+    const ids = (picker.options as { value: string }[]).map((r) => r.value);
+    expect(ids).toEqual(expect.arrayContaining(["gpt-6.1-sol", "gpt-6.2-sol"]));
+    expect(ids).not.toContain("gpt-5.6-sol");
+  });
+
+  test("codex: with no catalog yet, a remembered built-in model still seeds the Model picker", async () => {
+    const { client } = clientWith({});
+    rememberCodexModel(client, "gpt-5.6-sol");
+    resetWizardScript([
+      { kind: "text", value: "T" },
+      { kind: "text", value: "P" },
+      { kind: "select", value: "gpt-5.6-sol" }, // Model
+      { kind: "select", value: "high" }, // Effort
+      { kind: "multiselect", value: ["/src/backend"] },
+      { kind: "confirm", value: false },
+    ]);
+    const input = await wizard(client, parseAdd(["--agent", "codex", "--mode", "auto"]), undefined);
+    const picker = clackCalls.find((c) => c.kind === "select" && c.message === "Model")!;
+    expect(picker.initialValue).toBe("gpt-5.6-sol");
+    expect((picker.options as { value: string }[]).map((r) => r.value)).toContain("gpt-5.6-sol");
+    expect(input).toMatchObject({ model: "gpt-5.6-sol" });
+  });
+
+  test("non-interactive: --model opus-6 and an unknown --effort are accepted verbatim", async () => {
+    reset();
+    const { client, createTaskCalls } = makePlainClient();
+    currentClient = client;
+    await cmdAdd(["--title", "T", "--prompt", "P", "--agent", "claude-code", "--model", "opus-6", "--effort", "turbo"], flags());
+    expect(createTaskCalls[0]).toMatchObject({ model: "opus-6", effort: "turbo" });
+  });
+
+  test("wizardSpeedChoices: claude and codex offer Fast only for a model whose row says so", () => {
+    const rows = [
+      { id: "a", label: "A", fast: true },
+      { id: "b", label: "B" },
+    ];
+    expect(wizardSpeedChoices("claude-code", "a", "high", rows).map((o) => o.id)).toEqual(["off", "fast"]);
+    expect(wizardSpeedChoices("claude-code", "b", "high", rows)).toEqual([]);
+    expect(wizardSpeedChoices("codex", "a", "high", rows).map((o) => o.id)).toEqual(["off", "fast"]);
   });
 });

@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AgentIcon } from "./AgentIcon";
 import { speedLabel } from "../../../shared/speed.ts";
+import { modelDisplayName } from "../../../shared/model-display.ts";
 import type { TaskProfileDisplay } from "@/lib/agent-profiles";
 import type { AgentKind, Harness, Task } from "../../../shared/types.ts";
 import { t } from "@/lib/i18n";
@@ -129,7 +130,7 @@ export function AgentProfileDetailsDialog({
             </dd>
 
             <dt className="text-muted-foreground">{t("Model")}</dt>
-            <dd className="min-w-0">{model ?? "—"}</dd>
+            <dd className="min-w-0">{model ? modelDisplayName(harnessKind, model) : "—"}</dd>
 
             <dt className="text-muted-foreground">{t("Effort")}</dt>
             <dd className="min-w-0">{effort ?? "—"}</dd>

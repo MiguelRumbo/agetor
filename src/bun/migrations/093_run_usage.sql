@@ -1,5 +1,5 @@
 -- Migration 087: Native Token Telemetry (run_usage)
--- See down/087_run_usage.sql for rollback.
+-- See down/093_run_usage.sql for rollback.
 
 CREATE TABLE IF NOT EXISTS run_usage (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

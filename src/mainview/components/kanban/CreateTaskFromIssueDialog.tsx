@@ -16,6 +16,9 @@ import { composeLaunchPrompt } from "../../../shared/agent-profile.ts";
 import { promptByteOverage } from "../../../shared/prompt-limits.ts";
 import { createAndStartTask, TaskLaunchPickers, useTaskLaunch } from "./TaskLaunchPickers";
 import { useWorktreeOptions, WorktreeOptions } from "./WorktreeOptions";
+import { useProjectSelection } from "./ProjectSelection";
+import { repositoryFileScopes } from "@/lib/repo-selection";
+import { selectionPayload } from "@/lib/worktree-payload";
 import { PromptComposer } from "./PromptComposer";
 import { TaskTypePicker } from "./TaskTypePicker";
 import { t } from "@/lib/i18n";
@@ -76,9 +79,16 @@ export function CreateTaskFromIssueDialog({ open, onClose, context, onCreated, o
   const [taskType, setTaskType] = useState<TaskType>(DEFAULT_TASK_TYPE);
   const [typeDirty, setTypeDirty] = useState(false);
 
+  // Combined project selection, seeded from the issue's own repository on
+  // open. The issue repo is always first and locked; extras are added through
+  // the same Select Projects control New Task uses. No auto-select here: the
+  // issue's repo is the only correct starting point.
+  const { repos, setRepos, multiRepo, refDirty } = useProjectSelection({ enabled: open });
+
   // The branch-name field derives live from the current title + taskType
   // (same `issueTaskTitle` the submit path uses), so it shows e.g.
-  // `fix/issue-7-…` for a bug-labelled issue once the thread loads.
+  // `fix/issue-7-…` for a bug-labelled issue once the thread loads. 2+
+  // projects force worktree isolation — the same one derivation as New Task.
   const wt = useWorktreeOptions({
     workdir: context?.path ?? "",
     title: thread ? issueTaskTitle(thread.item) : "",
@@ -86,6 +96,7 @@ export function CreateTaskFromIssueDialog({ open, onClose, context, onCreated, o
     // `IssueActions` (GitHubDialog.tsx) mounts this dialog unconditionally,
     // so the branch-config fetch must stay off until it's actually open.
     enabled: open,
+    forceIsolate: multiRepo,
   });
 
   const [submitting, setSubmitting] = useState(false);
@@ -96,9 +107,20 @@ export function CreateTaskFromIssueDialog({ open, onClose, context, onCreated, o
   // takes `enabled: open`): a closed dialog must never fetch a listing.
   // Memoized so `useProjectFiles`'s effect doesn't refire on every
   // unrelated re-render.
-  const fileScope = useMemo(
-    () => (open ? { dir: context?.path ?? "", ref: wt.isolate ? (wt.baseRef.trim() || "HEAD") : null } : null),
-    [open, context?.path, wt.isolate, wt.baseRef],
+  const fileScope = useMemo(() => {
+    if (!open) return null;
+    // The issue repo's own ref is its entry's; multi tasks use `fileScopes`.
+    const ref = repos[0]?.baseRef?.trim() || "HEAD";
+    return { dir: context?.path ?? "", ref: wt.effectiveIsolate ? ref : null };
+  }, [open, context?.path, repos, wt.effectiveIsolate]);
+  // Multi-repository `@` scopes (issue #291): the same union New Task builds —
+  // each selected repository lists at its own path and pinned/HEAD ref, and
+  // entries are prefixed with its workspace name. Without this the flagship
+  // issue flow could only `@` files in the issue's own repository, and a
+  // valid `@backend/...` token was flagged unresolved.
+  const fileScopes = useMemo(
+    () => (multiRepo ? repositoryFileScopes(repos, wt.effectiveIsolate) : null),
+    [multiRepo, repos, wt.effectiveIsolate],
   );
 
   // Reset per-open transient state, then fetch the thread this dialog was
@@ -123,6 +145,8 @@ export function CreateTaskFromIssueDialog({ open, onClose, context, onCreated, o
     setReferences([]);
     setTaskType(DEFAULT_TASK_TYPE);
     setTypeDirty(false);
+    // A fresh seed carries no base ref, so `refDirty` starts false.
+    setRepos(context?.path ? [{ path: context.path, root: null }] : []);
     launch.setPipelineId(null);
     if (!open || !context) return;
     setThreadLoading(true);
@@ -178,6 +202,7 @@ export function CreateTaskFromIssueDialog({ open, onClose, context, onCreated, o
     !!context &&
     !!thread &&
     prompt.trim().length > 0 &&
+    repos.length > 0 &&
     launch.effectiveLaunchable &&
     launch.pipelineReady &&
     !submitting &&
@@ -185,14 +210,18 @@ export function CreateTaskFromIssueDialog({ open, onClose, context, onCreated, o
     wt.valid;
 
   // Anything the user changed since the dialog opened: the prompt, attached
-  // references, the Type picker, a worktree option, or a selected pipeline.
+  // references, the Type picker, a worktree option, a base ref picked in the
+  // Select Projects dialog, a second project, or a selected pipeline. The
+  // pickers' automatic current-branch seeds are never saved (so never count),
+  // and neither does the automatic issue-repo seed.
   const draftDirty =
     promptDirty ||
     references.length > 0 ||
     typeDirty ||
-    !wt.isolate ||
-    wt.baseRefDirty ||
+    !wt.effectiveIsolate ||
+    refDirty ||
     wt.branchDirty ||
+    repos.length > 1 ||
     launch.pipelineId !== null;
 
   /** "Manage pipelines…": confirm before discarding a dirty draft, then close
@@ -226,8 +255,14 @@ export function CreateTaskFromIssueDialog({ open, onClose, context, onCreated, o
         // server overrides this from the pipeline anyway); a selected profile's
         // own harness otherwise; else the manual pick (finding F2-3).
         agent: launch.effectiveAgent,
-        workdir: context.path,
-        ...wt.payload(),
+        // The same one mapping New Task uses: one project keeps the
+        // single-repository shape, 2+ forces worktree isolation with one
+        // entry per project (see `selectionPayload`).
+        ...selectionPayload({
+          repos,
+          isolate: wt.effectiveIsolate,
+          branchSubmitValue: wt.branchField.submitValue,
+        }),
         mode: launch.mode,
         model: launch.model,
         effort: launch.effort,
@@ -316,7 +351,7 @@ export function CreateTaskFromIssueDialog({ open, onClose, context, onCreated, o
           {!loading && !error && !!context && !!thread && (
             <div className="space-y-3">
               <div className="rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
-                {wt.isolate
+                {wt.effectiveIsolate
                   ? "Creates a task on a fresh branch in its own worktree."
                   : "Runs the agent directly in the project checkout — it commits onto your current branch, in your working tree."}{" "}
                 {thread.commentsError ? (
@@ -329,7 +364,7 @@ export function CreateTaskFromIssueDialog({ open, onClose, context, onCreated, o
                     referenced snapshot file.
                   </>
                 )}
-                {wt.isolate && " The agent commits locally; it never pushes."}
+                {wt.effectiveIsolate && " The agent commits locally; it never pushes."}
                 {thread.truncated && " Thread truncated at the fetch cap."}
                 {thread.refetchCommand && (
                   <div className="mt-1">
@@ -365,6 +400,7 @@ export function CreateTaskFromIssueDialog({ open, onClose, context, onCreated, o
                 onReferencesChange={setReferences}
                 setReferences={setReferences}
                 fileScope={fileScope}
+                fileScopes={fileScopes}
                 startingFolder={context.path}
                 rows={12}
                 footer={overage && (
@@ -376,7 +412,12 @@ export function CreateTaskFromIssueDialog({ open, onClose, context, onCreated, o
                 )}
               />
 
-              <WorktreeOptions state={wt} />
+              <WorktreeOptions
+                state={wt}
+                repos={repos}
+                onReposChange={setRepos}
+                lockedPath={context.path}
+              />
 
               <TaskLaunchPickers
                 launch={launch}

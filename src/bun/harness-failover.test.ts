@@ -2,7 +2,7 @@
 // persistence/cap. Timers are not fired here — the boot/handoff behaviour is
 // exercised by the orchestrator suite and the boot reconcile is read-only.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -930,6 +930,326 @@ describe("review fixes (fix round)", () => {
     } finally {
       fo.cancelAutoRetry(taskId);
       dbm.tasks.setHarnessState(taskId, null);
+      stacks.harnessStacks.delete(stack.id);
+    }
+  });
+});
+
+describe("retry-wait seam (D20)", () => {
+  test("AGETOR_HARNESS_RETRY_MIN_MS is honored under NODE_ENV=test, bounded, and ignored in production", () => {
+    const prevEnv = process.env.NODE_ENV;
+    const prevMs = process.env.AGETOR_HARNESS_RETRY_MIN_MS;
+    const prevSeam = process.env.AGETOR_E2E_HARNESS_SEAMS;
+    try {
+      process.env.AGETOR_HARNESS_RETRY_MIN_MS = "200";
+      expect(fo.retryMinMs()).toBe(200);
+      process.env.AGETOR_HARNESS_RETRY_MIN_MS = "10";
+      expect(fo.retryMinMs()).toBe(fo.HARNESS_STACK_RETRY_MIN_MS);
+      process.env.AGETOR_HARNESS_RETRY_MIN_MS = "abc";
+      expect(fo.retryMinMs()).toBe(fo.HARNESS_STACK_RETRY_MIN_MS);
+      process.env.AGETOR_HARNESS_RETRY_MIN_MS = "200";
+      process.env.NODE_ENV = "production";
+      delete process.env.AGETOR_E2E_HARNESS_SEAMS;
+      expect(fo.retryMinMs()).toBe(fo.HARNESS_STACK_RETRY_MIN_MS);
+      process.env.AGETOR_E2E_HARNESS_SEAMS = "1";
+      expect(fo.retryMinMs()).toBe(200);
+    } finally {
+      process.env.NODE_ENV = prevEnv;
+      if (prevMs === undefined) delete process.env.AGETOR_HARNESS_RETRY_MIN_MS; else process.env.AGETOR_HARNESS_RETRY_MIN_MS = prevMs;
+      if (prevSeam === undefined) delete process.env.AGETOR_E2E_HARNESS_SEAMS; else process.env.AGETOR_E2E_HARNESS_SEAMS = prevSeam;
+    }
+  });
+});
+
+describe("memberReasonsFor and the 1-member early return", () => {
+  test("includeCurrent prefixes the current account; a tried, non-cooling member reads 'tried this lap'", () => {
+    const a = account();
+    const b = account();
+    const stack = stacks.harnessStacks.create({ label: "reasons", kind: "claude-code", members: [a, b] });
+    const taskId = makeTask(a);
+    const now = Date.now();
+    stacks.harnessStacks.setLimitState(a, { reason: "quota", resetAtMs: now + 60_000, message: "x", source: "claude-pane" }, now);
+    fo.recordTried(taskId, b);
+    const task = dbm.tasks.get(taskId)!;
+    const withoutCurrent = fo.memberReasonsFor(stack, task, now);
+    expect(withoutCurrent.map((r) => r.harnessId)).toEqual([b]);
+    expect(withoutCurrent[0]!.reason).toBe("tried this lap");
+    const all = fo.memberReasonsFor(stack, task, now, { includeCurrent: true });
+    expect(all.map((r) => r.harnessId)).toEqual([a, b]);
+    expect(all[0]!.reason.startsWith("current — cooling until ")).toBe(true);
+    stacks.harnessStacks.clearLimitState(a);
+    stacks.harnessStacks.delete(stack.id);
+  });
+
+  test("a stack cut to one member clears a stale exhausted state and its timer", async () => {
+    const a = account();
+    const b = account();
+    const stack = stacks.harnessStacks.create({ label: "shrunk", kind: "claude-code", members: [a, b] });
+    const taskId = makeTask(a);
+    fo.recordTried(taskId, a);
+    fo.planExhausted(taskId, { kind: "all-exhausted", earliestResetAtMs: Date.now() + 60_000, skipped: [] });
+    expect(fo.hasArmedAutoRetry(taskId)).toBe(true);
+    stacks.harnessStacks.update(stack.id, { members: [a] } as never);
+    const res = await fo.prepareTaskHarness(taskId, { manual: true });
+    expect(res.ok).toBe(true);
+    expect(dbm.tasks.get(taskId)!.harnessState).toBeNull();
+    expect(fo.hasArmedAutoRetry(taskId)).toBe(false);
+    stacks.harnessStacks.delete(stack.id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6 TT-D: per-model cooldowns (D5), default-model checks (finding 9),
+// the 1-member inert rule (22a) and the `unavailable` history row (SC8)
+// ---------------------------------------------------------------------------
+
+describe("per-model cooldowns in selection (D5, W1 review S2)", () => {
+  /** The member selection lands on for `task`, or null when none is usable. */
+  const pick = (task: object, now: number): string | null => {
+    const plan = fo.planNextMember(task as never, { now });
+    return plan.kind === "next" ? plan.member.harnessId : null;
+  };
+
+  test("a per-model row for model X does not block a task on model Y; an account-wide row blocks both", () => {
+    const a = account();
+    const b = account();
+    const c = account();
+    const stack = stacks.harnessStacks.create({ label: "permodel", kind: "claude-code", members: [a, b, c] });
+    const taskId = makeTask(a);
+    const now = Date.now();
+    // The cooldown on b is for one model only.
+    stacks.harnessStacks.setLimitState(b, { reason: "quota", resetAtMs: now + 3_600_000, message: "x", source: "codex-error", model: "model-x" } as never, now);
+    const onX = { ...dbm.tasks.get(taskId)!, model: "model-x" };
+    const onY = { ...dbm.tasks.get(taskId)!, model: "model-y" };
+    expect(pick(onX, now)).toBe(c);
+    expect(pick(onY, now)).toBe(b);
+    // An account-wide row blocks every model.
+    stacks.harnessStacks.setLimitState(b, { reason: "quota", resetAtMs: now + 3_600_000, message: "all", source: "claude-pane" } as never, now);
+    expect(pick(onY, now)).toBe(c);
+    stacks.harnessStacks.clearLimitState(b);
+    stacks.harnessStacks.delete(stack.id);
+  });
+
+  test("model matching is case-insensitive and a default-model task resolves to DEFAULT_MODEL", async () => {
+    const { DEFAULT_MODEL } = await import("../shared/types.ts");
+    const a = account();
+    const b = account();
+    const c = account();
+    const stack = stacks.harnessStacks.create({ label: "permodel-default", kind: "claude-code", members: [a, b, c] });
+    const taskId = makeTask(a);
+    const now = Date.now();
+    const defaultModel = DEFAULT_MODEL["claude-code"];
+    stacks.harnessStacks.setLimitState(b, {
+      reason: "quota", resetAtMs: now + 3_600_000, message: "x", source: "codex-error", model: defaultModel.toLowerCase(),
+    } as never, now);
+    const nullModel = { ...dbm.tasks.get(taskId)!, model: null as never };
+    expect(fo.cooldownModelFor(nullModel, b)).toBe(defaultModel.toLowerCase());
+    // A default-model task meets the row for the default model...
+    expect(pick(nullModel, now)).toBe(c);
+    // ...and the same task pinned to another model does not.
+    expect(pick({ ...nullModel, model: "some-other-model" }, now)).toBe(b);
+    // The match is on the lower-cased id.
+    expect(fo.cooldownModelFor({ model: defaultModel.toUpperCase() } as never, b)).toBe(defaultModel.toLowerCase());
+    expect(pick({ ...nullModel, model: defaultModel.toUpperCase() }, now)).toBe(c);
+    stacks.harnessStacks.clearLimitState(b);
+    stacks.harnessStacks.delete(stack.id);
+  });
+});
+
+describe("a default-model task is checked against the backup's CLI floor (finding 9)", () => {
+  test("a backup whose cached CLI is below the default model's floor is skipped; a pinned model without a floor is not", async () => {
+    const { DEFAULT_MODEL, MODEL_MIN_CLI_VERSION } = await import("../shared/types.ts");
+    const agentStatus = await import("./agent-status.ts");
+    const floor = MODEL_MIN_CLI_VERSION.codex?.[DEFAULT_MODEL.codex];
+    expect(floor).toBeDefined();
+    const binDirLocal = mkdtempSync(path.join(tmpdir(), "agetor-failover-codexbin-"));
+    const stub = path.join(binDirLocal, "codex");
+    writeFileSync(stub, '#!/bin/sh\necho "codex-cli ${STUB_CODEX_VERSION:-9.9.9}"\n', { mode: 0o755 });
+    const prevBin = process.env.AGETOR_CODEX_BIN;
+    process.env.AGETOR_CODEX_BIN = stub;
+    const codex = (label: string, version: string) => {
+      seq++;
+      const id = `fo-codex-${label}-${seq}`;
+      const home = path.join(process.env.AGETOR_DATA_DIR!, "homes", id);
+      mkdirSync(path.join(home, ".codex"), { recursive: true });
+      writeFileSync(path.join(home, ".codex", "auth.json"), "{}");
+      dbm.harnesses.insert({ id, kind: "codex", label: id, home, env: { STUB_CODEX_VERSION: version } } as never);
+      return id;
+    };
+    try {
+      const a = codex("a", "9.9.9");
+      const b = codex("b", "0.100.0");
+      const c = codex("c", "9.9.9");
+      const stack = stacks.harnessStacks.create({ label: "floor", kind: "codex", members: [a, b, c] });
+      for (const id of [a, b, c]) await agentStatus.cachedCliVersion(dbm.harnesses.get(id)!);
+      expect(agentStatus.peekCachedCliVersion(dbm.harnesses.get(b)!)).toContain("0.100.0");
+      const task = { id: "t", agent: a, model: null as string | null, harnessState: null } as never;
+      const member = (id: string) => ({ harnessId: id, enabled: true, label: id });
+      // The default-model task cannot run on the old CLI...
+      expect(fo.memberUnusableReason(member(b), task)).toBe(`CLI older than ${floor}`);
+      expect(fo.memberUnusableReason(member(c), task)).toBeNull();
+      // ...so selection lands on the next member that can.
+      const plan = fo.planNextMember({ id: "t", agent: a, model: null, harnessState: null } as never);
+      expect(plan.kind).toBe("next");
+      if (plan.kind === "next") expect(plan.member.harnessId).toBe(c);
+      // A model without a floor is fine on the old CLI.
+      expect(fo.memberUnusableReason(member(b), { model: "fixture-codex-model" } as never)).toBeNull();
+      stacks.harnessStacks.delete(stack.id);
+    } finally {
+      if (prevBin === undefined) delete process.env.AGETOR_CODEX_BIN; else process.env.AGETOR_CODEX_BIN = prevBin;
+      rmSync(binDirLocal, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("discovery first: a CLI catalog decides model availability, the frozen table only when it says nothing", () => {
+  test("a codex backup whose own catalog lists a floored model is usable on an old CLI; with no catalog the table still refuses", async () => {
+    const { MODEL_MIN_CLI_VERSION } = await import("../shared/types.ts");
+    const discovery = await import("./agent-discovery.ts");
+    const agentStatus = await import("./agent-status.ts");
+    const model = "gpt-6-sol";
+    const floor = MODEL_MIN_CLI_VERSION.codex?.[model];
+    expect(floor).toBeDefined();
+    const binDirLocal = mkdtempSync(path.join("/tmp", "agetor-failover-codexcat-"));
+    const stub = path.join(binDirLocal, "codex");
+    writeFileSync(stub, '#!/bin/sh\necho "codex-cli 0.100.0"\n', { mode: 0o755 });
+    const prevBin = process.env.AGETOR_CODEX_BIN;
+    process.env.AGETOR_CODEX_BIN = stub;
+    seq++;
+    const id = `fo-codexcat-${seq}`;
+    const home = path.join(process.env.AGETOR_DATA_DIR!, "homes", id);
+    mkdirSync(path.join(home, ".codex"), { recursive: true });
+    writeFileSync(path.join(home, ".codex", "auth.json"), "{}");
+    dbm.harnesses.insert({ id, kind: "codex", label: id, home, env: {} } as never);
+    try {
+      await agentStatus.cachedCliVersion(dbm.harnesses.get(id)!);
+      const member = { harnessId: id, enabled: true, label: id };
+      const task = { model } as never;
+      discovery.__testing.resetForTests();
+      expect(fo.memberUnusableReason(member, task)).toBe(`CLI older than ${floor}`);
+      discovery.seedDiscoveryCache({ scope: "harness", kind: "codex", harnessId: id }, [{ id: model }]);
+      expect(fo.memberUnusableReason(member, task)).toBeNull();
+      discovery.seedDiscoveryCache({ scope: "harness", kind: "codex", harnessId: id }, [{ id: model }]);
+    } finally {
+      discovery.__testing.resetForTests();
+      if (prevBin === undefined) delete process.env.AGETOR_CODEX_BIN; else process.env.AGETOR_CODEX_BIN = prevBin;
+      rmSync(binDirLocal, { recursive: true, force: true });
+    }
+  });
+
+  test("a codex backup with no catalog of its own is not judged by another account's kind-level list (review S2)", async () => {
+    const { MODEL_MIN_CLI_VERSION } = await import("../shared/types.ts");
+    const discovery = await import("./agent-discovery.ts");
+    const agentStatus = await import("./agent-status.ts");
+    const model = "gpt-6-sol";
+    const floor = MODEL_MIN_CLI_VERSION.codex?.[model];
+    expect(floor).toBeDefined();
+    const binDirLocal = mkdtempSync(path.join("/tmp", "agetor-failover-codexkind-"));
+    const stub = path.join(binDirLocal, "codex");
+    writeFileSync(stub, '#!/bin/sh\necho "codex-cli 0.100.0"\n', { mode: 0o755 });
+    const prevBin = process.env.AGETOR_CODEX_BIN;
+    process.env.AGETOR_CODEX_BIN = stub;
+    seq++;
+    const id = `fo-codexkind-${seq}`;
+    const home = path.join(process.env.AGETOR_DATA_DIR!, "homes", id);
+    mkdirSync(path.join(home, ".codex"), { recursive: true });
+    writeFileSync(path.join(home, ".codex", "auth.json"), "{}");
+    dbm.harnesses.insert({ id, kind: "codex", label: id, home, env: {} } as never);
+    try {
+      await agentStatus.cachedCliVersion(dbm.harnesses.get(id)!);
+      const member = { harnessId: id, enabled: true, label: id };
+      discovery.__testing.resetForTests();
+      // The built-in account's list does not carry the model; this account has none yet.
+      discovery.seedDiscoveryCache({ scope: "kind", kind: "codex" }, [{ id: "some-other-model" }]);
+      expect(fo.memberUnusableReason(member, { model } as never)).toBe(`CLI older than ${floor}`);
+    } finally {
+      discovery.__testing.resetForTests();
+      if (prevBin === undefined) delete process.env.AGETOR_CODEX_BIN; else process.env.AGETOR_CODEX_BIN = prevBin;
+      rmSync(binDirLocal, { recursive: true, force: true });
+    }
+  });
+
+  test("a codex backup's catalog stored under another CLI version judges nothing, so the raw list never refuses its model (review S-B)", async () => {
+    const { MODEL_MIN_CLI_VERSION } = await import("../shared/types.ts");
+    const discovery = await import("./agent-discovery.ts");
+    const scheduler = await import("./model-discovery.ts");
+    const agentStatus = await import("./agent-status.ts");
+    const model = "gpt-6-sol";
+    const floor = MODEL_MIN_CLI_VERSION.codex?.[model];
+    expect(floor).toBeDefined();
+    const binDirLocal = mkdtempSync(path.join("/tmp", "agetor-failover-codexver-"));
+    const stub = path.join(binDirLocal, "codex");
+    writeFileSync(stub, '#!/bin/sh\necho "codex-cli 0.100.0"\n', { mode: 0o755 });
+    const prevBin = process.env.AGETOR_CODEX_BIN;
+    process.env.AGETOR_CODEX_BIN = stub;
+    seq++;
+    const id = `fo-codexver-${seq}`;
+    const home = path.join(process.env.AGETOR_DATA_DIR!, "homes", id);
+    mkdirSync(path.join(home, ".codex"), { recursive: true });
+    writeFileSync(path.join(home, ".codex", "auth.json"), "{}");
+    dbm.harnesses.insert({ id, kind: "codex", label: id, home, env: {} } as never);
+    const prefKey = `modelCatalog:harness:${id}`;
+    try {
+      await agentStatus.cachedCliVersion(dbm.harnesses.get(id)!);
+      const member = { harnessId: id, enabled: true, label: id };
+      discovery.__testing.resetForTests();
+      scheduler.__testing.resetForTests();
+      // A list saved before a CLI upgrade: it lacks the model, and its version
+      // is not the one the CLI reports now.
+      dbm.preferences.set(prefKey, JSON.stringify({ v: 1, cliVersion: "codex-cli 0.099.0", savedAt: 1, models: [{ id: "some-other-model" }] }));
+      discovery.seedDiscoveryCache({ scope: "harness", kind: "codex", harnessId: id }, [{ id: "some-other-model" }]);
+      scheduler.__testing.hydrateFromStore();
+      // Judged by neither list nor "not offered": only the frozen floor speaks.
+      expect(fo.memberUnusableReason(member, { model } as never)).toBe(`CLI older than ${floor}`);
+    } finally {
+      dbm.preferences.delete(prefKey);
+      scheduler.__testing.resetForTests();
+      discovery.__testing.resetForTests();
+      if (prevBin === undefined) delete process.env.AGETOR_CODEX_BIN; else process.env.AGETOR_CODEX_BIN = prevBin;
+      rmSync(binDirLocal, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("a 1-member stack is inert (22a) and prepare moves record `unavailable`", () => {
+  let harnessSwapEvents: typeof import("./harness-swap-history.ts").harnessSwapEvents;
+  beforeAll(async () => {
+    harnessSwapEvents = (await import("./harness-swap-history.ts")).harnessSwapEvents;
+  });
+  test("an unusable lone member gets the normal pre-flight: ok, no move, no state, no history", async () => {
+    const a = account();
+    const b = account();
+    const stack = stacks.harnessStacks.create({ label: "inert", kind: "claude-code", members: [a, b] });
+    const taskId = makeTask(a);
+    stacks.harnessStacks.update(stack.id, { members: [a] } as never);
+    dbm.harnesses.setEnabled(a, false);
+    try {
+      const res = await fo.prepareTaskHarness(taskId, { manual: false });
+      expect(res).toEqual({ ok: true });
+      expect(dbm.tasks.get(taskId)!.agent).toBe(a);
+      expect(dbm.tasks.get(taskId)!.harnessState ?? null).toBeNull();
+      expect(harnessSwapEvents.page(stack.id, { limit: 10 }).events).toHaveLength(0);
+    } finally {
+      dbm.harnesses.setEnabled(a, true);
+      stacks.harnessStacks.delete(stack.id);
+    }
+  });
+
+  test("an unavailable current account moves to the backup with exactly one `unavailable` row", async () => {
+    const a = account();
+    const b = account();
+    const stack = stacks.harnessStacks.create({ label: "unavail", kind: "claude-code", members: [a, b] });
+    const taskId = makeTask(a);
+    dbm.harnesses.setEnabled(a, false);
+    try {
+      const res = await fo.prepareTaskHarness(taskId, { manual: false });
+      expect(res.ok).toBe(true);
+      expect(dbm.tasks.get(taskId)!.agent).toBe(b);
+      const rows = harnessSwapEvents.page(stack.id, { limit: 10 }).events.filter((e) => e.taskId === taskId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ trigger: "unavailable", fromHarnessId: a, toHarnessId: b });
+    } finally {
+      dbm.harnesses.setEnabled(a, true);
       stacks.harnessStacks.delete(stack.id);
     }
   });

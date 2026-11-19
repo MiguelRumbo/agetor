@@ -8,8 +8,18 @@ import {
   Workflow,
 } from "lucide-react";
 import { api, type AgentModelMap } from "@/lib/api";
-import { discoveredEffortsFor, hasDiscoveredCatalog, mergeModelOptions } from "../../../shared/model-options.ts";
-import { isSpeed, supportedSpeeds } from "../../../shared/speed.ts";
+import {
+  buildModelOptions,
+  CLI_AUTHORITATIVE_CATALOG_KINDS,
+  effortOptionsFor,
+  resolveDefaultEffort,
+  resolveDefaultModel,
+  seedModelStep,
+  speedNoticeFor,
+  speedOptionsFor,
+  speedTiersKnown,
+} from "../../../shared/model-catalog.ts";
+import { isSpeed } from "../../../shared/speed.ts";
 import { promptByteOverage } from "../../../shared/prompt-limits.ts";
 import { composeLaunchPrompt } from "../../../shared/agent-profile.ts";
 import { resolveStartStep } from "../../../shared/pipeline.ts";
@@ -22,12 +32,10 @@ import { Switch } from "@/components/ui/switch";
 import { cn, formatTokens } from "@/lib/utils";
 import {
   AGENT_OPTIONS,
-  CATALOG_SCOPED_KINDS,
   CODE_PLAN_MODE,
   DEFAULT_EFFORT,
   DEFAULT_MODEL,
   DEFAULT_TASK_TYPE,
-  cursorModelIdCoveredByCatalog,
   cursorModelSupportsMaxMode,
   defaultModeFor,
   supportedEfforts,
@@ -48,9 +56,12 @@ import { StackPositionChip } from "./StackBadge";
 import { AgentProfileCard } from "./AgentProfileCard";
 import { AgentProfilePicker } from "./AgentProfilePicker";
 import { HarnessAuthHint } from "./HarnessAuthHint";
+import { stackBackupCanServe } from "@/lib/stack-launch";
 import { PipelinePicker } from "@/components/pipelines";
 import { showsSpeedPicker, SpeedPicker } from "./SpeedPicker";
-import { ProjectPicker } from "./ProjectPicker";
+import { useProjectSelection } from "./ProjectSelection";
+import { repositoryFileScopes } from "@/lib/repo-selection";
+import { selectionPayload } from "@/lib/worktree-payload";
 import { TaskTypePicker } from "./TaskTypePicker";
 import { captureDroppedOrPastedItems } from "./ReferencesPicker";
 import { PromptComposer, usePromptCapture } from "./PromptComposer";
@@ -235,18 +246,19 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
   // the form from the kind now selected, not the kind at mount.
   const kindRef = useRef(kind);
   kindRef.current = kind;
-  // workdir starts empty — the OS cwd / home is NOT auto-added as a project.
-  // After the user picks (or adds) one and submits a task, we retain the value
-  // so the next task pre-fills with the same project ("previous task's project
-  // is the default for the next"). On a cold start with prior tasks, the
-  // ProjectPicker will auto-select the most-recently-used project from the
-  // persisted list.
-  const [workdir, setWorkdir] = useState("");
-  // Owns the isolate toggle, base-ref, and branch-name field state/derivations
-  // — see `WorktreeOptions.tsx`. Declared here (before the mode/model state)
-  // since `wt.isolate`/`wt.baseRef` are read further down by the `fileScope`
-  // memo passed to `<PromptComposer fileScope={…}>`.
-  const wt = useWorktreeOptions({ workdir, title, taskType });
+  // Combined project selection (single + multi): `repos` is the single source
+  // of truth for the selection *and* every per-project base ref, and `workdir`
+  // is derived from its first entry. Nothing is selected on a cold start — the
+  // OS cwd / home is NOT auto-added as a project. `autoSelect` then promotes
+  // the most-recently-added project once the list resolves, so a returning user
+  // lands on their previous project without an extra click. After a submit the
+  // selection (and every chosen ref) is kept for the next task.
+  const { repos, setRepos, workdir, multiRepo } = useProjectSelection({ autoSelect: true });
+  // Owns the isolate toggle (forced for 2+) and the branch-name field state —
+  // see `WorktreeOptions.tsx`. Declared here (before the mode/model state) since
+  // `wt.effectiveIsolate` is read further down by the `fileScope` memo passed to
+  // `<PromptComposer fileScope={…}>`.
+  const wt = useWorktreeOptions({ workdir, title, taskType, forceIsolate: multiRepo });
   const [mode, setMode] = useState<string>(initialMode("claude-code"));
   const [model, setModel] = useState<string>(DEFAULT_MODEL["claude-code"]);
   // `null` is reserved for the Haiku-style "model doesn't accept effort" case.
@@ -296,9 +308,19 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
   // `docs/plans/at-file-references.md` §3.3). Memoized so `useProjectFiles`'s
   // effect (keyed on `scope.dir`/`scope.ref`) doesn't see a new object
   // identity — and therefore doesn't refire — on every unrelated re-render.
-  const fileScope = useMemo(
-    () => (workdir.trim() ? { dir: workdir.trim(), ref: wt.isolate ? (wt.baseRef.trim() || "HEAD") : null } : null),
-    [workdir, wt.isolate, wt.baseRef],
+  const fileScope = useMemo(() => {
+    const dir = workdir.trim();
+    if (!dir) return null;
+    // A single project's base ref is its own entry's; multi tasks use the
+    // per-project `fileScopes` below.
+    const ref = repos[0]?.baseRef?.trim() || "HEAD";
+    return { dir, ref: wt.effectiveIsolate ? ref : null };
+  }, [workdir, repos, wt.effectiveIsolate]);
+  // Multi-repository `@` scopes: each selected repo lists at its own path and
+  // pinned/HEAD ref; entries are prefixed with the workspace name.
+  const fileScopes = useMemo(
+    () => (multiRepo ? repositoryFileScopes(repos, wt.effectiveIsolate) : null),
+    [multiRepo, repos, wt.effectiveIsolate],
   );
   // Drag/paste-to-attach wiring for the prompt textarea, shared with the
   // aside-wide drop zone below (`onAsideDrop`) — see `PromptComposer.tsx`'s
@@ -309,6 +331,16 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
   // picks (mode/model/effort are kind-specific, not alias-specific).
   // Reads/writes happen synchronously inside `switchAgent` — no effects, so
   // no transient wrong-slot writes on render commit.
+  // A remembered `lastModel:<kind>` the curated list does not carry (a model
+  // only the CLI's catalog lists), held until discovery shows it is real, and
+  // the kinds whose model the user has already chosen by hand this session.
+  const pendingSeed = useRef<Partial<Record<AgentKind, { model: string; effort: string | null; applied?: boolean }>>>({});
+  const modelTouched = useRef<Partial<Record<AgentKind, boolean>>>({});
+  // True once the remembered picks above have been read (or failed to read):
+  // the seed effect below re-runs on it, because the catalog rows can land
+  // BEFORE the preferences do, and a remembered model only the catalog knows
+  // would then never be applied.
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
   const agentCache = useRef<Record<AgentKind, { mode: string; model: string; effort: string | null; speed: Speed; maxMode: boolean }>>({
     "claude-code": { mode: initialMode("claude-code"), model: DEFAULT_MODEL["claude-code"], effort: DEFAULT_EFFORT["claude-code"], speed: "off", maxMode: false },
     "codex": { mode: initialMode("codex"), model: DEFAULT_MODEL["codex"], effort: DEFAULT_EFFORT["codex"], speed: "off", maxMode: false },
@@ -345,17 +377,24 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
         if (md && AGENT_OPTIONS[a].modes.some((x) => x.id === md)) {
           agentCache.current[a].mode = md;
         }
-        if (m && AGENT_OPTIONS[a].models.some((x) => x.id === m)) {
+        if (m && !CLI_AUTHORITATIVE_CATALOG_KINDS.has(a) && AGENT_OPTIONS[a].models.some((x) => x.id === m)) {
           agentCache.current[a].model = m;
+        } else if (m) {
+          // A remembered model the curated list does not carry (one the
+          // CLI's own catalog added): this seed runs before discovery has
+          // loaded, so hold it and let the effect below apply it once the
+          // rows show the model is real — and only if the user has not
+          // already picked one.
+          pendingSeed.current[a] = { model: m, effort: e ?? null };
         }
-        if (e) {
+        if (e && !pendingSeed.current[a]) {
           // No discovered-efforts argument here: this seed effect runs once
           // on mount with `[]` deps, before harness discovery has resolved,
-          // so `agentModels`/`harnessModels` are still empty at this point
-          // and `discoveredEffortsFor` would always read back `null` —
-          // effectively dead. Validate against the curated table only; the
-          // render-path `efforts` below (keyed on `effortsKey`, which reacts
-          // to `agentModels`/`harnessModels` updates) is the authoritative
+          // so the discovered rows are still empty at this point and the
+          // discovered efforts would always read back `null` — effectively
+          // dead. Validate against the curated table only; the render-path
+          // `efforts` below (keyed on `effortsKey`, which reacts to
+          // `agentModels`/`harnessModels` updates) is the authoritative
           // check once discovery actually lands.
           const supported = supportedEfforts(a, agentCache.current[a].model);
           if (supported.some((x) => x.id === e)) {
@@ -385,7 +424,11 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
       setEffort(active.effort);
       setSpeed(active.speed);
       setMaxMode(active.maxMode);
-    }).catch(() => { /* preferences failure is non-fatal — defaults stay */ });
+      setPrefsLoaded(true);
+    }).catch(() => {
+      /* preferences failure is non-fatal — defaults stay */
+      if (!cancelled) setPrefsLoaded(true);
+    });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -408,7 +451,10 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
   };
 
   const selectedStatus = agents.find((a) => a.harnessId === agent);
-  const { models: staticModels } = AGENT_OPTIONS[kind];
+  // The chosen account can't start on its own but its stack has a usable
+  // backup the core moves to: the launch pickers say so instead of showing a
+  // red "not installed" box next to an enabled Create button.
+  const stackFallback = stackBackupCanServe(agent, stacks, harnesses, agents);
   // `auto` is only valid on models that support real `--permission-mode auto`
   // (all current claude models); other models would error at spawn. supportedModes
   // filters the dropdown so the user can't pick an incompatible combo.
@@ -419,66 +465,100 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
   // (keyed by harness id — distinguishes a second `fx-2` account from the
   // built-in fx harness) over the kind-level map, which only exists as a
   // fallback for an older daemon predating `GET /agent-models/harnesses`.
-  const discoveredForAgent = (harnessModels[agent] ?? agentModels[kind] ?? [])
-    .filter((m) => kind !== "cursor" || !cursorModelIdCoveredByCatalog(m.id));
-  const models = mergeModelOptions({
-    curated: staticModels,
+  const discoveredForAgent = harnessModels[agent] ?? agentModels[kind] ?? [];
+  const models = buildModelOptions(kind, {
     discovered: discoveredForAgent,
     selected: model,
-    scoped: CATALOG_SCOPED_KINDS.has(kind),
     loggedIn: selectedStatus?.loggedIn ?? null,
   });
+  const modelsKey = models.filter((m) => !m.unlisted).map((m) => m.id).join(",");
   // Effort options depend on both kind and model — re-derived each render
   // so a model switch immediately narrows the dropdown. When the new model
   // doesn't accept any effort (Haiku 4.5), effort drops to `null` and the
-  // dropdown disables itself. Otherwise we re-pin to the kind's default
-  // effort when supported, falling back to the highest available option.
-  // The CLI's own discovered per-model efforts (when reported) win over the
-  // curated table — see `supportedEfforts`'s third argument. Unlike
-  // RunPanel's task-details cascade, there's no prior intent to retain here
-  // (a new task doesn't exist yet), so this uses the discovered-wins set
-  // strictly. Reads from `models` (the merged rows just above), not the raw
+  // dropdown disables itself. Otherwise we re-pin to the default effort
+  // (`resolveDefaultEffort`: the kind default when offered, else the CLI's own
+  // default, else the first row). The CLI's own discovered per-model efforts
+  // win over the curated table. There's no prior intent to retain here (a new
+  // task doesn't exist yet), so this uses the discovered-wins set strictly.
+  // Reads from `models` (the merged rows just above), not the raw
   // `harnessModels`/`agentModels` maps, so a logged-out harness's discovery
   // is distrusted here the same way `mergeModelOptions` rule 7 distrusts it
   // for the Model picker — rule 8 stays a single source.
-  const efforts = supportedEfforts(kind, model, discoveredEffortsFor(models, model));
+  const efforts = effortOptionsFor(kind, model, models);
   const effortsKey = efforts.map((o) => o.id).join(",");
   const maxModeAvailable = kind === "cursor" && cursorModelSupportsMaxMode(model);
-  // Speed tiers the selected kind/model/effort offers (`supportedSpeeds`,
+  // Speed tiers the selected kind/model/effort offers (`speedOptionsFor`,
   // always starting with "off"): cursor's Fast variant follows the
-  // model/effort pair, fx's Fast/Ultrafast come only from the discovered
-  // catalog's per-model flags (rule 8 copies them onto the merged row).
-  const speedOptions = supportedSpeeds(kind, model, effort, models.find((m) => m.id === model));
-  // fx's tiers are only trustworthy once discovery has a catalog for this
+  // model/effort pair; fx's Fast/Ultrafast, codex's service tier and
+  // claude's Fast mode come only from the discovered catalog's per-model
+  // flags (rule 8 copies them onto the merged row).
+  const speedOptions = speedOptionsFor(kind, model, effort, models);
+  // The tiers are only trustworthy once discovery has a catalog for this
   // harness (and rule 7 isn't distrusting it for a logged-out harness) —
-  // until then an fx model reads `["off"]` and must not reset a stored tier.
-  const speedTiersKnown = hasDiscoveredCatalog(discoveredForAgent) && selectedStatus?.loggedIn !== false;
-  // A user model change: fx resets a tier the new model doesn't offer, but
-  // only when the tiers are known (plan §3.1, D16) — never on load or while
-  // discovery is still empty. cursor's own reset is the effect below.
+  // until then a discovered-tier model reads `["off"]` and must not reset a
+  // stored tier.
+  const tiersKnown = speedTiersKnown(kind, discoveredForAgent, selectedStatus?.loggedIn ?? null);
+  const speedNotice = speedNoticeFor(kind, model, speed, models);
+  // A user model change: reset a tier the new model doesn't offer, but only
+  // when the tiers are known (plan §3.1, D16) — never on load or while
+  // discovery is still empty. The effect below handles an effort change.
   const changeModel = (next: string) => {
+    modelTouched.current[kind] = true;
     setModel(next);
-    if (kind !== "fx" || speed === "off" || !speedTiersKnown) return;
-    const nextOptions = supportedSpeeds(kind, next, effort, models.find((m) => m.id === next));
+    if (speed === "off" || !tiersKnown) return;
+    const nextOptions = speedOptionsFor(kind, next, effort, models);
     if (!nextOptions.includes(speed)) setSpeed("off");
   };
+  // Apply a remembered model the curated list lacked (or the CLI's own
+  // default) once the loaded rows show it is real — unless the user has
+  // already chosen one. Never fights a later manual pick.
+  useEffect(() => {
+    if (!prefsLoaded || modelTouched.current[kind]) return;
+    const pending = pendingSeed.current[kind];
+    const step = pending
+      ? seedModelStep(kind, pending.model, models, discoveredForAgent, selectedStatus?.loggedIn ?? null)
+      : null;
+    // Not carried yet: wait while discovery has nothing trustworthy for this harness.
+    if (step?.action === "wait") return;
+    if (pending && step?.action === "apply") {
+      if (!pending.applied) {
+        pending.applied = true;
+        agentCache.current[kind].model = step.model;
+        setModel(step.model);
+        const offered = effortOptionsFor(kind, step.model, models);
+        if (pending.effort && offered.some((o) => o.id === pending.effort)) setEffort(pending.effort);
+      }
+      // A codex/copilot model only the frozen curated rows vouch for stays
+      // pending: a trusted catalog that then lacks it sends the form back to the
+      // default below, instead of leaving it on a model the CLI refuses.
+      if (step.confirmed) delete pendingSeed.current[kind];
+      return;
+    }
+    // No remembered pick (or a trusted catalog lacking it): start on the owner's
+    // default model, or the CLI's own when its trusted catalog lacks that one.
+    if (step?.action !== "default" && model !== DEFAULT_MODEL[kind]) return;
+    const preferred = resolveDefaultModel(kind, discoveredForAgent, selectedStatus?.loggedIn ?? null);
+    agentCache.current[kind].model = preferred;
+    if (preferred !== model) setModel(preferred);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, modelsKey, prefsLoaded]);
   useEffect(() => {
     if (efforts.length === 0) {
       if (effort !== null) setEffort(null);
       return;
     }
     if (effort !== null && efforts.some((e) => e.id === effort)) return;
-    const fallback = efforts.some((e) => e.id === DEFAULT_EFFORT[kind])
-      ? DEFAULT_EFFORT[kind]
-      : efforts[0]!.id;
+    const fallback = resolveDefaultEffort(kind, model, models);
     setEffort(fallback);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, model, effortsKey]);
-  const cursorSpeedKey = kind === "cursor" ? speedOptions.join(",") : null;
+  // A tier the (known) options no longer include falls back to Off: after a
+  // model or effort change on cursor, or once a kind's catalog has loaded.
+  const speedKey = tiersKnown ? speedOptions.join(",") : null;
   useEffect(() => {
-    if (cursorSpeedKey === null || speed === "off") return;
-    if (!cursorSpeedKey.split(",").includes(speed)) setSpeed("off");
-  }, [cursorSpeedKey, speed]);
+    if (speedKey === null || speed === "off") return;
+    if (!speedKey.split(",").includes(speed)) setSpeed("off");
+  }, [speedKey, speed]);
   useEffect(() => {
     if (!maxModeAvailable && maxMode) setMaxMode(false);
   }, [maxModeAvailable, maxMode]);
@@ -613,7 +693,7 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
       : promptByteOverage(overageKind, composeLaunchPrompt(selectedProfile, prompt));
 
   const canSubmit =
-    title.trim() && prompt.trim() && workdir.trim() && wt.valid
+    title.trim() && prompt.trim() && repos.length > 0 && wt.valid
     && promptOverage == null;
 
   const submit = ({ start }: { start: boolean }) => {
@@ -628,11 +708,15 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
         // from the profile anyway (`createTask`); sending them here too
         // keeps the request body self-consistent for any other consumer.
         agent: effectiveAgent,
-        workdir: workdir.trim(),
-        // The branch is only meaningful under worktree isolation — see
-        // `worktreePayload` for the isolation/baseRef/branch mapping this
-        // spreads in.
-        ...wt.payload(),
+        // `selectionPayload` is the single mapping from the combined selection
+        // to workdir/isolation/baseRef/branch/repositories: one project keeps
+        // the historical single-repository shape, 2+ always sends worktree
+        // isolation with one per-project entry. See `worktree-payload.ts`.
+        ...selectionPayload({
+          repos,
+          isolate: wt.effectiveIsolate,
+          branchSubmitValue: wt.branchField.submitValue,
+        }),
         // model is always an explicit option id. effort is too, except for
         // the Haiku-style "model doesn't accept effort" case which sends null.
         mode: selectedProfile ? selectedProfile.mode : mode,
@@ -666,7 +750,9 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
       void api.setPreference(`lastMode:${kind}`, mode).catch(() => {});
       void api.setPreference(`lastModel:${kind}`, model).catch(() => {});
       if (effort !== null) void api.setPreference(`lastEffort:${kind}`, effort).catch(() => {});
-      void api.setPreference(`lastSpeed:${kind}`, kind === "cursor" || kind === "fx" ? speed : "off").catch(() => {});
+      // The tier as it stands after any fall-back to Off, for every kind, so a
+      // tier the model could not offer never lingers in the memory.
+      void api.setPreference(`lastSpeed:${kind}`, speed).catch(() => {});
       void api.setPreference(`lastMaxMode:${kind}`, String(kind === "cursor" && maxMode)).catch(() => {});
     }
     setTitle("");
@@ -674,10 +760,11 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
     setReferences([]);
     capture.clearDropHint();
     wt.resetAfterSubmit();
+    // The project selection and its per-project refs stay for the next task.
     setAgentProfileId(null);
     setPipelineId(null);
-    // Keep `workdir`, `model`, `effort`, `mode` set on purpose — the next
-    // task should default to the same project + picks the user just used.
+    // Keep the selection, `model`, `effort`, `mode` set on purpose — the next
+    // task should default to the same projects + picks the user just used.
   };
 
   // Sidebar-wide drag/drop — anything dropped on the form (not just the
@@ -805,6 +892,7 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
                 references={references}
                 onReferencesChange={setReferences}
                 fileScope={fileScope}
+                fileScopes={fileScopes}
                 textareaRef={promptRef}
                 capture={capture}
                 startingFolder={workdir || undefined}
@@ -817,25 +905,15 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
                 )}
               />
 
-              {/* Project + Branch each get their own full-width row. Side-by-side in
-                  the ~140px-per-column grid clipped all but the shortest names; full
-                  width lets the picker triggers render the full project/branch name. */}
-              <div className="min-w-0 space-y-1">
-                <label className="text-muted-foreground">{t("Project")}</label>
-                <ProjectPicker
-                  value={workdir}
-                  onChange={(p) => {
-                    setWorkdir(p);
-                    // The previously-picked branch likely doesn't exist on the new
-                    // project — drop back to HEAD so the picker shows a valid default.
-                    wt.resetBaseRef();
-                  }}
-                  autoSelectFirst
-                  placement="bottom"
-                  title={t("Pick the working directory the agent runs in. Add new ones with the folder picker at the bottom of the list.")}
-                />
-              </div>
-              <WorktreeOptions state={wt} />
+              {/* One Select Projects control for the whole project/branch
+                  section: full-width button → per-project Branch rows →
+                  Isolate → Branch name. No separate single-project picker and
+                  no separate Repositories control. */}
+              <WorktreeOptions
+                state={wt}
+                repos={repos}
+                onReposChange={setRepos}
+              />
 
               {/* "One selection" (plan D1/D5): a picked pipeline replaces
                   the Agent picker AND the entire manual harness/mode/model/
@@ -1111,7 +1189,7 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
                 </div>
               )}
 
-              {(kind === "cursor" || kind === "fx") && showsSpeedPicker(speedOptions, speed) && (
+              {showsSpeedPicker(speedOptions, speed) && (
                 <div className="space-y-1">
                   <label className="text-muted-foreground">{t("Speed")}</label>
                   <SpeedPicker
@@ -1119,6 +1197,7 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
                     options={speedOptions}
                     value={speed}
                     onChange={setSpeed}
+                    {...speedNotice}
                   />
                 </div>
               )}
@@ -1143,7 +1222,7 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
 
               {/* Surfacing a missing-agent error inline so the user sees install
                   guidance before they hit Create and get a delayed failure. */}
-              {selectedStatus && !selectedStatus.available && (
+              {selectedStatus && !selectedStatus.available && !stackFallback && (
                 <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-[11px] text-destructive-foreground">
                   <div className="font-medium">{selectedStatus.reason}</div>
                   {selectedStatus.installHint && (
@@ -1158,6 +1237,11 @@ export function NewTaskForm({ onSubmit, agents, harnesses, stacks = [], profiles
                   reports the actionable error if the turn actually needs
                   credentials. This is a heads-up, not a disable. */}
               <HarnessAuthHint status={selectedStatus} />
+              {stackFallback && selectedStatus && (!selectedStatus.available || selectedStatus.loggedIn === false) && (
+                <p data-testid="launch-stack-fallback-hint" className="text-[11px] text-muted-foreground">
+                  This account can't start right now — the run starts on the next usable account in its stack.
+                </p>
+              )}
               </>
               )}
               </>

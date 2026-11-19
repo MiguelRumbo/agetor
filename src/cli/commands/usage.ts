@@ -22,7 +22,7 @@ export async function cmdUsage(args: string[], flags: Flags): Promise<void> {
       default: throw usageError("usage");
     }
   }
-  const report = await (await getClient(flags)).getUsage(query);
+  const report = await (await getClient(flags)).getRunUsage(query);
   if (flags.json) return printJson(report);
 
   const counts = (row: Omit<TaskUsageSummary, "total">) =>

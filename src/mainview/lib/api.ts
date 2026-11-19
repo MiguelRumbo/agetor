@@ -14,7 +14,12 @@ import type {
   HarnessLimitState,
   HarnessStack,
   HarnessStackInput,
+  HarnessStackChanged,
   HarnessStackWarning,
+  HarnessSwapHistoryPage,
+  MirrorPreview,
+  MirrorRestoreResult,
+  SwitchAccountResult,
   RetentionPassResult,
   GitHubIssueThreadResult,
   GitHubItemKind,
@@ -45,6 +50,7 @@ import type {
   GitHubPullCommit,
   GitHubPullCommitsResult,
   GitHubPullDefaultsResult,
+  PullTargetsResult,
   GitHubPullLineComment,
   GitHubPullMergeability,
   GitHubPullMergeMethod,
@@ -104,6 +110,7 @@ import type {
 import { TASK_EVENTS_REPLAY_META_EVENT } from "../../shared/types.ts";
 import { parseReplayMeta } from "../../shared/task-stream-resume.ts";
 import type { NotificationKind } from "../../shared/os-notification.ts";
+import type { DiscoveredModel } from "../../shared/model-options.ts";
 import type {
   BundleExportResponse,
   BundlePickResponse,
@@ -115,6 +122,7 @@ import { ApiTransitError, fetchWithRecovery } from "./net-retry.ts";
 import { configureCoreBusy, suspendCoreBusy, trackRequest } from "./core-busy.ts";
 import { opencodeSkipBody } from "./opencode-interactions.ts";
 import { openEventStream } from "./sse-fetch.ts";
+import { setProviderInfoFetcher } from "./provider-info-cache.ts";
 
 export interface UpdateSnapshot {
   status: UpdateStatus;
@@ -217,14 +225,14 @@ export interface AvailableExtension {
  *  built-in harness only — see `HarnessModelMap` for the per-harness list a
  *  multi-account setup needs. */
 export interface AgentModelMap {
-  "claude-code": { id: string; label?: string; efforts?: string[]; fast?: boolean; ultrafast?: boolean }[];
-  "codex": { id: string; label?: string; efforts?: string[]; fast?: boolean; ultrafast?: boolean }[];
-  "cursor": { id: string; label?: string; efforts?: string[]; fast?: boolean; ultrafast?: boolean }[];
-  "gemini": { id: string; label?: string; efforts?: string[]; fast?: boolean; ultrafast?: boolean }[];
-  "antigravity": { id: string; label?: string; efforts?: string[]; fast?: boolean; ultrafast?: boolean }[];
-  "fx": { id: string; label?: string; efforts?: string[]; fast?: boolean; ultrafast?: boolean }[];
-  "opencode": { id: string; label?: string; efforts?: string[]; fast?: boolean; ultrafast?: boolean }[];
-  "copilot": { id: string; label?: string; efforts?: string[]; fast?: boolean; ultrafast?: boolean }[];
+  "claude-code": DiscoveredModel[];
+  "codex": DiscoveredModel[];
+  "cursor": DiscoveredModel[];
+  "gemini": DiscoveredModel[];
+  "antigravity": DiscoveredModel[];
+  "fx": DiscoveredModel[];
+  "opencode": DiscoveredModel[];
+  "copilot": DiscoveredModel[];
 }
 
 /** Per-harness model id list from `GET /agent-models/harnesses` — one entry
@@ -238,7 +246,7 @@ export interface AgentModelMap {
  *  `fast`/`ultrafast` the fx speed-tier flags (`supportedSpeeds`). */
 export interface HarnessModelMap {
   ready: boolean;
-  byHarness: Record<string, { id: string; label?: string; efforts?: string[]; fast?: boolean; ultrafast?: boolean }[]>;
+  byHarness: Record<string, DiscoveredModel[]>;
 }
 
 /** Pending multi-question card. Claude's scraper cards omit the Cursor
@@ -288,6 +296,11 @@ export interface PendingTmuxPrompt {
    *  that case. The RunPanel renders an "Open in Terminal" fallback card
    *  instead of choice buttons. */
   unparsable?: boolean;
+  /** True when the pane's own widget shows no `N.` prefixes, so the card
+   *  hides the synthetic keys too (`matchUnnumberedModal` — issue #298's
+   *  Chrome startup prompt). Display-only: `choices[].key` is still what the
+   *  answer route validates. See `tmuxChoiceLabel`. */
+  hideKeys?: boolean;
 }
 
 /** The ACP tool call an fx permission request is asking about — mirrors
@@ -418,6 +431,25 @@ export class ApiError extends Error {
   }
 }
 
+/** A stack edit lost the optimistic-concurrency race: the core answered 409
+ *  `stack-changed` and `current` is the stack as stored now. Callers reload the
+ *  editor from it instead of showing a generic failure. */
+export class StackChangedApiError extends ApiError {
+  readonly current: HarnessStack;
+  constructor(message: string, body: HarnessStackChanged) {
+    super(message, 409, body);
+    this.name = "StackChangedApiError";
+    this.current = body.stack;
+  }
+}
+
+function isStackChangedBody(body: unknown): body is HarnessStackChanged {
+  return Boolean(body) && typeof body === "object"
+    && (body as { code?: unknown }).code === "stack-changed"
+    && typeof (body as { stack?: unknown }).stack === "object"
+    && (body as { stack?: unknown }).stack !== null;
+}
+
 function j<T>(
   path: string,
   init?: RequestInit,
@@ -530,6 +562,8 @@ export interface HarnessesPayload {
   stacks?: HarnessStack[];
   /** Account-global limit cooldowns currently in force. */
   limitStates?: HarnessLimitState[];
+  /** Account ids that have mirror records (a restore is possible). */
+  mirrorRestorable?: string[];
 }
 export interface HarnessStacksPayload { stacks: HarnessStack[]; limitStates: HarnessLimitState[] }
 export interface HarnessStackResult {
@@ -651,12 +685,61 @@ export const api = {
     j<HarnessStackResult>(`/harness-stacks/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
-    }, { retry: false }),
+    }, { retry: false }).catch((err: unknown) => {
+      // `patch.expectedUpdatedAt` set and stale: surface the typed conflict.
+      if (err instanceof ApiError && err.status === 409 && isStackChangedBody(err.body)) {
+        throw new StackChangedApiError(err.message, err.body);
+      }
+      throw err;
+    }),
+  /** Swap history of one stack, newest first. `before` is the previous page's
+   *  `nextCursor`. */
+  getHarnessStackHistory: (id: string, opts: { limit?: number; before?: string | null } = {}) => {
+    const qs = new URLSearchParams();
+    if (opts.limit !== undefined) qs.set("limit", String(opts.limit));
+    if (opts.before) qs.set("before", opts.before);
+    const q = qs.toString();
+    return j<HarnessSwapHistoryPage>(`/harness-stacks/${encodeURIComponent(id)}/history${q ? `?${q}` : ""}`);
+  },
+  /** Dry run of a stack save: what the mirror would add/update/remove. */
+  previewHarnessMirror: (draft: {
+    kind: HarnessStackInput["kind"];
+    members: string[];
+    mirrorMode?: HarnessStackInput["mirrorMode"];
+    stackId?: string;
+  }) =>
+    j<MirrorPreview>("/harness-stacks/mirror-preview", { method: "POST", body: JSON.stringify(draft) }),
+  /** Put an account's mirror backups back. `retry: false` — a replay after a
+   *  lost response would run the restore twice. */
+  restoreHarnessMirror: (id: string) =>
+    j<MirrorRestoreResult>(`/harnesses/${encodeURIComponent(id)}/mirror-restore`, { method: "POST" }, { retry: false }),
+  /** Clear an account's cooldown (all rows, or only `model`'s). */
+  clearHarnessCooldown: (id: string, opts?: { model?: string | null; accountWideOnly?: boolean } | string) => {
+    const o = typeof opts === "string" ? { model: opts } : opts ?? {};
+    const qs = o.model ? `?model=${encodeURIComponent(o.model)}` : o.accountWideOnly ? "?scope=account" : "";
+    return j<{ cleared: true; rearmed?: number; limitStates: HarnessLimitState[] }>(
+      `/harnesses/${encodeURIComponent(id)}/limit-state${qs}`,
+      { method: "DELETE" },
+    );
+  },
+  /** Move a stacked task to its next account now (idle) or after the turn
+   *  (live run). 409 refusals carry a `SwitchAccountRefusal` body on the
+   *  thrown `ApiError`. `retry: false` — a replay could switch twice. */
+  switchTaskAccount: (taskId: string) =>
+    j<SwitchAccountResult>(`/tasks/${encodeURIComponent(taskId)}/switch-account`, { method: "POST" }, { retry: false }),
+  cancelScheduledAccountSwitch: (taskId: string) =>
+    j<{ task: Task; cancelled?: boolean }>(`/tasks/${encodeURIComponent(taskId)}/switch-account`, { method: "DELETE" }),
   deleteHarnessStack: (id: string) =>
     j<{ removed: true }>(`/harness-stacks/${encodeURIComponent(id)}`, { method: "DELETE" }),
   createHarness: (input: HarnessInput) =>
     j<Harness>("/harnesses", { method: "POST", body: JSON.stringify(input) }),
-  updateHarness: (id: string, patch: Partial<Omit<HarnessInput, "id" | "kind">>) =>
+  /** A `home`/`env` edit that would drop the account's config-mirror records
+   *  is refused with 409 `mirror-records` unless `confirmMirrorDrop` is set
+   *  (`saveConfirmingMirrorDrop` in harness-edit-confirm.ts). */
+  updateHarness: (
+    id: string,
+    patch: Partial<Omit<HarnessInput, "id" | "kind">> & { confirmMirrorDrop?: boolean },
+  ) =>
     j<Harness>(`/harnesses/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
@@ -723,6 +806,18 @@ export const api = {
    *  404 unknown task, 409 archived. */
   detachTaskAgentProfile: (taskId: string) =>
     j<Task>(`/tasks/${encodeURIComponent(taskId)}/agent-profile`, { method: "DELETE" }),
+  /** Remove one repository from a multi-repository task (issue #291): its
+   *  clean checkout is detached, its branch is kept. 404 unknown task or
+   *  repository; 409 `{error, code}` when refused (`running`,
+   *  `last-repository`, `dirty`, `not-multi`, `pipeline-step`, `detach-failed`) — the
+   *  thrown `ApiError` carries the core's message. `retry: false`: a replay
+   *  after a lost answer would 404 on the repository it already removed. */
+  removeTaskRepository: async (taskId: string, name: string): Promise<Task> =>
+    (await j<{ task: Task }>(
+      `/tasks/${encodeURIComponent(taskId)}/repositories/${encodeURIComponent(name)}`,
+      { method: "DELETE" },
+      { retry: false },
+    )).task,
   listPipelines: () => j<Pipeline[]>("/pipelines"),
   getPipeline: (id: string) => j<Pipeline>(`/pipelines/${encodeURIComponent(id)}`),
   createPipeline: (input: PipelineInput) =>
@@ -850,6 +945,10 @@ export const api = {
       { method: "POST" },
     ),
   listProjects: () => j<Project[]>("/projects"),
+  /** Resolve a selected path to its git top-level (issue #291) — used by the
+   *  Select Projects dialog to dedupe a selection by repository root. */
+  getProjectRepoRoot: (path: string) =>
+    j<{ root: string }>(`/projects/repo-root?path=${encodeURIComponent(path)}`),
   /** The native folder panel; registers the pick as a project. */
   pickProject: (startingFolder?: string) =>
     withCoreBusySuspended(() =>
@@ -1110,6 +1209,26 @@ export const api = {
     const q = new URLSearchParams({ path: input.path });
     return j<GitHubPullDefaultsResult>(`/github/pull-defaults?${q.toString()}`);
   },
+  // Create-all-PRs facts for one repository: its forge identity, remotes,
+  // default branch, remote branch list, whether each `heads` entry exists on
+  // the remote, and whether the task's stored base is stale (docs/architecture/multi-repo-tasks.md).
+  getPullTargets: (input: {
+    path: string;
+    heads: string[];
+    storedBase?: string | null;
+    storedBaseSha?: string | null;
+    liveHead?: string | null;
+    /** `false` skips the forge branch listing (existence is then looked up by name). */
+    listBranches?: boolean;
+  }) => {
+    const q = new URLSearchParams({ path: input.path });
+    for (const head of input.heads) q.append("head", head);
+    if (input.listBranches === false) q.set("branches", "none");
+    if (input.storedBase) q.set("storedBase", input.storedBase);
+    if (input.storedBaseSha) q.set("storedBaseSha", input.storedBaseSha);
+    if (input.liveHead) q.set("liveHead", input.liveHead);
+    return j<PullTargetsResult & { ok: true }>(`/github/pull-targets?${q.toString()}`);
+  },
   // `kind` ("pulls"|"issues") lets GitLab/Bitbucket route to the right
   // notes/comments endpoint (their APIs split MR/PR comments from issue
   // comments, unlike GitHub's single endpoint) — see git-host.ts's
@@ -1338,14 +1457,18 @@ export const api = {
     body?: string;
     draft?: boolean;
     reviewers?: string[];
-    /** When set, the server persists the created PR's URL onto this task
-     *  (`tasks.pr_url`) atomically with creation — see `Task.prUrl`. */
+    /** When set, the server appends the created PR to this task's `prs`
+     *  atomically with creation — see `Task.prs`. */
     taskId?: string;
   }) =>
+    // `retry: false`: creating a PR is not idempotent, so a dropped response
+    // must never re-send it. A forge's "already exists" answer arrives as an
+    // `ApiError` whose `body` carries `code: "already-exists"` and, when the
+    // forge's own lookup found it, `existingUrl` (read by `alreadyOpenOf`).
     j<{ ok: true; message?: string; item: GitHubListResult["items"][number] }>("/github/pull-create", {
       method: "POST",
       body: JSON.stringify(input),
-    }),
+    }, { retry: false }),
   createGitHubIssue: (input: {
     path: string;
     title: string;
@@ -1651,13 +1774,14 @@ export const api = {
    *  returns up to `limit` (server default 50) matches; `truncated` then
    *  reports the internal 250k scan cap instead of the 20k display cap. See
    *  `searchProjectFiles` (`use-project-files.ts`), the `@` popover's
-   *  consumer of this mode. */
-  listProjectFiles: (scope: { dir: string; ref?: string | null; q?: string | null; limit?: number }) => {
+   *  consumer of this mode. `signal` lets a superseded per-keystroke search
+   *  release its connection (`searchProjectFileScopes`). */
+  listProjectFiles: (scope: { dir: string; ref?: string | null; q?: string | null; limit?: number }, signal?: AbortSignal) => {
     const params = new URLSearchParams({ dir: scope.dir });
     if (scope.ref) params.set("ref", scope.ref);
     if (scope.q != null) params.set("q", scope.q);
     if (scope.limit != null) params.set("limit", String(scope.limit));
-    return j<{ files: string[]; truncated: boolean }>(`/files/index?${params.toString()}`);
+    return j<{ files: string[]; truncated: boolean }>(`/files/index?${params.toString()}`, signal ? { signal } : undefined);
   },
   listTasks: () => j<Task[]>("/tasks"),
   /** Single task by id, fresh from the server (bypasses the 2s board poll's
@@ -1672,6 +1796,10 @@ export const api = {
     agent: string;
     workdir: string;
     isolation: Isolation;
+    /** Selected repositories (issue #291). 2+ makes it a multi-repository
+     *  task; the server validates, dedupes by git root and derives the
+     *  workspace. Requires `isolation: "worktree"`. */
+    repositories?: { path: string; baseRef?: string }[];
     baseRef?: string;
     /** Explicit branch name for worktree isolation. Overrides the project's
      *  nomenclature; the server validates it and makes it unique. */
@@ -1708,8 +1836,11 @@ export const api = {
   }) =>
     // retry: false — a replay would create a duplicate task + branch.
     j<Task>("/tasks", { method: "POST", body: JSON.stringify(input) }, { retry: false }),
-  updateTask: (id: string, patch: Partial<Task>) =>
-    j<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  /** `opts.retry: false` for an account-switch PATCH: the core copies the
+   *  transcript before answering, and a replay after a lost response would
+   *  copy it twice (same reason as `switchTaskAccount`). */
+  updateTask: (id: string, patch: Partial<Task>, opts?: { retry?: boolean }) =>
+    j<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) }, opts),
   moveTask: (id: string, column: ColumnId) =>
     j<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ column }) }),
   deleteTask: (id: string) => j<void>(`/tasks/${id}`, { method: "DELETE" }),
@@ -1780,8 +1911,11 @@ export const api = {
   // Terminal tabs. State is in-memory on the bun side; the live byte stream
   // runs over the WebSocket whose URL `terminalSocketUrl` builds.
   listTerminals: (taskId: string) => j<TerminalTab[]>(`/tasks/${taskId}/terminals`),
-  createTerminal: (taskId: string) =>
-    j<TerminalTab>(`/tasks/${taskId}/terminals`, { method: "POST" }),
+  createTerminal: (taskId: string, repo?: string | null) =>
+    j<TerminalTab>(`/tasks/${taskId}/terminals`, {
+      method: "POST",
+      body: JSON.stringify(repo ? { repo } : {}),
+    }),
   closeTerminal: (id: string) => j<void>(`/terminals/${id}`, { method: "DELETE" }),
   /** Mint a single-use, 30 s ticket for a terminal's duplex stream and return
    *  the ws:// URL that redeems it (P7/D13). WebSockets can't set the
@@ -1823,7 +1957,8 @@ export const api = {
   listSubagents: (taskId: string) => j<Subagent[]>(`/tasks/${taskId}/subagents`),
   /** Everything the task's worktree changed vs its pinned base. Empty `files`
    *  + a `note` when there's no worktree or no diff. */
-  getTaskDiff: (taskId: string) => j<TaskDiff>(`/tasks/${taskId}/diff`),
+  getTaskDiff: (taskId: string, repo?: string | null) =>
+    j<TaskDiff>(`/tasks/${taskId}/diff${repo ? `?repo=${encodeURIComponent(repo)}` : ""}`),
   getTaskGitStatus: (taskId: string) =>
     j<TaskGitStatus>(`/tasks/${taskId}/git-status`),
   /** Which branches deleting the task would remove (`task.branch`, plus the
@@ -2014,8 +2149,8 @@ export const api = {
    *  cwd (worktree or workdir), mirroring what `getTaskDiff`'s underlying
    *  `git diff` compared. Fetched with the header, never used as a bare
    *  `<img src>`. */
-  taskDiffBlobUrl: (taskId: string, path: string, side: "old" | "new"): string =>
-    `${BASE}/tasks/${taskId}/diff/blob?path=${encodeURIComponent(path)}&side=${side}`,
+  taskDiffBlobUrl: (taskId: string, path: string, side: "old" | "new", repo?: string | null): string =>
+    `${BASE}/tasks/${taskId}/diff/blob?path=${encodeURIComponent(path)}&side=${side}${repo ? `&repo=${encodeURIComponent(repo)}` : ""}`,
 
   /** Absolute, token-less URL for a GitHub PR's binary blob (old or new
    *  side), for `BinaryFilePreview`. Identifying params mirror
@@ -2353,3 +2488,10 @@ export const api = {
     );
   },
 };
+
+// The Create-all-PRs button gate reads each repository's forge identity through
+// a module cache (`provider-info-cache.ts`); this is its one network source.
+setProviderInfoFetcher(async (path) => {
+  const info = await api.getProviderInfo(path);
+  return { host: info.host, owner: info.owner, name: info.name, remoteHost: info.remoteHost };
+});

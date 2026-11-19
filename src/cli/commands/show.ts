@@ -3,9 +3,13 @@ import { resolveTask } from "../resolve.ts";
 import { c, out, printJson } from "../output.ts";
 import { usageError } from "../usage.ts";
 import { ApiError, type AgetorClient } from "../api-client.ts";
-import { defaultModeFor, type Run, type Task } from "../../shared/types.ts";
+import { DEFAULT_MODEL, defaultModeFor, type Run, type Task } from "../../shared/types.ts";
 import { pipelineStepProgress, stepNameById } from "../../shared/pipeline.ts";
+import { harnessMoveNote, harnessStackBannerMode, memberReasonText, memberStateText, stackPositionText } from "../../shared/harness-stack.ts";
+import { coolingText, limitRowsForModel } from "../stack-display.ts";
 import { escapeControlChars, escapeFreeText, truncateText } from "../../shared/terminal-text.ts";
+import { asAgentKind, modelDisplayName } from "../../shared/model-display.ts";
+import { isMultiRepoTask } from "../../shared/multi-repo.ts";
 import { colorRunStatus } from "./pipeline.ts";
 import { profileHarnessContext, type ProfileHarnessContext } from "./agent-profile.ts";
 
@@ -28,10 +32,16 @@ export function failoverText(
   if (ex.inFlight === true || task.column === "running") {
     return `running on ${accountLabel ?? task.agent} after a quota reset (${attempt})`;
   }
-  if (ex.attempts >= ex.max) return "every account is out of quota — run the task manually after a reset";
-  if (ex.nextAttemptAt > 0) return `waiting until ${new Date(ex.nextAttemptAt).toLocaleString()} (${attempt})`;
-  if (ex.reason !== "no-usable-member") return `retrying on the next available account (${attempt})`;
-  return "no usable account — fix one in Settings";
+  if (ex.reason === "no-usable-member") {
+    if (ex.attempts >= ex.max) return "blocked: no usable account — fix one under Settings → Harnesses (or agetor harness …)";
+    if (ex.nextAttemptAt > 0) {
+      return `blocked: no usable account — retrying at ${new Date(ex.nextAttemptAt).toLocaleString()} (${attempt})`;
+    }
+    return "blocked: no usable account — fix one under Settings → Harnesses (or agetor harness …)";
+  }
+  if (ex.attempts >= ex.max) return "out of quota — run the task manually after a reset";
+  if (ex.nextAttemptAt > 0) return `out of quota — waiting until ${new Date(ex.nextAttemptAt).toLocaleString()} (${attempt})`;
+  return `out of quota — retrying on the next available account (${attempt})`;
 }
 
 export async function cmdShow(args: string[], flags: Flags): Promise<void> {
@@ -67,21 +77,61 @@ export async function cmdShow(args: string[], flags: Flags): Promise<void> {
   // an agent, each step launches on its own frozen profile (L-CLI4).
   const agentNote = task.pipelineId ? c.dim(" (start step's harness — steps own the launch)") : "";
   out(
-    `  ${label("column")} ${colorColumn(task.column)}   ${label("agent")} ${task.agent}${agentNote}` +
-      `   ${label("model")} ${escapeControlChars(task.model ?? "-")}   ${label("mode")} ${escapeControlChars(modeText)}`,
+    `  ${label("column")} ${colorColumn(task.column)}   ${label("agent")} ${escapeControlChars(task.agent)}${agentNote}` +
+      `   ${label("model")} ${task.model ? escapeFreeText(modelDisplayName(task.agentProfile?.harnessKind ?? asAgentKind(task.agent), task.model)) : "-"}   ${label("mode")} ${escapeControlChars(modeText)}`,
   );
   const stack = (stacksPayload?.stacks ?? []).find((st) => st.members.some((m) => m.harnessId === task.agent));
   if (stack) {
-    const index = stack.members.findIndex((m) => m.harnessId === task.agent);
-    // A one-member stack has nothing to fail over to: no `(1/1)` position.
-    const position = stack.members.length < 2 ? "" : ` (${index + 1}/${stack.members.length})`;
+    // A stack with fewer than two members has no backups: no `(n/m)`.
+    const pos = stackPositionText(stack, task.agent);
+    const position = pos === null ? "" : ` (${pos})`;
     out(`  ${label("stack")} ${escapeFreeText(stack.label)}${position}`);
+    // Only rows that apply to this task's model: the account-wide row and the
+    // row for its resolved model, never another model's.
+    const taskModel = task.model ?? DEFAULT_MODEL[stack.kind];
+    for (const s of limitRowsForModel(stacksPayload?.limitStates ?? [], task.agent, taskModel)) {
+      out(`  ${label("cooling")} ${c.yellow(coolingText(s))}`);
+      const msg = memberStateText(s).message;
+      if (msg) out(`    ${c.dim(escapeFreeText(msg))}`);
+    }
   }
-  if (task.harnessState?.allExhausted) {
+  const hs = task.harnessState;
+  if (hs?.allExhausted) {
     const text = failoverText(task, stack?.members.find((m) => m.harnessId === task.agent)?.label ?? null);
     out(`  ${label("failover")} ${c.yellow(escapeFreeText(text))}`);
+    const resetAt = hs.allExhausted.earliestResetAtMs;
+    if (resetAt != null) out(`    earliest reset: ${new Date(resetAt).toLocaleString()}`);
+    for (const r of hs.allExhausted.memberReasons ?? []) {
+      out(`    - ${escapeFreeText(memberReasonText(r))}`);
+    }
   }
-  out(`  ${label("workdir")} ${c.dim(task.workdir)}`);
+  if (hs?.scheduledSwitch) {
+    out(`  ${label("switch")} ${c.cyan("switch to the next account scheduled for the end of this turn")} ${c.dim(`(agetor switch-account ${task.id.slice(0, 8)} --cancel to undo)`)}`);
+  }
+  // Same TTL and precedence as the webview banner.
+  if (hs?.lastMove?.reason === "switch-now" && harnessStackBannerMode(hs) === "moved") {
+    out(`  ${label("switch")} ${escapeFreeText(harnessMoveNote(hs.lastMove, task.agent))} ${c.dim(`(${new Date(hs.lastMove.at).toLocaleString()})`)}`);
+  }
+  out(`  ${label("workdir")} ${c.dim(escapeControlChars(task.workdir))}`);
+  // `isMultiRepoTask`, not a count: a multi task left with one repository
+  // (issue #291) still prints its repository block.
+  if (isMultiRepoTask(task)) {
+    const repos = task.repositories ?? [];
+    out(`  ${label("repos")} ${repos.length}`);
+    for (const repo of repos) {
+      const branch = repo.branch ? ` (${escapeControlChars(repo.branch)})` : "";
+      const wt = repo.worktreePath ? c.dim(` → ${escapeControlChars(repo.worktreePath)}`) : "";
+      out(`    ${escapeControlChars(repo.name)}: ${c.dim(escapeControlChars(repo.path))}${branch}${wt}`);
+      // Each repository records its own last-seen checkout (the scalar
+      // `checkoutBranch` is null on a multi row), so drift is per repository.
+      if (repo.checkoutBranch && repo.checkoutBranch !== repo.branch) {
+        out(
+          `      ${label("checkout")} ${escapeControlChars(repo.checkoutBranch)}` +
+            (repo.branch != null ? c.yellow(" (drifted from repository branch)") : ""),
+        );
+      }
+    }
+  }
   if (task.branch) out(`  ${label("branch")} ${escapeControlChars(task.branch)}`);
   // Last-seen worktree checkout (recorded at run start/settle, terminal open,
   // archive). Drift off the task branch is tolerated, so say where it is.

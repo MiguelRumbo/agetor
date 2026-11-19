@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { Archive, ArchiveRestore, ArrowRight, Bot, CheckCircle2, FolderOpen, GitBranch, GitCompare, ListTodo, MessageCircleQuestion, Paperclip, PauseCircle, Play, Square, Terminal, Trash2, UserCheck } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowRight, Bot, CheckCircle2, FolderOpen, GitBranch, GitCompare, GitFork, ListTodo, MessageCircleQuestion, Paperclip, PauseCircle, Play, Square, Terminal, Trash2, UserCheck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,13 +14,16 @@ import { useCountdown, fxPausedBadgeText, fxPausedBadgeTitle } from "@/lib/fx-au
 import { useConfirm } from "@/components/ui/confirm";
 import { taskTypeMeta, type HarnessLimitState, type HarnessStack, type Task } from "../../../shared/types.ts";
 import { sentFileBasename } from "../../../shared/sent-files.ts";
+import { asAgentKind, modelDisplayName } from "../../../shared/model-display.ts";
 import { isTaskFxPaused } from "../../../shared/fx-recovery.ts";
 import { importedSessionOf } from "../../../shared/imported-session.ts";
+import { isMultiRepoTask } from "../../../shared/multi-repo.ts";
+import { repositoryCountLabel } from "@/lib/multi-repo-ui";
 import { AgentIcon } from "./AgentIcon";
 import { PipelineBadge } from "@/components/pipelines";
 import { StackBadge } from "./StackBadge";
-import { stackBadgeStateFor } from "@/lib/stack-badge";
 import { t } from "@/lib/i18n";
+import { activeCooldown, resolvedTaskModel, stackBadgeStateFor } from "@/lib/stack-badge";
 
 interface Props {
   task: Task;
@@ -63,6 +66,9 @@ interface Props {
 
 function TaskCardImpl({ task, homeDir, stacks = [], limitStates = [], onStart, onCancel, onDelete, onOpen, onOpenAttention, onReviewPipeline, onDiff, onMarkDone, onArchive, onUnarchive, isOpen, onContextMenu }: Props) {
   const archived = task.archivedAt != null;
+  // Model-aware (review S2): a per-model row counts only for the model this
+  // task resolves to; an account-wide row always counts.
+  const cardCooldown = activeCooldown(limitStates, task.agent, resolvedTaskModel(task, stacks), Date.now());
   // Last-seen worktree checkout (server-recorded; no git spawn on the 2 s
   // poll) vs the branch agetor created. Drift is tolerated — just shown.
   const branchDrift = driftOf(task.branch ?? null, task.checkoutBranch);
@@ -318,20 +324,38 @@ function TaskCardImpl({ task, homeDir, stacks = [], limitStates = [], onStart, o
           )}
           <StackBadge
             state={stackBadgeStateFor(task, stacks)}
-            coolingUntilMs={limitStates.find((s) => s.harnessId === task.agent)?.exhaustedUntilMs ?? null}
+            coolingUntilMs={cardCooldown?.exhaustedUntilMs ?? null}
+            coolingModel={cardCooldown?.model ?? null}
             running={task.column === "running"}
             className="shrink-0"
           />
         </div>
         {(task.model || task.mode) && (
           <span className="self-end text-[10px] font-mono text-muted-foreground">
-            {[task.model, task.mode].filter(Boolean).join(" · ")}
+            {[task.model ? modelDisplayName(task.agentProfile?.harnessKind ?? asAgentKind(task.agent), task.model) : null, task.mode].filter(Boolean).join(" · ")}
           </span>
         )}
         <CardTitle className="text-sm break-words">{task.title}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
         <p className="text-xs text-muted-foreground line-clamp-2">{task.prompt}</p>
+        {isMultiRepoTask(task) ? (
+          // Multi-repository card (issue #291): one worktree icon + count with
+          // a hover tooltip naming every repository, instead of a single
+          // workdir and branch line (the workspace root is not a repository).
+          <div
+            className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground"
+            data-testid="task-card-repositories"
+            title={(task.repositories ?? []).map((r) => `${r.name}: ${r.worktreePath ?? r.path}`).join("\n")}
+          >
+            <GitFork className="size-3 shrink-0" />
+            <span className="shrink-0 font-medium">{repositoryCountLabel(task.repositories?.length ?? 0)}</span>
+            <span className="truncate opacity-80">
+              · {(task.repositories ?? []).map((r) => r.name).join(", ")}
+            </span>
+          </div>
+        ) : (
+          <>
         <p
           className="text-[10px] text-muted-foreground/70 font-mono truncate"
           title={task.workdir}
@@ -360,6 +384,8 @@ function TaskCardImpl({ task, homeDir, stacks = [], limitStates = [], onStart, o
               </span>
             )}
           </div>
+        )}
+          </>
         )}
         <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
           {archived ? (

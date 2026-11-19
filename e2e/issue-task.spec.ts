@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test, expect, type APIRequestContext, type E2EBackend, type Locator, type Page } from "./fixtures";
-import { gotoApp } from "./helpers";
+import { dialogBranchPicker, gotoApp, openSelectProjects, selectBaseBranch } from "./helpers";
 import { startGitHubStub, type GitHubStub, type StubRoute } from "./github-stub";
 
 /**
@@ -108,6 +108,7 @@ const CONVERGE_TIMEOUT = 30_000;
 
 let stub: GitHubStub;
 let projectDir: string;
+let extraRepoDir: string;
 const createdTaskIds: string[] = [];
 
 function git(cwd: string, args: string[]): void {
@@ -381,7 +382,9 @@ async function openIssueTaskDialog(page: Page): Promise<Locator> {
 
 test.beforeAll(async ({ backend }) => {
   projectDir = await initRepo();
+  extraRepoDir = await initRepo();
   await registerProject(backend.apiBase, backend.apiToken, projectDir);
+  await registerProject(backend.apiBase, backend.apiToken, extraRepoDir);
   stub = await startGitHubStub(backend.githubStubPort, issueRoutes());
 });
 
@@ -419,6 +422,7 @@ test.afterAll(async ({ backend }) => {
   }
   await stub.close();
   await rm(projectDir, { recursive: true, force: true });
+  await rm(extraRepoDir, { recursive: true, force: true });
 });
 
 /** DELETE /tasks/:id via the `request` fixture — the per-test cleanup call.
@@ -448,6 +452,7 @@ async function findTaskByTitle(
   pipelineId: string | null;
   agentProfileId: string | null;
   pipelineRun: { status: string } | null;
+  repositories?: { path: string; name: string }[];
 } | null> {
   const res = await request.get(`${backend.apiBase}/tasks`, {
     headers: { authorization: `Bearer ${backend.apiToken}` },
@@ -468,6 +473,7 @@ async function findTaskByTitle(
     pipelineId?: string | null;
     agentProfileId?: string | null;
     pipelineRun?: { status: string } | null;
+    repositories?: { path: string; name: string }[];
   }>;
   const row = rows.find((r) => r.title === title);
   if (!row) return null;
@@ -732,6 +738,68 @@ test.describe("task from a Git issue", () => {
     createdTaskIds.splice(createdTaskIds.indexOf(taskId), 1);
   });
 
+  test("select projects: the issue's repository is locked and an extra repo is added", async ({
+    page,
+    request,
+    backend,
+  }) => {
+    test.setTimeout(90_000);
+    await gotoApp(page, backend.bootBase);
+    const issueTaskDialog = await openIssueTaskDialog(page);
+
+    // The old separate "Repositories / Manage" control is gone: the same
+    // full-width Select Projects button New Task uses is the only surface.
+    await expect(issueTaskDialog.getByRole("button", { name: "Manage", exact: true })).toHaveCount(0);
+    await issueTaskDialog.getByTestId("select-projects-button").click();
+    const reposDialog = page.getByRole("dialog", { name: "Select projects" });
+    await expect(reposDialog).toBeVisible({ timeout: CONVERGE_TIMEOUT });
+
+    // The issue's own repository is pinned by `lockedPath`: it starts
+    // checked, can't be unchecked, and its remove button is disabled.
+    const locked = reposDialog.getByLabel(`Select ${projectDir}`, { exact: true });
+    await expect(locked).toBeChecked();
+    await expect(locked).toBeDisabled();
+    await expect(reposDialog.getByLabel(`Remove ${projectDir}`, { exact: true })).toBeDisabled();
+    await locked.click({ force: true }).catch(() => {});
+    await expect(locked).toBeChecked();
+
+    await reposDialog.getByLabel(`Select ${extraRepoDir}`, { exact: true }).check();
+    await reposDialog.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(reposDialog).toBeHidden({ timeout: CONVERGE_TIMEOUT });
+    await expect(issueTaskDialog.getByTestId("select-projects-button")).toContainText("2 projects selected");
+    // Two projects force (and disable) worktree isolation.
+    await expect(issueTaskDialog.getByTestId("isolate-toggle")).toBeChecked();
+    await expect(issueTaskDialog.getByTestId("isolate-toggle")).toBeDisabled();
+
+    await expect(issueTaskDialog.getByTestId("issue-task-submit")).toBeEnabled({
+      timeout: CONVERGE_TIMEOUT,
+    });
+    await issueTaskDialog.getByTestId("issue-task-submit").click();
+
+    // Poll for THIS task (the baseline scenario shares its title): the set
+    // must stay issue-repo-first and include the extra repository.
+    let taskId: string | null = null;
+    await expect(async () => {
+      const res = await request.get(`${backend.apiBase}/tasks`, {
+        headers: { authorization: `Bearer ${backend.apiToken}` },
+      });
+      expect(res.ok()).toBeTruthy();
+      const rows = (await res.json()) as Array<{ id: string; repositories?: { path: string }[] }>;
+      taskId = rows.find((r) => r.repositories?.some((repo) => repo.path === extraRepoDir))?.id ?? null;
+      expect(taskId).not.toBeNull();
+    }).toPass({ timeout: CONVERGE_TIMEOUT });
+
+    const res = await request.get(`${backend.apiBase}/tasks/${taskId}`, {
+      headers: { authorization: `Bearer ${backend.apiToken}` },
+    });
+    const task = (await res.json()) as { repositories?: { path: string }[] };
+    expect(task.repositories?.map((repo) => repo.path)).toEqual([projectDir, extraRepoDir]);
+
+    createdTaskIds.push(taskId!);
+    await deleteTask(request, backend, taskId!);
+    createdTaskIds.splice(createdTaskIds.indexOf(taskId!), 1);
+  });
+
   test("isolate off: unchecking Isolate creates a task with no worktree", async ({ page, request, backend }) => {
     test.setTimeout(60_000);
     await gotoApp(page, backend.bootBase);
@@ -773,23 +841,24 @@ test.describe("task from a Git issue", () => {
 
     const worktreeOptions = issueTaskDialog.getByTestId("worktree-options");
 
-    // BranchPicker's label and its SearchSelect trigger aren't DOM siblings
-    // (the label shares a flex row with the Git Pull/Fetch buttons), so find
-    // the trigger by its tooltip instead — WorktreeOptions.tsx sets this
-    // exact title while isolated.
-    const branchTrigger = worktreeOptions.getByTitle(BRANCH_PICKER_TITLE);
-    await branchTrigger.scrollIntoViewIfNeeded();
+    // The issue repo's branch picker lives under its row in the Select
+    // Projects dialog (nested in this one). Its trigger carries this exact
+    // tooltip while isolated (SelectProjectsDialog.tsx's BASE_REF_TITLE).
+    const projects = await openSelectProjects(page, issueTaskDialog);
+    const branchTrigger = projects.getByTitle(BRANCH_PICKER_TITLE);
     await branchTrigger.click();
 
-    const search = worktreeOptions.getByPlaceholder("Search branches…");
+    const search = projects.getByPlaceholder("Search branches…");
     await expect(search).toBeVisible({ timeout: CONVERGE_TIMEOUT });
     await search.fill("develop");
 
-    const popover = worktreeOptions.locator("[data-popover-open]");
+    const popover = projects.locator("[data-popover-open]");
     const developRow = popover.locator("button").filter({ hasText: "develop" }).first();
     await expect(developRow).toBeVisible({ timeout: CONVERGE_TIMEOUT });
-    await developRow.scrollIntoViewIfNeeded();
     await developRow.click();
+    await projects.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(projects).toBeHidden({ timeout: CONVERGE_TIMEOUT });
+    await expect(worktreeOptions.getByTestId("selected-branches")).toContainText("develop");
 
     const branchNameInput = worktreeOptions.getByTestId("branch-name-input");
     await expect(branchNameInput).toBeVisible();
@@ -1298,16 +1367,47 @@ test.describe("task from a Git issue", () => {
     await page.getByTestId("pipelines-back").click();
     await expect(page.getByTestId("pipelines-page")).toHaveCount(0, { timeout: CONVERGE_TIMEOUT });
     issueTaskDialog = await openIssueTaskDialog(page);
-    // Wait for BranchPicker's automatic "preselect the current branch" seed
-    // (`main`) to land BEFORE opening Manage: that seed must not count as a
-    // user edit, or a pristine draft would ask "Discard…?" here (execution
-    // note 1: `baseRefDirty` split from the auto-selected `baseRef`).
-    await expect(
-      issueTaskDialog.getByTestId("worktree-options").getByTitle(BRANCH_PICKER_TITLE),
-    ).toContainText("main", { timeout: CONVERGE_TIMEOUT });
+    // Open Select Projects, let BranchPicker's automatic "preselect the
+    // current branch" seed (`main`) land, and Save without touching it: the
+    // seed is dropped on Save, so it must not count as a user edit, or a
+    // pristine draft would ask "Discard…?" here.
+    const projects = await openSelectProjects(page, issueTaskDialog);
+    await expect(dialogBranchPicker(projects, projectDir).getByTitle(BRANCH_PICKER_TITLE)).toContainText("main", {
+      timeout: CONVERGE_TIMEOUT,
+    });
+    await projects.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(projects).toBeHidden({ timeout: CONVERGE_TIMEOUT });
+    await expect(issueTaskDialog.getByTestId("selected-branches")).toContainText("current branch");
     manage = await openPipelineManageRow(issueTaskDialog);
     await manage.click();
     await expect(issueTaskDialog).toBeHidden({ timeout: CONVERGE_TIMEOUT });
     await expect(page.getByTestId("pipelines-page")).toBeVisible({ timeout: CONVERGE_TIMEOUT });
+  });
+
+  test("pipeline picker: a user-picked base ref counts as a dirty draft", async ({ page, backend }) => {
+    test.setTimeout(90_000);
+    await gotoApp(page, backend.bootBase);
+    const issueTaskDialog = await openIssueTaskDialog(page);
+    const summary = issueTaskDialog.getByTestId("worktree-options").getByTestId("selected-branches");
+
+    // BranchPicker's automatic "preselect the current branch" seed must not
+    // count as a user edit (covered by the clean case above), but a ref the
+    // user picks themselves and saves must: only picks are saved, and a saved
+    // ref is what sets `refDirty`.
+    await selectBaseBranch(page, issueTaskDialog, projectDir, "develop");
+    await expect(summary).toContainText("develop", { timeout: CONVERGE_TIMEOUT });
+
+    const manage = await openPipelineManageRow(issueTaskDialog);
+    await manage.click();
+    await expect(page.getByText("Discard this task draft and open Pipelines?")).toBeVisible({
+      timeout: CONVERGE_TIMEOUT,
+    });
+    // Cancel keeps the dialog and the picked ref.
+    const confirmDialog = page
+      .locator('[role="dialog"]')
+      .filter({ has: page.getByText("Discard this task draft and open Pipelines?") });
+    await confirmDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(issueTaskDialog).toBeVisible();
+    await expect(summary).toContainText("develop");
   });
 });

@@ -8,9 +8,13 @@ import { mergeSentFiles as mergeSentFilesShared } from "../shared/sent-files.ts"
 import { parseTaskFxRecovery } from "../shared/fx-recovery.ts";
 import { HARNESS_STACK_CONTINUATION_TAG, parseTaskHarnessState, type TaskHarnessState } from "../shared/types.ts";
 import { isHarnessStackContinuation } from "../shared/harness-stack.ts";
-import { normalizeDeliveredUserText } from "../shared/user-message.ts";
+import { handoffCopySessionIdFromPath } from "../shared/harness-mirror.ts";
+import { normalizeDeliveredUserText, type CleanRetryRow } from "../shared/user-message.ts";
 import { isSpeed, speedFromFast } from "../shared/speed.ts";
 import { OPENCODE_SERVER_INPUT_ERROR } from "../shared/opencode.ts";
+import { isMultiRepoTask, repositoriesForTask } from "../shared/multi-repo.ts";
+import { appendTaskPr, firstPrUrl, legacyTaskPrs, parseTaskPrs } from "../shared/task-prs.ts";
+import type { TaskPr, TaskRepository } from "../shared/types.ts";
 import { AGENT_PROFILE_LIMITS, normalizeSkillName } from "../shared/agent-profile.ts";
 import { PIPELINE_CONTROL_CHAR_RE, validatePipelineGraph } from "../shared/pipeline.ts";
 import { decideForwardResume, type ForwardResumeSnapshotReason } from "./event-resume.ts";
@@ -88,7 +92,15 @@ type TaskRow = {
   task_type: string;
   branch: string | null; worktree_path: string | null; base_ref: string | null;
   branch_source: string;
+  // Retired by migration 092: still read by the migration's backfill and kept
+  // for a downgrade, but no longer written or read by agetor (`prs` replaced it).
   pr_url: string | null;
+  // Migration 092: the branch NAME `base_ref` was resolved from at create time
+  // (written only by `tasks.insert`), and the PRs opened for the task's branch
+  // as `TaskPr[]` JSON (written only by `tasks.appendPr`). Both are skipped by
+  // the generic `update` SET clause and never bump `updated_at`.
+  base_branch: string | null;
+  prs: string;
   issue_url: string | null;
   mode: string | null; model: string | null; effort: string | null;
   // Speed tier (migration 072, which dropped the old cursor-only `fast`
@@ -143,6 +155,14 @@ type TaskRow = {
   // `tasks.setCheckoutBranch`'s targeted UPDATE, never by the generic
   // `update` SET clause below — same rationale as `sent_files`/`fx_recovery`.
   checkout_branch: string | null;
+  // Multi-repository task support (migration 091, issue #291):
+  // `repositories` is `TaskRepository[]` JSON — `'[]'` for a single-repo row,
+  // whose one entry `toTask` derives from the scalar columns. Written by
+  // `tasks.insert` (create time) and `tasks.setRepositories` (after worktree
+  // preparation) only; skipped by the generic `update` SET clause.
+  // `issue_repo_path` names the repository whose remote matches `issue_url`.
+  repositories: string;
+  issue_repo_path: string | null;
   // Provenance for a Claude Code session imported from outside Agetor
   // (migration 068). Written exclusively by `tasks.setImportedClaude`, never
   // by `tasks.insert` (new rows stay NULL) or the generic `update` SET
@@ -1000,7 +1020,119 @@ function parseImportedOpencode(raw: string | null | undefined): ImportedOpencode
 const readOpencodeServer = (raw: unknown): OpencodeServerMode =>
   (OPENCODE_SERVER_MODES as readonly unknown[]).includes(raw) ? (raw as OpencodeServerMode) : "shared";
 
-const toTask = (r: TaskRow, counts?: TaskCounts): Task => ({
+/**
+ * Parse a `tasks.repositories` column into a validated `TaskRepository[]`.
+ * Anything malformed (not JSON, not an array, an entry missing `path`) reads
+ * as `[]` — the caller then derives the single-repository entry from the
+ * scalar columns, so a corrupted column can never crash a board poll. Values
+ * are re-read defensively because this column is server-managed but still
+ * lives in a user-editable SQLite file.
+ */
+const parseTaskRepositories = (raw: unknown): TaskRepository[] => {
+  if (typeof raw !== "string" || raw.length === 0) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const out: TaskRepository[] = [];
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== "object") continue;
+    const o = entry as Record<string, unknown>;
+    if (typeof o.path !== "string" || o.path.length === 0) continue;
+    if (typeof o.name !== "string" || o.name.length === 0) continue;
+    const branch = typeof o.branch === "string" ? o.branch : null;
+    const checkoutBranch = typeof o.checkoutBranch === "string" ? o.checkoutBranch : null;
+    // An entry written before migration 092 carries a single `prUrl`: convert
+    // it on read (the head is the last-seen checkout, else the branch; the base
+    // and number were never recorded). A stored `prs` always wins.
+    const prs = Array.isArray(o.prs)
+      ? parseTaskPrs(o.prs)
+      : legacyTaskPrs(typeof o.prUrl === "string" ? o.prUrl : null, checkoutBranch ?? branch);
+    out.push({
+      path: o.path,
+      name: o.name,
+      branch,
+      branchSource: o.branchSource === "existing" ? "existing" : "created",
+      worktreePath: typeof o.worktreePath === "string" ? o.worktreePath : null,
+      baseRef: typeof o.baseRef === "string" ? o.baseRef : null,
+      checkoutBranch,
+      prUrl: firstPrUrl(prs),
+      prs,
+      baseBranch: typeof o.baseBranch === "string" ? o.baseBranch : null,
+    });
+  }
+  return out;
+};
+
+/**
+ * The JSON a `tasks.repositories` write stores. The deprecated derived `prUrl`
+ * is dropped (it is recomputed from `prs` on every read), so the column holds
+ * one source of truth per entry.
+ */
+const serializeRepositories = (repos: readonly TaskRepository[]): string =>
+  JSON.stringify(
+    repos.map(({ prUrl, ...rest }) => ({
+      ...rest,
+      // A caller still holding the older shape (a `prUrl` and no `prs`) keeps
+      // its PR: it is converted here, exactly as the read path would.
+      prs: rest.prs ?? legacyTaskPrs(prUrl, rest.checkoutBranch ?? rest.branch),
+    })),
+  );
+
+/**
+ * The one-entry repository array a single-repository row derives, through the
+ * same `repositoriesForTask` every other process uses (so the core and the
+ * webview/CLI can't derive it differently). `branchSource` is normalized here
+ * because the column is free text; the shared helper trusts its input.
+ */
+const derivedRepositories = (r: TaskRow): TaskRepository[] =>
+  repositoriesForTask({
+    workdir: r.workdir,
+    isolation: r.isolation as Task["isolation"],
+    branch: r.branch,
+    branchSource: r.branch_source === "existing" ? "existing" : "created",
+    worktreePath: r.worktree_path,
+    baseRef: r.base_ref,
+    checkoutBranch: r.checkout_branch ?? null,
+    prs: parseTaskPrs(r.prs),
+    baseBranch: r.base_branch ?? null,
+    repositories: [],
+  });
+
+/**
+ * Compare-then-write one entry's `checkoutBranch` in a stored multi-repository
+ * set (`tasks.setRepositoryCheckout`). An empty stored set is a
+ * single-repository row, whose checkout lives in the scalar `checkout_branch`
+ * column instead, so it is left alone. A stored set of ONE entry is a
+ * multi-repository row whose other repositories were removed
+ * (`removeTaskRepository`), so it is written like any multi row. Never bumps
+ * `updated_at`: the column is server-managed
+ * (docs/architecture/persistence.md).
+ */
+function writeRepositoryCheckout(
+  taskId: string,
+  storedRepositories: string | null,
+  repoName: string,
+  value: string | null,
+): void {
+  const repos = parseTaskRepositories(storedRepositories);
+  if (repos.length === 0) return;
+  let changed = false;
+  const next = repos.map((r) => {
+    if (r.name !== repoName || r.checkoutBranch === value) return r;
+    changed = true;
+    return { ...r, checkoutBranch: value };
+  });
+  if (changed) db.run(`UPDATE tasks SET repositories = ? WHERE id = ?`, [serializeRepositories(next), taskId]);
+}
+
+const toTask = (r: TaskRow, counts?: TaskCounts): Task => {
+  const storedRepositories = parseTaskRepositories(r.repositories);
+  const prs = parseTaskPrs(r.prs);
+  return {
   id: r.id,
   title: r.title,
   prompt: r.prompt,
@@ -1013,7 +1145,12 @@ const toTask = (r: TaskRow, counts?: TaskCounts): Task => ({
   branchSource: r.branch_source as Task["branchSource"],
   worktreePath: r.worktree_path,
   baseRef: r.base_ref,
-  prUrl: r.pr_url,
+  // Deprecated and derived from `prs` (the older single field), so older
+  // clients keep working. Null for a multi-repository task, whose PRs live on
+  // `repositories[].prs` and whose task-level list stays empty.
+  prUrl: firstPrUrl(prs),
+  prs,
+  baseBranch: r.base_branch ?? null,
   issueUrl: r.issue_url,
   mode: r.mode,
   model: r.model,
@@ -1043,6 +1180,16 @@ const toTask = (r: TaskRow, counts?: TaskCounts): Task => ({
   pipelineStepId: r.pipeline_step_id ?? null,
   harnessState: parseTaskHarnessState(r.harness_state),
   checkoutBranch: r.checkout_branch ?? null,
+  // Multi-repository rows keep their stored set — one entry included, once
+  // repositories were removed down to one; every single-repository row (and
+  // every legacy row, whose column is `'[]'`) derives exactly one entry from
+  // the scalar columns so callers never branch on `undefined`.
+  repositories: storedRepositories.length > 0 ? storedRepositories : derivedRepositories(r),
+  // Derived, never stored in its own column: only a multi row stores its set
+  // (see `tasks.insert`/`setRepositories`). Every multi/single decision reads
+  // this through `isMultiRepoTask`, never the entry count.
+  multiRepo: storedRepositories.length > 0,
+  issueRepoPath: r.issue_repo_path ?? null,
   importedClaude: parseImportedClaude(r.imported_claude),
   importedOpencode: parseImportedOpencode(r.imported_opencode),
   // Derived, never stored: a monotonic-id watermark comparison, race-free by
@@ -1058,7 +1205,8 @@ const toTask = (r: TaskRow, counts?: TaskCounts): Task => ({
   createdAt: r.created_at,
   updatedAt: r.updated_at,
   archivedAt: r.archived_at,
-});
+  };
+};
 
 /** Send and Retry use this when another task holds the session claim.
  *  A duplicate import's losing row still has `importedClaude` after the
@@ -1214,17 +1362,23 @@ export const tasks = {
     db.run(
       `INSERT INTO tasks
          (id, title, prompt, "column", agent, workdir, isolation, task_type,
-          branch, branch_source, worktree_path, base_ref, pr_url, issue_url, mode, model, effort, speed, max_mode, opencode_server, refs, backlog, draft, plans, todo_progress,
+          branch, branch_source, worktree_path, base_ref, base_branch, prs, issue_url, mode, model, effort, speed, max_mode, opencode_server, refs, backlog, draft, plans, todo_progress,
           agent_profile_id, agent_profile,
           pipeline_id, pipeline_run, pipeline_parent_id, pipeline_step_id,
           checkout_branch,
+          repositories, issue_repo_path,
           last_assistant_event_id, last_seen_event_id,
           run_id, created_at, updated_at, archived_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         t.id, t.title, t.prompt, t.column, t.agent, t.workdir, t.isolation,
         t.taskType,
-        t.branch, t.branchSource, t.worktreePath, t.baseRef, t.prUrl ?? null, t.issueUrl ?? null, t.mode, t.model, t.effort, t.speed, t.maxMode ? 1 : 0,
+        t.branch, t.branchSource, t.worktreePath, t.baseRef,
+        // `pr_url` is retired (migration 092) and stays NULL on new rows.
+        t.baseBranch ?? null,
+        // A caller still on the older shape (a `prUrl`, no `prs`) keeps its PR.
+        JSON.stringify(t.prs ?? legacyTaskPrs(t.prUrl, t.checkoutBranch ?? t.branch, t.updatedAt)),
+        t.issueUrl ?? null, t.mode, t.model, t.effort, t.speed, t.maxMode ? 1 : 0,
         readOpencodeServer(t.opencodeServer),
         JSON.stringify(t.references ?? []),
         JSON.stringify(t.backlog ?? []),
@@ -1238,6 +1392,12 @@ export const tasks = {
         t.pipelineParentId ?? null,
         t.pipelineStepId ?? null,
         t.checkoutBranch ?? null,
+        // Multi-repo rows store their set; single-repo rows store '[]' and
+        // `toTask` derives the one entry from the scalar columns above. A
+        // pipeline step copying a one-repository multi parent passes
+        // `multiRepo: true`, so it stores its one entry and stays multi.
+        isMultiRepoTask(t) && t.repositories && t.repositories.length > 0 ? serializeRepositories(t.repositories) : "[]",
+        t.issueRepoPath ?? null,
         // A brand-new task has never had an assistant event or a mark-seen
         // — both start NULL, which `toTask` reads as `unread: false`.
         null, null,
@@ -1247,7 +1407,7 @@ export const tasks = {
     // Round-trip via `get` so the returned shape carries the computed
     // hasOpenableRun field (false for a brand-new task — but callers
     // that mutate t shouldn't accidentally get a stale shape).
-    return this.get(t.id) ?? { ...t, hasOpenableRun: false, pendingInteractionCount: 0, openTerminalCount: 0, todoProgress: t.todoProgress ?? null, sentFiles: null, fxRecovery: null, agentProfileId: t.agentProfileId ?? null, agentProfile: t.agentProfile ?? null, pipelineId: t.pipelineId ?? null, pipelineRun: t.pipelineRun ?? null, pipelineParentId: t.pipelineParentId ?? null, pipelineStepId: t.pipelineStepId ?? null, checkoutBranch: t.checkoutBranch ?? null, opencodeServer: readOpencodeServer(t.opencodeServer), importedClaude: null, importedOpencode: null, unread: false, hasAssistantMessages: false, archivedAt: null };
+    return this.get(t.id) ?? { ...t, hasOpenableRun: false, pendingInteractionCount: 0, openTerminalCount: 0, todoProgress: t.todoProgress ?? null, sentFiles: null, fxRecovery: null, agentProfileId: t.agentProfileId ?? null, agentProfile: t.agentProfile ?? null, pipelineId: t.pipelineId ?? null, pipelineRun: t.pipelineRun ?? null, pipelineParentId: t.pipelineParentId ?? null, pipelineStepId: t.pipelineStepId ?? null, checkoutBranch: t.checkoutBranch ?? null, repositories: t.repositories ?? [], multiRepo: isMultiRepoTask(t), issueRepoPath: t.issueRepoPath ?? null, opencodeServer: readOpencodeServer(t.opencodeServer), importedClaude: null, importedOpencode: null, unread: false, hasAssistantMessages: false, archivedAt: null };
   },
   /** `fast` is excluded from the patch type: it is only the derived echo of
    *  `speed` (the column migration 072 dropped), so a caller changes the tier
@@ -1308,6 +1468,12 @@ export const tasks = {
     // join the same skip list on the same rationale: both are written only
     // by `tasks.setImportedOpencode` below. `opencode_server` (also 078) is
     // NOT skipped — it is an ordinary patchable launch field like `speed`.
+    // `base_branch` and `prs` (migration 092) join the same skip list: the
+    // first is written only by `tasks.insert` and never changes, the second
+    // only by `tasks.appendPr`'s targeted UPDATE. `pr_url` is retired: the
+    // column stays for a downgrade but nothing writes it any more. A generic
+    // PATCH must never drop a recorded PR, and none of these writes bump
+    // `updated_at`.
     // `harness_state` (migration 084) joins the same skip list: it is written
     // only by `tasks.setHarnessState` below (and the failover engine through
     // it). A generic PATCH must never clobber a pending swap, the retry
@@ -1316,13 +1482,13 @@ export const tasks = {
     db.run(
       `UPDATE tasks SET
          title=?, prompt=?, "column"=?, agent=?, workdir=?, isolation=?, task_type=?,
-         branch=?, branch_source=?, worktree_path=?, base_ref=?, pr_url=?, issue_url=?, mode=?, model=?, effort=?, speed=?, max_mode=?, opencode_server=?, refs=?, backlog=?, draft=?, plans=?, todo_progress=?,
+         branch=?, branch_source=?, worktree_path=?, base_ref=?, issue_url=?, mode=?, model=?, effort=?, speed=?, max_mode=?, opencode_server=?, refs=?, backlog=?, draft=?, plans=?, todo_progress=?,
          run_id=?, updated_at=?, archived_at=?
        WHERE id=?`,
       [
         next.title, next.prompt, next.column, next.agent, next.workdir, next.isolation,
         next.taskType,
-        next.branch, next.branchSource, next.worktreePath, next.baseRef, next.prUrl ?? null, next.issueUrl ?? null, next.mode, next.model, next.effort, next.speed, next.maxMode ? 1 : 0,
+        next.branch, next.branchSource, next.worktreePath, next.baseRef, next.issueUrl ?? null, next.mode, next.model, next.effort, next.speed, next.maxMode ? 1 : 0,
         readOpencodeServer(next.opencodeServer),
         JSON.stringify(next.references ?? []),
         JSON.stringify(next.backlog ?? []),
@@ -1341,7 +1507,12 @@ export const tasks = {
     return this.get(id) ?? next;
   },
   delete(id: string) {
-    db.run(`DELETE FROM tasks WHERE id = ?`, [id]);
+    // The handoff rows cascade with the task; any copies they still hold are
+    // orphaned first so a later sweep can remove them (migration 088).
+    db.transaction(() => {
+      harnessOrphanedCopies.adoptFromTask(id);
+      db.run(`DELETE FROM tasks WHERE id = ?`, [id]);
+    })();
   },
   /**
    * Mark a task's unread watermark caught-up-to-date: `last_seen_event_id`
@@ -1651,6 +1822,141 @@ export const tasks = {
     })();
   },
   /**
+   * Replace a task's pinned repository set (migration 087, issue #291) in one
+   * targeted `UPDATE` — same pattern as `setCheckoutBranch` above: no
+   * `updated_at` bump (the set is server-managed state) and it bypasses the
+   * generic `update`'s SET clause entirely. Used at create time and after
+   * worktree preparation to persist the materialized paths/branches. On a
+   * single-repository row (nothing stored) a set of one entry stores `'[]'` on
+   * purpose, so the row keeps deriving its entry from the scalar columns
+   * (which the caller updates separately). A multi-repository row (something
+   * stored) is never demoted, and never regrows: only incoming entries whose
+   * workspace name the row still stores are kept (names are fixed at creation
+   * and the only later change is `removeTaskRepository`, so a stale snapshot
+   * a prepare took before a removal can't resurrect the removed entry), any
+   * non-empty result is stored, one entry included, and an empty one leaves
+   * the row untouched. An unknown id matches zero rows.
+   *
+   * The caller's array is a *snapshot* taken before one or more awaits
+   * (`prepareTaskWorkdir` can take seconds), so it must not clobber fields
+   * another writer stamped meanwhile. `prs` (append-only, stamped by
+   * `appendRepositoryPr`), `baseBranch` (written at creation) and
+   * `checkoutBranch` (last-seen drift, written by the dedicated
+   * `setRepositoryCheckout` compare-then-write at every refresh point) are
+   * therefore merged from the CURRENT row: a stored value wins, and the
+   * incoming value is only used when nothing is stored yet (first
+   * materialization). Callers that genuinely observed a new checkout record it
+   * through `setRepositoryCheckout` after this call.
+   */
+  setRepositories(taskId: string, repos: TaskRepository[]): Task | null {
+    const cur = this.get(taskId);
+    const byName = new Map((cur?.repositories ?? []).map((r) => [r.name, r]));
+    let stored: TaskRepository[];
+    if (cur?.multiRepo) {
+      stored = repos.filter((r) => byName.has(r.name));
+      if (stored.length === 0) return cur;
+    } else {
+      stored = repos.length > 1 ? repos : [];
+    }
+    const merged = stored.map((r) => {
+      const prev = byName.get(r.name);
+      if (!prev) return r;
+      const prs = prev.prs && prev.prs.length > 0 ? prev.prs : (r.prs ?? []);
+      return {
+        ...r,
+        prs,
+        prUrl: firstPrUrl(prs),
+        baseBranch: prev.baseBranch ?? r.baseBranch ?? null,
+        checkoutBranch: prev.checkoutBranch ?? r.checkoutBranch,
+      };
+    });
+    db.run(`UPDATE tasks SET repositories = ? WHERE id = ?`, [serializeRepositories(merged), taskId]);
+    return this.get(taskId);
+  },
+  /**
+   * Append one pull request to a single-repository task's `prs`, deduped by URL
+   * (a repeated stamp is a no-op). No-op (returns the current row) for a
+   * multi-repository task, whose PRs live on `repositories[].prs`
+   * (`appendRepositoryPr`). The read-modify-write has no await between the get
+   * and the UPDATE, so two concurrent stamps serialize on the JS turn. Never
+   * bumps `updated_at`: server-managed (docs/architecture/persistence.md).
+   */
+  appendPr(taskId: string, entry: TaskPr): Task | null {
+    const cur = this.get(taskId);
+    if (!cur) return null;
+    if (cur.multiRepo) return cur;
+    const prs = appendTaskPr(cur.prs ?? [], entry);
+    if (prs.length === (cur.prs ?? []).length) return cur;
+    db.run(`UPDATE tasks SET prs = ? WHERE id = ?`, [JSON.stringify(prs), taskId]);
+    return this.get(taskId) ?? cur;
+  },
+  /**
+   * Append one pull request to a multi-repository task's entry, deduped by URL.
+   * `selector` matches by workspace name, selected path or worktree path.
+   * No-op (returns the current row) for a single-repository task or an unknown
+   * selector. Never bumps `updated_at`.
+   */
+  appendRepositoryPr(taskId: string, selector: string, entry: TaskPr): Task | null {
+    const cur = this.get(taskId);
+    if (!cur) return null;
+    if (!cur.multiRepo) return cur;
+    let changed = false;
+    const next = (cur.repositories ?? []).map((r) => {
+      const matches = r.name === selector || r.path === selector || r.worktreePath === selector;
+      if (!matches) return r;
+      const prs = appendTaskPr(r.prs ?? [], entry);
+      if (prs.length === (r.prs ?? []).length) return r;
+      changed = true;
+      return { ...r, prs, prUrl: firstPrUrl(prs) };
+    });
+    if (changed) db.run(`UPDATE tasks SET repositories = ? WHERE id = ?`, [serializeRepositories(next), taskId]);
+    return this.get(taskId) ?? cur;
+  },
+  /**
+   * Clear `issue_repo_path` when it still names `repoPath` — the repository
+   * just removed from the task (`removeTaskRepository`), so no remaining
+   * repository's PR claims `Closes #N` for an issue whose repository is gone.
+   * Compare-then-write, targeted, never bumps `updated_at` (server-managed,
+   * docs/architecture/persistence.md).
+   */
+  clearIssueRepoPath(taskId: string, repoPath: string): void {
+    db.run(`UPDATE tasks SET issue_repo_path = NULL WHERE id = ? AND issue_repo_path = ?`, [taskId, repoPath]);
+  },
+  /**
+   * Record the branch last observed checked out in one multi-repository
+   * worktree (`tasks.repositories[].checkoutBranch`), by workspace name.
+   * Same targeted-UPDATE, no-`updated_at` contract as `setCheckoutBranch`;
+   * compare-then-write so an unchanged observation never churns the row.
+   *
+   * Like `setCheckoutBranch`, a write on a pipeline step row is mirrored to
+   * its parent in the same transaction: the steps share the parent's
+   * worktrees, and the parent row is the pipeline's last-seen checkout (D14)
+   * that the next step launch re-attaches to, so a drift a step observed must
+   * not stay on the step alone. The parent's entry is matched by the same
+   * workspace name; a parent without that entry (or without a multi set) is
+   * left untouched.
+   */
+  setRepositoryCheckout(taskId: string, repoName: string, value: string | null): Task | null {
+    let found = false;
+    db.transaction(() => {
+      const row = db
+        .query<{ repositories: string | null; pipeline_parent_id: string | null }, [string]>(
+          `SELECT repositories, pipeline_parent_id FROM tasks WHERE id = ?`,
+        )
+        .get(taskId);
+      if (!row) return;
+      found = true;
+      writeRepositoryCheckout(taskId, row.repositories, repoName, value);
+      if (row.pipeline_parent_id) {
+        const parent = db
+          .query<{ repositories: string | null }, [string]>(`SELECT repositories FROM tasks WHERE id = ?`)
+          .get(row.pipeline_parent_id);
+        if (parent) writeRepositoryCheckout(row.pipeline_parent_id, parent.repositories, repoName, value);
+      }
+    })();
+    return found ? this.get(taskId) : null;
+  },
+  /**
    * Bind (or detach, when both arguments are `null`) a task's agent profile
    * in one targeted `UPDATE` — same pattern as `setFxRecovery` above: no
    * `updated_at` bump (server-managed state, not a task mutation) and it
@@ -1923,6 +2229,9 @@ export const preferences = {
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
       [key, value, Date.now()],
     );
+  },
+  delete(key: string): void {
+    db.run(`DELETE FROM preferences WHERE key = ?`, [key]);
   },
 };
 
@@ -2327,7 +2636,19 @@ export const harnesses = {
       db.run(`DELETE FROM harness_stack_members WHERE harness_id = ?`, [id]);
       db.run(`DELETE FROM harness_limit_state WHERE harness_id = ?`, [id]);
       harnessSessionHandoffs.deleteForHarness(id);
-      if (membership) renumberStackPositions(membership.stack_id);
+      harnessOrphanedCopies.deleteForHarness(id);
+      // Mirror provenance names the account by id with no FK (087); its store
+      // imports this module, so the delete is inline here. Swap-history rows
+      // are kept on purpose (denormalized labels).
+      db.run(`DELETE FROM harness_mirror_provenance WHERE harness_id = ?`, [id]);
+      db.run(`DELETE FROM harness_mirror_sources WHERE harness_id = ?`, [id]);
+      if (membership) {
+        renumberStackPositions(membership.stack_id);
+        // The membership changed, so the stack's `updated_at` must too or an
+        // editor's `expectedUpdatedAt` would not see it. Strictly increasing,
+        // like `harnessStacks.update`.
+        db.run(`UPDATE harness_stacks SET updated_at = MAX(?, updated_at + 1) WHERE id = ?`, [Date.now(), membership.stack_id]);
+      }
     })();
   },
   /**
@@ -2422,17 +2743,34 @@ export const harnessSessionHandoffs = {
   },
   /**
    * Record (or replace) the handoff for one (task, destination, column). The
-   * session id and timestamp are replaced, but `copiedPaths` is MERGED with
-   * the existing row's list (existing order first, duplicates dropped): a file
-   * an earlier transfer copied onto this account is still on disk, and
-   * dropping it from the allowlist would leak it past task delete, retention
-   * and harness delete (docs/architecture/harness-stacks.md). Read and write
-   * share one transaction so two upserts can't lose each other's paths.
+   * session id and timestamp are replaced. For the SAME session `copiedPaths`
+   * is MERGED with the existing row's list (existing order first, duplicates
+   * dropped): a file an earlier transfer copied onto this account is still on
+   * disk, and dropping it from the allowlist would leak it past task delete,
+   * retention and harness delete. For a DIFFERENT session the old paths move
+   * to `harnessOrphanedCopies` under the old session id, because cleanup only
+   * removes paths of the row's own session (docs/architecture/harness-stacks.md).
+   * Read and write share one transaction so two upserts can't lose each
+   * other's paths.
    */
   upsert(handoff: HarnessSessionHandoff): void {
     db.transaction(() => {
       const existing = this.get(handoff.taskId, handoff.harnessId, handoff.columnName);
-      const copiedPaths = [...new Set([...(existing?.copiedPaths ?? []), ...handoff.copiedPaths])];
+      let copiedPaths: string[];
+      if (existing && existing.sessionId !== handoff.sessionId) {
+        // Re-keyed to another session: cleanup removes a path only when its
+        // shape names the row's session, so the old session's copies could
+        // never be removed from here. They move to the orphan store under
+        // their own session id, where a sweep removes them.
+        const incoming = new Set(handoff.copiedPaths);
+        harnessOrphanedCopies.addLabelled(existing, existing.copiedPaths.filter((p) => !incoming.has(p)));
+        copiedPaths = [...incoming];
+      } else {
+        copiedPaths = [...new Set([...(existing?.copiedPaths ?? []), ...handoff.copiedPaths])];
+      }
+      // A path back on a live row (a failed transfer restoring the previous
+      // session) is no longer an orphan.
+      harnessOrphanedCopies.forget(handoff.harnessId, handoff.columnName, handoff.sessionId, copiedPaths);
       db.run(
         `INSERT INTO harness_session_handoffs
            (task_id, harness_id, column_name, session_id, copied_paths_json, created_at)
@@ -2461,6 +2799,70 @@ export const harnessSessionHandoffs = {
       [taskId, harnessId, column],
     );
   },
+  /** Drop a row whose files may still be on disk (a transfer that failed with
+   *  no earlier handoff to restore): its paths move to the orphan store first,
+   *  so a sweep can still remove whatever the copy created. */
+  abandon(taskId: string, harnessId: string, column: SessionIdColumn): void {
+    db.transaction(() => {
+      const row = this.get(taskId, harnessId, column);
+      if (!row) return;
+      harnessOrphanedCopies.add(row.harnessId, row.columnName, row.sessionId, row.copiedPaths);
+      this.deleteOne(taskId, harnessId, column);
+    })();
+  },
+  /**
+   * The boot normalization of one row (see `adoptMismatchedHandoffPaths`):
+   * paths whose shape names another session move to the orphan store under
+   * that session, the rest stay. The row is re-read inside the transaction, so
+   * a transfer that re-keyed or extended it since the caller listed it is
+   * never overwritten; a row stamped 0 (a transfer that never completed, whose
+   * old session is still the resumable one) is left alone. Returns the number
+   * of paths moved.
+   */
+  orphanMismatchedPaths(taskId: string, harnessId: string, column: SessionIdColumn): number {
+    return db.transaction(() => {
+      const row = this.get(taskId, harnessId, column);
+      if (!row || row.createdAt === 0) return 0;
+      const kind = column === "codex_session_id" ? "codex" : "claude-code";
+      const keep: string[] = [];
+      const bySession = new Map<string, string[]>();
+      for (const p of row.copiedPaths) {
+        const sid = handoffCopySessionIdFromPath(kind, path.resolve(p), row.sessionId);
+        if (sid !== null && sid !== row.sessionId) bySession.set(sid, [...(bySession.get(sid) ?? []), p]);
+        else keep.push(p);
+      }
+      if (bySession.size === 0) return 0;
+      let moved = 0;
+      for (const [sid, paths] of bySession) {
+        harnessOrphanedCopies.add(row.harnessId, row.columnName, sid, paths);
+        moved += paths.length;
+      }
+      db.run(
+        `UPDATE harness_session_handoffs SET copied_paths_json = ?
+          WHERE task_id = ? AND harness_id = ? AND column_name = ?`,
+        [JSON.stringify(keep), taskId, harnessId, column],
+      );
+      return moved;
+    })();
+  },
+  listAll(): HarnessSessionHandoff[] {
+    return db
+      .query<HandoffRow, []>(`SELECT * FROM harness_session_handoffs ORDER BY created_at ASC`)
+      .all()
+      .map(toHandoff);
+  },
+  /** True when a live row for this account and column names `sessionId`: its
+   *  files belong to a conversation that can still be resumed. */
+  hasLiveSession(harnessId: string, column: SessionIdColumn, sessionId: string): boolean {
+    return (
+      db
+        .query<{ n: number }, [string, string, string]>(
+          `SELECT COUNT(*) AS n FROM harness_session_handoffs
+            WHERE harness_id = ? AND column_name = ? AND session_id = ?`,
+        )
+        .get(harnessId, column, sessionId)?.n ?? 0
+    ) > 0;
+  },
   listForTask(taskId: string): HarnessSessionHandoff[] {
     return db
       .query<HandoffRow, [string]>(
@@ -2477,6 +2879,222 @@ export const harnessSessionHandoffs = {
       )
       .all(harnessId)
       .map(toHandoff);
+  },
+};
+
+type OrphanedCopyRow = {
+  harness_id: string;
+  column_name: string;
+  session_id: string;
+  path: string;
+  created_at: number;
+};
+
+export interface HarnessOrphanedCopy {
+  harnessId: string;
+  columnName: SessionIdColumn;
+  /** The session the file was copied for: its shape must name it. */
+  sessionId: string;
+  path: string;
+  createdAt: number;
+}
+
+/** The only columns a handoff copy is ever recorded under. The table is
+ *  agent-writable, so a row naming any other column is never returned and is
+ *  never acted on (`forgetForeignColumns` drops it). */
+const ORPHAN_COLUMNS: readonly SessionIdColumn[] = ["claude_session_id", "codex_session_id"];
+
+const toOrphanedCopy = (r: OrphanedCopyRow): HarnessOrphanedCopy | null => {
+  const columnName = ORPHAN_COLUMNS.find((c) => c === r.column_name);
+  if (!columnName) return null;
+  return {
+    harnessId: r.harness_id,
+    columnName,
+    sessionId: r.session_id,
+    path: r.path,
+    createdAt: r.created_at,
+  };
+};
+
+const isOrphanedCopy = (r: HarnessOrphanedCopy | null): r is HarnessOrphanedCopy => r !== null;
+
+/**
+ * The newest `created_at` this process has stamped on (or seen in)
+ * `harness_orphaned_copies`. Stamps only move forward, so a sweep can take a
+ * mark (`sweepMark`) and later forget only the records stamped at or before
+ * it: a record a transfer wrote while the sweep was running is always stamped
+ * after the mark, even within the same millisecond. Seeded from the table on
+ * first use, so a record from an earlier run whose clock was ahead is still
+ * at or below the first mark.
+ *
+ * The table is agent-writable, so the seed reads only integer stamps and is
+ * clamped to {@link ORPHAN_STAMP_SEED_MARGIN_MS} past the wall clock: a
+ * planted `created_at` at or above 2^53 (where `+ 1` no longer changes a
+ * double) or a huge REAL would otherwise freeze every later stamp at one value,
+ * and a sweep would then forget a record written mid-sweep. A row stamped
+ * past the clamp is simply never forgotten by a sweep (the safe side).
+ */
+let orphanStamp: number | null = null;
+
+/** How far ahead of the wall clock an earlier run's stamp may seed the next
+ *  one (a clock that was ahead, then corrected). */
+const ORPHAN_STAMP_SEED_MARGIN_MS = 24 * 60 * 60 * 1000;
+
+function currentOrphanStamp(): number {
+  if (orphanStamp === null) {
+    const max = db
+      .query<{ m: number | null }, []>(
+        `SELECT MAX(created_at) AS m FROM harness_orphaned_copies WHERE typeof(created_at) = 'integer'`,
+      )
+      .get()?.m;
+    const seed = typeof max === "number" && Number.isSafeInteger(max) ? max : 0;
+    orphanStamp = Math.min(seed, Date.now() + ORPHAN_STAMP_SEED_MARGIN_MS);
+  }
+  return orphanStamp;
+}
+
+/** Test seam: forget the seeded stamp, so the next stamp re-reads the table. */
+export function resetOrphanStampForTests(): void {
+  orphanStamp = null;
+}
+
+/** A stamp strictly after every earlier stamp and every mark. */
+function nextOrphanStamp(): number {
+  orphanStamp = Math.max(Date.now(), currentOrphanStamp() + 1);
+  return orphanStamp;
+}
+
+/**
+ * Handoff copies no handoff row can clean up any more (migration 088): the
+ * old session's files after a row was re-keyed, and the kept files of a
+ * deleted task. Each path carries the session it was copied for. The sweep in
+ * `harness-session-transfer.ts` removes them under the handoff cleanup rules;
+ * a path is never removed just because it is listed here.
+ */
+export const harnessOrphanedCopies = {
+  add(harnessId: string, column: SessionIdColumn, sessionId: string, paths: readonly string[]): void {
+    if (paths.length === 0) return;
+    db.transaction(() => {
+      const now = nextOrphanStamp();
+      for (const p of new Set(paths)) {
+        if (typeof p !== "string" || p === "") continue;
+        db.run(
+          `INSERT INTO harness_orphaned_copies (harness_id, column_name, session_id, path, created_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(harness_id, column_name, path) DO UPDATE SET
+             session_id = excluded.session_id,
+             created_at = excluded.created_at`,
+          [harnessId, column, sessionId, p, now],
+        );
+      }
+    })();
+  },
+  /**
+   * A mark for a sweep, taken before it lists the records: every record listed
+   * after it is stamped at or before the mark, and every record written later
+   * (a transfer of the same session recording its pending paths while the
+   * sweep yields) is stamped after it. Pass it to `forget` as `notAfter`.
+   */
+  sweepMark(): number {
+    orphanStamp = Math.max(Date.now(), currentOrphanStamp());
+    return orphanStamp;
+  },
+  /** Forget the listed paths of one session: they are on a live row again, or
+   *  a sweep removed them, found them gone or rejected them as never ours. The
+   *  session id is part of the match, so a path re-orphaned under another
+   *  session meanwhile is kept. With `notAfter` (a sweep's mark), a record
+   *  written after the mark is kept too: it is a newer transfer's pending
+   *  record of a file that transfer may be creating right now. Without it the
+   *  stamp is not compared at all, so a record with a planted `created_at`
+   *  (past 2^53, a REAL, a TEXT) is still forgotten. */
+  forget(
+    harnessId: string,
+    column: SessionIdColumn,
+    sessionId: string,
+    paths: readonly string[],
+    opts: { notAfter?: number } = {},
+  ): void {
+    if (paths.length === 0) return;
+    const notAfter = opts.notAfter;
+    db.transaction(() => {
+      for (const p of new Set(paths)) {
+        if (notAfter === undefined) {
+          db.run(
+            `DELETE FROM harness_orphaned_copies
+              WHERE harness_id = ? AND column_name = ? AND path = ? AND session_id = ?`,
+            [harnessId, column, p, sessionId],
+          );
+        } else {
+          db.run(
+            `DELETE FROM harness_orphaned_copies
+              WHERE harness_id = ? AND column_name = ? AND path = ? AND session_id = ?
+                AND created_at <= ?`,
+            [harnessId, column, p, sessionId, notAfter],
+          );
+        }
+      }
+    })();
+  },
+  /** Drop every record (of one account, when given) whose column is not a
+   *  handoff column. Nothing agetor writes has one, so such a row was planted;
+   *  it is never listed, and this removes it. Returns how many rows went. */
+  forgetForeignColumns(harnessId?: string): number {
+    const placeholders = ORPHAN_COLUMNS.map(() => "?").join(", ");
+    if (harnessId !== undefined) {
+      return db.run(
+        `DELETE FROM harness_orphaned_copies WHERE harness_id = ? AND column_name NOT IN (${placeholders})`,
+        [harnessId, ...ORPHAN_COLUMNS],
+      ).changes;
+    }
+    return db.run(
+      `DELETE FROM harness_orphaned_copies WHERE column_name NOT IN (${placeholders})`,
+      [...ORPHAN_COLUMNS],
+    ).changes;
+  },
+  list(filter: { harnessId?: string } = {}): HarnessOrphanedCopy[] {
+    if (filter.harnessId !== undefined) {
+      return db
+        .query<OrphanedCopyRow, [string]>(
+          `SELECT * FROM harness_orphaned_copies WHERE harness_id = ? ORDER BY created_at ASC, path ASC`,
+        )
+        .all(filter.harnessId)
+        .map(toOrphanedCopy)
+        .filter(isOrphanedCopy);
+    }
+    return db
+      .query<OrphanedCopyRow, []>(`SELECT * FROM harness_orphaned_copies ORDER BY created_at ASC, path ASC`)
+      .all()
+      .map(toOrphanedCopy)
+      .filter(isOrphanedCopy);
+  },
+  deleteForHarness(harnessId: string): void {
+    db.run(`DELETE FROM harness_orphaned_copies WHERE harness_id = ?`, [harnessId]);
+  },
+  /**
+   * Keep a task's remaining handoff copies before its rows cascade away. Task
+   * delete first runs the normal cleanup, which drops every row whose files
+   * are gone; whatever is still recorded here could not be removed (the
+   * account's root changed, an unlink failed), so it is orphaned instead of
+   * forgotten. Rows for an account that no longer exists are skipped: there is
+   * no root to resolve them against, as in handoff cleanup.
+   */
+  adoptFromTask(taskId: string): void {
+    for (const row of harnessSessionHandoffs.listForTask(taskId)) {
+      if (!harnesses.getByIdOrKind(row.harnessId)) continue;
+      this.addLabelled(row, row.copiedPaths);
+    }
+  },
+  /** Orphan some of a handoff row's paths, each labelled with the session its
+   *  shape names (a pre-088 re-keyed row can still list another session's
+   *  paths); the row's own session wins, and is the fallback. */
+  addLabelled(row: HarnessSessionHandoff, paths: readonly string[]): void {
+    const kind = row.columnName === "codex_session_id" ? "codex" : "claude-code";
+    const bySession = new Map<string, string[]>();
+    for (const p of paths) {
+      const sid = handoffCopySessionIdFromPath(kind, path.resolve(p), row.sessionId) ?? row.sessionId;
+      bySession.set(sid, [...(bySession.get(sid) ?? []), p]);
+    }
+    for (const [sid, list] of bySession) this.add(row.harnessId, row.columnName, sid, list);
   },
 };
 
@@ -3489,14 +4107,17 @@ export const runs = {
    * `composeCleanRetryText` (shared/user-message.ts) does the normalization
    * and de-duplication.
    */
-  mainUserTexts(runId: string): string[] {
+  // `twin` is set on a row that carries a `line_uuid` (the Claude JSONL twin
+  // of a live echo, which has none); `cleanRetryParts` pairs each echo with
+  // at most one twin.
+  mainUserRows(runId: string): CleanRetryRow[] {
     return db
-      .query<{ data: string }, [string]>(
-        `SELECT data FROM run_events INDEXED BY idx_run_events_run
+      .query<{ data: string; line_uuid: string | null }, [string]>(
+        `SELECT data, line_uuid FROM run_events INDEXED BY idx_run_events_run
          WHERE run_id = ? AND stream = 'user' AND subagent_id IS NULL ORDER BY id ASC`,
       )
       .all(runId)
-      .map((row) => row.data);
+      .map((row) => ({ data: row.data, twin: row.line_uuid != null }));
   },
   /**
    * Whether a run recorded ANY tool call (main stream or a subagent's — a
@@ -4108,6 +4729,22 @@ export const runs = {
          WHERE task_id = ? AND ${column} IS NOT NULL
          ORDER BY started_at DESC, rowid DESC`,
     ).all(taskId);
+  },
+  /**
+   * Every task with a run that recorded `sessionId` in `column`, of any agent.
+   * The orphaned-copy sweep asks each one whether the session is still the one
+   * it resumes on the swept account, so a planted orphan record naming a live
+   * conversation never deletes its transcript. Both columns are indexed
+   * (068's `runs_claude_session_id_idx`, 090's `runs_codex_session_id_idx`),
+   * and the sweep runs it once per orphan group, not per file.
+   */
+  taskIdsWithSession(column: SessionIdColumn, sessionId: string): string[] {
+    const col = SESSION_ID_COLUMNS.find((c) => c === column);
+    if (!col || !sessionId) return [];
+    return db
+      .query<{ task_id: string }, [string]>(`SELECT DISTINCT task_id FROM runs WHERE ${col} = ?`)
+      .all(sessionId)
+      .map((r) => r.task_id);
   },
   /** True when any run already records this Claude session id. Not a
    *  uniqueness check — several runs on one task share an id. */

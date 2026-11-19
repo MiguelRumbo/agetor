@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import type { E2EBackend } from "./fixtures";
@@ -332,4 +333,288 @@ export async function injectSseFrame(page: Page, pathname: string, event: Record
     },
     { target: pathname, data: JSON.stringify(event) },
   );
+}
+
+/**
+ * Arrange-only helper for the harness-stack specs: writes the cooldown row a
+ * limit settle would persist (`harness_limit_state`, migration 087). `model`
+ * omitted (or `""`) is the whole-account row; a model id is a per-model row.
+ * No HTTP route writes one without a real limit, so the board and Settings
+ * read it from `/harnesses` after this. Call `removeLimitStates` to undo.
+ */
+export function seedLimitState(
+  backend: E2EBackend,
+  opts: { harnessId: string; untilMs: number; model?: string; message?: string | null; reason?: string },
+): void {
+  withBackendDb(backend, (db) => {
+    db.run(
+      `INSERT OR REPLACE INTO harness_limit_state
+         (harness_id, model, reason, source, message, exhausted_until_ms, updated_at)
+       VALUES (?, ?, ?, 'claude-pane', ?, ?, ?)`,
+      [opts.harnessId, opts.model ?? "", opts.reason ?? "quota", opts.message ?? null, opts.untilMs, Date.now()],
+    );
+  });
+}
+
+/** Arrange/cleanup helper: removes every cooldown row of the given accounts. */
+export function removeLimitStates(backend: E2EBackend, harnessIds: string[]): void {
+  withBackendDb(backend, (db) => {
+    for (const id of harnessIds) db.run("DELETE FROM harness_limit_state WHERE harness_id = ?", [id]);
+  });
+}
+
+/** Number of cooldown rows an account has (assert helper). */
+export function limitStateCount(backend: E2EBackend, harnessId: string, model?: string): number {
+  return model === undefined
+    ? queryBackendScalar(backend, "SELECT COUNT(*) AS n FROM harness_limit_state WHERE harness_id = ?", [harnessId])
+    : queryBackendScalar(
+        backend,
+        "SELECT COUNT(*) AS n FROM harness_limit_state WHERE harness_id = ? AND model = ?",
+        [harnessId, model],
+      );
+}
+
+/**
+ * Arrange-only helper: inserts `count` `manual` swap-history rows for a stack,
+ * newest first by `at`, so the History subpage has more than one page (50) to
+ * "Load more" through. Titles are `seed-<n>`; the stack cascade removes them.
+ */
+export function seedSwapEvents(
+  backend: E2EBackend,
+  opts: { stackId: string; count: number; fromLabel: string; toLabel: string },
+): void {
+  withBackendDb(backend, (db) => {
+    const base = Date.now() - 60 * 60_000;
+    const ins = db.prepare(
+      `INSERT INTO harness_swap_events
+         (id, stack_id, task_title, from_label, to_label, trigger, reason, at)
+       VALUES (?, ?, ?, ?, ?, 'manual', 'user', ?)`,
+    );
+    for (let i = 0; i < opts.count; i++) {
+      ins.run(`e2e-seed-${opts.stackId}-${i}`, opts.stackId, `seed-${i}`, opts.fromLabel, opts.toLabel, base + i * 1000);
+    }
+  });
+}
+
+/* ───────────────── harness-stack arrange helpers (API-level) ───────────────── */
+
+export function bearerHeaders(backend: E2EBackend): Record<string, string> {
+  return { authorization: `Bearer ${backend.apiToken}`, "content-type": "application/json" };
+}
+
+/**
+ * Arrange-only: creates an alias account (`POST /harnesses`) whose home lives
+ * under the worker's data dir, with the login evidence the kind's pre-flight
+ * looks for (`.credentials.json` for Claude, `.codex/auth.json` for Codex).
+ * Returns the account's config root (Claude: the home itself, Codex:
+ * `<home>/.codex`). The label equals the id so a spec can address the row by
+ * the id it chose.
+ */
+export async function createStackAccount(
+  backend: E2EBackend,
+  id: string,
+  kind: "claude-code" | "codex" = "claude-code",
+): Promise<string> {
+  const home = path.join(backend.dataDir, "harnesses", id);
+  mkdirSync(home, { recursive: true });
+  let root = home;
+  if (kind === "codex") {
+    root = path.join(home, ".codex");
+    mkdirSync(root, { recursive: true });
+    writeFileSync(path.join(root, "auth.json"), "{}");
+  } else {
+    writeFileSync(path.join(home, ".credentials.json"), "{}");
+  }
+  const res = await fetch(`${backend.apiBase}/harnesses`, {
+    method: "POST",
+    headers: bearerHeaders(backend),
+    body: JSON.stringify({ id, kind, label: id, home }),
+  });
+  if (!res.ok) throw new Error(`POST /harnesses -> ${res.status}: ${await res.text()}`);
+  return root;
+}
+
+/** Arrange-only: `POST /harness-stacks`; returns the stack as the route answers. */
+export async function createStackViaApi(
+  backend: E2EBackend,
+  label: string,
+  kind: "claude-code" | "codex",
+  members: string[],
+  mirrorMode: "safe" | "full" = "safe",
+): Promise<{ id: string; updatedAt: number; members: Array<{ harnessId: string }> }> {
+  const res = await fetch(`${backend.apiBase}/harness-stacks`, {
+    method: "POST",
+    headers: bearerHeaders(backend),
+    body: JSON.stringify({ label, kind, members, mirrorMode }),
+  });
+  if (!res.ok) throw new Error(`POST /harness-stacks -> ${res.status}: ${await res.text()}`);
+  const body = (await res.json()) as { stack: { id: string; updatedAt: number; members: Array<{ harnessId: string }> } };
+  return body.stack;
+}
+
+/** Reads `GET /harness-stacks` and returns the stacks (assert helper). */
+export async function listStacks(
+  backend: E2EBackend,
+): Promise<Array<{ id: string; label: string; updatedAt: number; members: Array<{ harnessId: string }> }>> {
+  const res = await fetch(`${backend.apiBase}/harness-stacks`, { headers: bearerHeaders(backend) });
+  if (!res.ok) throw new Error(`GET /harness-stacks -> ${res.status}`);
+  return ((await res.json()) as { stacks: never[] }).stacks;
+}
+
+/** Best-effort DELETE of every path (cleanup; never throws). */
+export async function deleteAll(backend: E2EBackend, paths: string[]): Promise<void> {
+  for (const p of paths) {
+    await fetch(`${backend.apiBase}${p}`, { method: "DELETE", headers: bearerHeaders(backend) }).catch(() => {});
+  }
+}
+
+/* ───────────── Select Projects (combined single/multi picker) ───────────── */
+
+/** Generous readiness ceiling: the dialog's first open fetches `GET /projects`
+ *  and a Save resolves every selected path's git root. */
+const SELECT_PROJECTS_TIMEOUT = 30_000;
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** The Select Projects dialog (New Task, issue dialog). The accessible name is
+ *  the dialog's own title, so both surfaces resolve the same way. */
+export function selectProjectsDialog(page: Page): Locator {
+  return page.getByRole("dialog", { name: "Select projects" });
+}
+
+/** Opens the full-width Select Projects control inside `scope` and waits for
+ *  the dialog. `scope` is the New Task aside or the issue dialog. */
+export async function openSelectProjects(page: Page, scope: Locator): Promise<Locator> {
+  const trigger = scope.getByTestId("select-projects-button");
+  await expect(trigger).toBeVisible({ timeout: SELECT_PROJECTS_TIMEOUT });
+  await trigger.click();
+  const dialog = selectProjectsDialog(page);
+  await expect(dialog).toBeVisible({ timeout: SELECT_PROJECTS_TIMEOUT });
+  return dialog;
+}
+
+/** A project row's checkbox. Accepts an absolute path (exact) or a basename
+ *  (matching the row's own project directory) so specs that only know their
+ *  worker-unique project name keep working. */
+function projectCheckbox(dialog: Locator, pathOrName: string): Locator {
+  return projectCheckboxIn(dialog, pathOrName);
+}
+
+function projectCheckboxIn(root: Locator | Page, pathOrName: string): Locator {
+  const anchor = pathOrName.startsWith("/") ? escapeRegExp(pathOrName) : `(?:.*/)?${escapeRegExp(pathOrName)}`;
+  return root.getByLabel(new RegExp(`^Select ${anchor}$`));
+}
+
+/** Unchecks every row the user could uncheck (the auto-selected project is
+ *  checked on open). */
+async function clearProjects(dialog: Locator): Promise<void> {
+  const boxes = dialog.locator('input[type="checkbox"]');
+  const count = await boxes.count();
+  for (let i = count - 1; i >= 0; i--) {
+    const box = boxes.nth(i);
+    if (await box.isDisabled()) continue;
+    if (await box.isChecked()) await box.uncheck();
+  }
+}
+
+/**
+ * Opens the dialog, clears every row the user could uncheck (the auto-selected
+ * project is checked on open), then checks `paths` in order — so the first path
+ * is truly first in the saved selection (the server keeps the first entry per
+ * git root). Saves and waits for the dialog to close.
+ */
+export async function chooseProjects(page: Page, scope: Locator, paths: string[]): Promise<void> {
+  const dialog = await openSelectProjects(page, scope);
+  for (const path of paths) {
+    await expect(projectCheckbox(dialog, path)).toBeVisible({ timeout: SELECT_PROJECTS_TIMEOUT });
+  }
+  await clearProjects(dialog);
+  for (const path of paths) await projectCheckbox(dialog, path).check();
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(dialog).toBeHidden({ timeout: SELECT_PROJECTS_TIMEOUT });
+}
+
+/**
+ * Selects exactly one project (clearing any auto-selected one first). Accepts
+ * an absolute path or a registered project name — the latter searches the
+ * dialog first, so specs can keep addressing a project by the name they
+ * registered it under even when its directory basename differs.
+ */
+export async function selectProject(page: Page, scope: Locator, pathOrName: string): Promise<void> {
+  if (pathOrName.startsWith("/")) {
+    await chooseProjects(page, scope, [pathOrName]);
+    return;
+  }
+  const dialog = await openSelectProjects(page, scope);
+  await clearProjects(dialog);
+  await dialog.getByTestId("select-projects-search").fill(pathOrName);
+  // The search also matches a project's registered name, which the row's
+  // visible text (basename + path) need not contain. A unique, worker-wide
+  // project name must leave exactly one row; anything else is an ambiguous
+  // test setup, not a selection to guess at.
+  const rows = dialog.locator('[data-testid^="select-projects-row-"]');
+  await expect(rows).toHaveCount(1, { timeout: SELECT_PROJECTS_TIMEOUT });
+  await rows.first().locator('input[type="checkbox"]').check();
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(dialog).toBeHidden({ timeout: SELECT_PROJECTS_TIMEOUT });
+}
+
+/** One selected project's read-only `Branch · <project>` summary line in the
+ *  form (`name` is the project's workspace slug). The line shows the base ref
+ *  the Select Projects dialog saved, or "current branch". */
+export function branchRow(scope: Locator, name: string): Locator {
+  return scope.getByTestId(`branch-row-${name}`);
+}
+
+/** A project's row inside the open Select Projects dialog, by absolute path
+ *  (exact) or basename — the same matching `chooseProjects` uses. */
+export function dialogProjectRow(dialog: Locator, pathOrName: string): Locator {
+  return dialog
+    .locator('[data-testid^="select-projects-row-"]')
+    // A page-rooted inner locator: `has` queries it relative to each row.
+    .filter({ has: projectCheckboxIn(dialog.page(), pathOrName) });
+}
+
+/** The branch picker (label, Pull, Fetch, trigger) under one checked project
+ *  in the open Select Projects dialog. */
+export function dialogBranchPicker(dialog: Locator, pathOrName: string): Locator {
+  return dialogProjectRow(dialog, pathOrName).getByTestId("select-projects-branch");
+}
+
+/**
+ * Picks an existing branch in one checked project's picker inside the open
+ * Select Projects dialog. The list opens in flow under the trigger and is
+ * scoped by its `data-popover-open` marker so the trigger's own label can't be
+ * mistaken for a list row. Does not Save.
+ */
+export async function pickDialogBranch(dialog: Locator, pathOrName: string, branch: string): Promise<void> {
+  const picker = dialogBranchPicker(dialog, pathOrName);
+  await expect(picker).toBeVisible({ timeout: SELECT_PROJECTS_TIMEOUT });
+  const trigger = picker.getByTestId("branch-picker-trigger");
+  await trigger.click();
+  const popover = picker.locator("[data-popover-open]");
+  await expect(popover).toBeVisible({ timeout: SELECT_PROJECTS_TIMEOUT });
+  await popover.getByPlaceholder("Search branches…").fill(branch);
+  await popover.getByText(branch, { exact: true }).click();
+  await expect(popover).toBeHidden();
+  await expect(trigger).toContainText(branch);
+}
+
+/**
+ * Picks `branch` for one selected project the way a user does: open Select
+ * Projects, choose it in that project's branch picker, Save. `pathOrName` is
+ * the project's absolute path or basename.
+ */
+export async function selectBaseBranch(
+  page: Page,
+  scope: Locator,
+  pathOrName: string,
+  branch: string,
+): Promise<void> {
+  const dialog = await openSelectProjects(page, scope);
+  await pickDialogBranch(dialog, pathOrName, branch);
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(dialog).toBeHidden({ timeout: SELECT_PROJECTS_TIMEOUT });
 }

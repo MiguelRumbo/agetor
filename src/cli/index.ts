@@ -19,6 +19,7 @@ import { cmdEdit, cmdMove, cmdArchive, cmdUnarchive } from "./commands/manage.ts
 import { cmdDiff } from "./commands/diff.ts";
 import { cmdAttach } from "./commands/attach.ts";
 import { cmdHarness } from "./commands/harness.ts";
+import { cmdSwitchAccount } from "./commands/switch-account.ts";
 import { cmdAgentProfile } from "./commands/agent-profile.ts";
 import { cmdPipeline } from "./commands/pipeline.ts";
 import { cmdExport, cmdImport, printableLines } from "./commands/bundle.ts";
@@ -44,7 +45,7 @@ Commands:
   ps                  list running / blocked tasks
   show <id>           task details, runs, pending interactions
   usage               report recorded token usage
-  edit <id> [flags]   change title/prompt/agent/workdir/model/mode/effort/type/column
+  edit <id> [flags]   change title/prompt/agent/workdir/model/mode/effort/type/column, remove a repository
   move <id> <column>  move a task between columns (mark done = move <id> done)
   start <id>          run a not-yet-run task
   send <id> <msg…>    message a task (--ref <path> attaches files/images)
@@ -64,8 +65,10 @@ Commands:
   daemon <sub>        start | stop | status | background of the Agetor core
                       (background status|off: keep Agetor running in the background)
   remote <sub>        status | off — remote access (preview; only the app turns it on)
-  harness <sub>       list | add | edit | enable | disable | rm | stack | shell agent harnesses
-                      (stack: an ordered same-kind account train with failover)
+  switch-account <id> [--cancel]  move a stacked task to its next account (a live run: at the end of the turn)
+  harness <sub>       list | add | edit | enable | disable | rm | stack | cooldown | restore | shell agent harnesses
+                      (stack: an ordered same-kind account train with failover;
+                      cooldown clear <id>; restore <id> puts a mirrored account back)
   profile <sub>       list | show | add | edit | duplicate | rm | export | import reusable agent profiles
   pipeline <sub>      list | show | rm | export | import pipelines; retry [--from] |
                       advance | restart | status control a pipeline task's run
@@ -214,6 +217,8 @@ async function main(): Promise<void> {
       return cmdAttach(args, flags);
     case "shell":
       return cmdShell(args, flags);
+    case "switch-account":
+      return cmdSwitchAccount(args, flags);
     case "harness":
     case "harnesses":
       return cmdHarness(args, flags);

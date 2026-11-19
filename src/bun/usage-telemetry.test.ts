@@ -6,19 +6,29 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { migrate } from "./migrate.ts";
 import { migrations } from "./migrations/index.ts";
-import rollback from "./migrations/down/087_run_usage.sql" with { type: "text" };
+import rollback from "./migrations/down/093_run_usage.sql" with { type: "text" };
 import type { Run, Task } from "../shared/types.ts";
+import pkg from "../../package.json" with { type: "json" };
 
-test("migration 087 rolls back without affecting existing runs and can be reapplied", () => {
+test("migration 093 preserves fork telemetry from 087 and supports rollback and reapplication", () => {
   using db = new Database(":memory:");
-  migrate(db, migrations);
+  const telemetry = migrations.find((migration) => migration.id === "093_run_usage")!;
+  migrate(db, migrations.slice(0, migrations.findIndex((migration) => migration.id.startsWith("087_"))));
+  migrate(db, [{ id: "087_run_usage", sql: telemetry.sql }]);
   db.run(`INSERT INTO tasks (id, title, prompt, agent, workdir, "column", created_at, updated_at)
     VALUES ('task', 't', 'p', 'codex', '/tmp', 'ready', 1, 1)`);
   db.run("INSERT INTO runs (id, task_id, agent, status, started_at) VALUES ('run', 'task', 'codex', 'succeeded', 1)");
+  db.run(`INSERT INTO run_usage (run_id, task_id, harness, input, created_at)
+    VALUES ('run', 'task', 'codex', 42, 1)`);
+  expect(migrate(db, migrations)).toEqual([
+    "087_harness_stacks_fix_round", "088_harness_orphaned_copies", "089_harness_mirror_sources",
+    "090_harness_mirror_backup_folder", "091_task_repositories", "092_task_base_branch_and_prs",
+  ]);
+  expect(db.query("SELECT input FROM run_usage").get()).toEqual({ input: 42 });
   db.exec(rollback);
   expect(db.query("SELECT id FROM runs").get()).toEqual({ id: "run" });
   expect(db.query("SELECT name FROM sqlite_master WHERE name = 'run_usage'").get()).toBeNull();
-  expect(migrate(db, migrations)).toEqual(["087_run_usage"]);
+  expect(migrate(db, migrations)).toEqual(["093_run_usage"]);
 });
 
 test("settlement records provider telemetry and exposes it through the CLI and SSE", async () => {
@@ -146,7 +156,7 @@ test("settlement records provider telemetry and exposes it through the CLI and S
       return JSON.parse(stdout);
     };
     await Bun.write(path.join(root, "agetor-core.json"), JSON.stringify({
-      port: server.port, token: CLI_TOKEN, pid: process.pid, kind: "app", version: "1.2.0", startedAt: Date.now(),
+      port: server.port, token: CLI_TOKEN, pid: process.pid, kind: "app", version: pkg.version, startedAt: Date.now(),
     }));
     expect((await cli("show", codex.taskId)).runs[0].usage.total).toBe(90);
     expect((await cli("ls")).find((task: Task) => task.id === parent.id).usage.total).toBe(50);

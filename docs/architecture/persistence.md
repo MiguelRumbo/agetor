@@ -8,11 +8,15 @@ Wipe the dev dir with `bun run wipe:dev` (only ever touches `~/.agetor-dev`).
 WAL with `synchronous = NORMAL` (crash-consistent, but no fsync per commit — every streamed `run_events` row used to pay one) + foreign keys on.
 Tests set `AGETOR_DATA_DIR` to a `mkdtemp` directory at the top level of the file, never in `beforeAll` — keep doing that for any new test that imports `./db.ts` or `./orchestrator.ts`, since the db opens (and migrates) on module load and `bun test` runs every file in one process, where the first import of `db.ts` wins (the `NODE_ENV=test` guard comment in `db.ts` has the history).
 Never `rmSync` a test data dir in `afterAll` — if it's still the process-wide `db.ts` singleton's open directory (or just happens to hold a live `agetor.sqlite`), that yanks the file out from under it; use `rmTestDataDir` (`src/bun/test-data-dir.ts`) instead, which refuses (returns `false`) whenever `agetor.sqlite` exists in the target dir and only `rmSync`s otherwise.
+**Discovered model catalogs** (no migration, dynamic-model-catalog #16) live in the generic `preferences` table: `modelCatalog:kind:<kind>` for kinds that share one list and `modelCatalog:harness:<harnessId>` for fx, codex and opencode (the per-harness catalogs; the built-in harness's row also seeds its kind-level slot), each `{"v":1,"cliVersion":string|null,"savedAt":number,"models":DiscoveredModel[]}` holding only the whitelisted model fields — never a raw CLI response (the claude `initialize` answer carries the account email and organization). `model-discovery.ts` writes a row when a probe finds models and the snapshot or CLI version changed (an identical sweep writes nothing), hydrates the in-memory caches from them synchronously before the first sweep's first probe (so a restart or an offline start still has rows), keeps the previous catalog across a transient empty probe, and drops it when the harness is known unavailable or its CLI version differs from the stored one. The rows are **server-managed**: `GET /preferences` omits every `modelCatalog:*` key and `PUT /preferences/modelCatalog:*` answers `403 {code: "server-managed"}` for both tokens (the CLI token is readable by agents). They are inert for an older build (opaque keys nothing reads), so rolling back needs no cleanup.
+
 `tasks.sent_files` (migration 050) joins `last_assistant_event_id`/`last_seen_event_id` as a third column the generic `tasks.update` SET clause deliberately skips — it's written only by `tasks.mergeSentFiles`'s own targeted UPDATE, and like the watermarks that write never bumps `updated_at`.
 `tasks.fx_recovery` (migration 051) joins the same skipped-columns list, written only by `tasks.setFxRecovery`'s own targeted UPDATE and likewise never bumping `updated_at`.
 `tasks.agent_profile_id`/`tasks.agent_profile` (migration 053) join the same skipped-columns list too, written only by `tasks.setAgentProfile`'s own targeted UPDATE (and by `tasks.insert`) and likewise never bumping `updated_at` — see [agent-profiles.md](agent-profiles.md) and `docs/plans/agent-profiles.md`.
 `tasks.pipeline_id`/`tasks.pipeline_run`/`tasks.pipeline_parent_id`/`tasks.pipeline_step_id` (migration 058) join the same skipped-columns list too — the first pair written by `tasks.insert` (create time) and `tasks.setPipelineRun`'s own targeted UPDATE (never bumping `updated_at`), the second pair written only once, by `tasks.insert`, at a step row's creation — see [pipelines.md](pipelines.md) and `docs/plans/pipelines.md`.
 `tasks.checkout_branch` (migration 063) joins the same skipped-columns list too — the last-seen worktree checkout, written only by `tasks.insert` and `tasks.setCheckoutBranch`'s own targeted, compare-then-write UPDATE (never bumping `updated_at`; a step row's write also updates its pipeline parent) — see `startTask`'s pre-flight 2 in [task-lifecycle.md](task-lifecycle.md) and `docs/plans/codex-terminal-worktree-error.md`.
+`tasks.repositories`/`tasks.issue_repo_path` (migration 091) join the same skipped-columns list too — see [Multiple repositories in one task](#multiple-repositories-in-one-task-migration-091) below.
+`tasks.base_branch`/`tasks.prs` (migration 092) join it as well — see [Pull requests and the base branch](#pull-requests-and-the-base-branch-migration-092) below.
 
 **Migration 072 (`072_task_speed.sql`) is the repo's first `DROP COLUMN`**: it adds `tasks.speed`/`agent_profiles.speed` (`TEXT NOT NULL DEFAULT 'off' CHECK (speed IN ('off','fast','ultrafast'))`), backfills them from the boolean `fast`, drops `fast` from both tables (safe: no index, trigger or view names it, bun's SQLite is 3.51.0, and the older migrations that write `fast` run before 072 on a fresh DB), and rewrites every `lastFast:<kind>` preference to `lastSpeed:<kind>` (`true` → `fast`, else `off`).
 It is one-way: an older agetor build can't write tasks or agent profiles against a migrated database (its `INSERT`/`UPDATE` statements still name `fast` and fail), so a rollback is a new migration re-adding `fast` from `speed`, never an edit to 072.
@@ -61,7 +65,7 @@ A new `run_events` method that isn't exercised by that test fails it by name.
 
 **Adding a migration** (numbered `.sql` files, the `migrations/index.ts` entry, never editing an applied one, and why the SQL is inlined at bundle time) is described once, in [CLAUDE.md § Persistence, in brief](../../CLAUDE.md#persistence-in-brief).
 
-## Harness stack tables (migrations 084, 085)
+## Harness stack tables (migrations 084, 085, 087, 088, 089, 090)
 
 `harness_stacks`, `harness_stack_members`, `harness_limit_state` and
 `harness_session_handoffs` are additive; `tasks.harness_state` is another
@@ -78,10 +82,132 @@ that FK (the cascade from `harness_stacks` stays), and `harnesses.delete`
 removes the account's membership row explicitly and re-packs the ranks.
 `harness_limit_state` has no FK on purpose: it is account-global and
 survives a stack delete. `harness_session_handoffs` cascades with the task; its
-`copied_paths_json` is the only allowlist cleanup may remove. Snapshot/restore
-for tests covers all three (`test-harness-state.ts`). Model:
+`copied_paths_json` is the only allowlist cleanup may remove.
+
+**Migration 087** (`087_harness_stacks_fix_round.sql`):
+
+- **`harness_limit_state` is rebuilt** with a `model` column and the primary key
+  `(harness_id, model)`; `model = ''` is the whole-account cooldown every earlier
+  row was, so existing cooldowns keep their meaning (the rows are copied with
+  `model = ''`; the `exhausted_until_ms` index is recreated). It is safe to
+  rebuild because nothing references it by FK, and it still has none.
+  `harnesses.delete` clears the account's rows explicitly. The rebuild is
+  **one-way**, like 072: an agetor build from before 087 upserts with
+  `ON CONFLICT(harness_id)`, which no longer matches a constraint, so its
+  cooldown writes fail against a migrated database. A rollback is a new
+  migration, never an edit to 087.
+- **`harness_swap_events`** (the per-stack swap history). Its **only FK is
+  `stack_id REFERENCES harness_stacks(id) ON DELETE CASCADE`**; task and account
+  ids are plain columns and the labels and task title are denormalized, so a row
+  outlives the task and the account. `trigger` has no `CHECK` (the set may grow
+  without a table rebuild; the store validates on insert and drops unknown
+  triggers on read), `continuation` is `CHECK`-ed to `transferred`/`restarted`
+  or `NULL`. The page index is `(stack_id, at DESC, id DESC)`. There is no cap
+  and no pruning.
+- **`harness_mirror_provenance`**, primary key `(harness_id, path, key)`, **no
+  FK** (the same 085 reasoning), `scope` `CHECK`-ed to `file`/`key`/`link`. A merged file the mirror created carries one extra `file` row keyed `(created by the mirror)` (no schema change).
+  `harnesses.delete` removes the account's rows inline in its transaction (the
+  store module imports `db.ts`, so it cannot be called from there).
+
+**Migration 088** (`088_harness_orphaned_copies.sql`) adds
+`harness_orphaned_copies`, primary key `(harness_id, column_name, path)`, with
+the session each copied file belongs to. **No FK** on purpose: rows must
+outlive the task whose handoff rows cascade away (`tasks.delete` adopts the
+task's remaining handoff paths into it in the same transaction), and an FK to
+`harnesses` would be wiped by a rebuild of that table; `harnesses.delete`
+removes the account's rows explicitly. Rows written before 088 need no SQL
+backfill: the boot sweep moves a re-keyed handoff row's old-session paths into
+the new table ([harness-stacks.md](harness-stacks.md#leftover-handoff-copies)).
+
+**Migration 089** (`089_harness_mirror_sources.sql`) adds
+`harness_mirror_sources`, one row per backup account (primary key
+`harness_id`): the primary id, its resolved folder(s) and a fingerprint of its
+root settings from the last real mirror run. When the same primary with the
+same settings resolves to another folder while the recorded one still exists,
+the mirror skips that backup's **whole run** (nothing copied, merged or
+removed), not only deletion propagation
+([harness-stacks.md](harness-stacks.md#mirror-provenance-backups-preview-and-restore),
+"The primary's and the backup's folders are pinned").
+**No FK** (the 085 reasoning); `harnesses.delete` removes the row inline and
+account cleanup removes it too. No backfill: the first run after upgrade
+records it.
+
+**Migration 090** (`090_harness_mirror_backup_folder.sql`) adds
+`backup_root` and `backup_config` to `harness_mirror_sources` (`TEXT NOT NULL
+DEFAULT ''`): the backup's own resolved folder(s) and settings fingerprint, so
+the same skip rule pins a backup whose folder comes from the environment, and
+Restore refuses the rows of a recorded folder the account no longer resolves
+to while that folder exists (and drops them once it is gone). `''` means not recorded
+yet: a row from before 090 counts as not recorded until the next real mirror
+run fills it. It also adds the partial index `runs_codex_session_id_idx` on
+`runs(codex_session_id) WHERE codex_session_id IS NOT NULL`, for the
+leftover-copy sweep's live-session check (`runs.taskIdsWithSession`); the
+`claude_session_id` column is already covered by 068's
+`runs_claude_session_id_idx`. 089's statements are never changed: databases
+already applied it (its header comment was corrected before it reached `main`;
+`_migrations` tracks ids only, so a comment edit changes nothing applied).
+
+`harness_orphaned_copies.created_at` is a monotonic stamp written by
+`harnessOrphanedCopies.add` (never below the wall clock, always above every
+earlier stamp and sweep mark, seeded on first use from the largest integer
+`created_at`, clamped to a day past the wall clock, so a planted REAL, TEXT or
+2^53-and-above value cannot freeze it); a sweep forgets only records stamped
+at or before the mark it took before listing
+([harness-stacks.md](harness-stacks.md#leftover-handoff-copies)). A
+`column_name` other than `claude_session_id`/`codex_session_id` is never
+returned by the store and is deleted by the next sweep
+(`forgetForeignColumns`).
+
+**A future `harness_stacks` rebuild must turn foreign keys off first.**
+`harness_swap_events` cascades on `harness_stacks`, so the documented SQLite
+rebuild (`DROP TABLE harness_stacks` is an implicit `DELETE` with foreign keys
+on, and `db.ts` turns them on before `migrate()`) would delete every stack's
+history, exactly as the 084 `harness_stack_members` FK would have deleted every
+membership on a `harnesses` rebuild. `harness_stack_members` also cascades on
+`harness_stacks`. Such a migration must run with foreign keys off, or copy the
+dependent tables out and back around the rebuild: the runner applies each file
+in one transaction, where `PRAGMA foreign_keys` is a no-op, so there is no hook
+for that today.
+
+`runs.mainUserRows(runId)` (`db.ts`) returns a run's main-stream `user` rows,
+oldest first, each tagged `twin` when the row carries a `line_uuid` (the Claude
+JSONL copy of a send). It is a `run_events` query (the old `mainUserTexts` is gone), pinned
+`INDEXED BY idx_run_events_run` and listed in `db-run-events-plans.test.ts`.
+Clean retries and the persisted `allExhausted.cleanRetryOf` chain read it.
+
+Snapshot/restore for tests (`test-harness-state.ts`) covers stacks, members,
+limit rows (with their `model`) and `harness_mirror_provenance`, and restores
+`harness_orphaned_copies` and `harness_mirror_sources` whole-row (every column
+SQLite reports, so a column a later migration adds round-trips too). It restores
+stacks with an upsert, not `INSERT OR REPLACE`, because REPLACE deletes the row
+first and would fire the `ON DELETE CASCADE` on `harness_swap_events` and the
+members. It does not snapshot `harness_swap_events` itself (a test that writes
+history should clean up after itself). Model:
 [harness-stacks.md](harness-stacks.md).
 
-## Native run usage (migration 087)
+## Pull requests and the base branch (migration 092)
 
-Migration 087 stores token counters in `run_usage` and snapshots profile and model metadata on `runs`. See [native token telemetry](run-usage.md) for the collection, retention and rollback contract.
+Migration 092 (`092_task_base_branch_and_prs.sql`) adds two `tasks` columns; the feature is [multi-repo-tasks.md](multi-repo-tasks.md#pull-requests-titles-bodies-and-bases).
+
+- `tasks.prs` (`TEXT NOT NULL DEFAULT '[]'`) is `TaskPr[]` JSON, oldest first: every pull request opened for the task's branch (`{url, head, base, number, createdAt}`). A multi-repository task keeps its PRs inside `repositories[].prs`; its task-level list stays `[]`. The migration **backfills** each row with a non-empty `pr_url` into a one-entry list (`head` is `COALESCE(checkout_branch, branch)`, `base` and `number` are null, `createdAt` is `updated_at`). Entries inside `repositories` that still carry a single `prUrl` convert **on read** (`parseTaskRepositories`, `createdAt` 0), because they live in a JSON column.
+- `tasks.base_branch` is the branch NAME `base_ref` (the pinned sha) was resolved from at creation (`resolveBaseRefAndBranch` / `resolveBaseBranchName`: `develop`, `release/1.2`); NULL for a tag or sha pick, isolation `none`, `existingBranch`, a non-git directory, and every task created before the migration (not reliably recoverable: one sha can match several refs). A multi row stores each entry's own `baseBranch` inside `repositories`.
+- **`pr_url` is retired.** The column stays so an older build still opens a migrated database (it just won't see PRs opened after the upgrade, nor a multi-repository PR link of any age once a post-upgrade write has rewritten that row's `repositories` JSON, because `serializeRepositories` drops the `prUrl` key), but nothing writes it: `tasks.insert` leaves it NULL and the generic `tasks.update` SET clause no longer names it. `Task.prUrl` and `TaskRepository.prUrl` are deprecated **derived** fields: `toTask` and `parseTaskRepositories` set them to `prs[0]?.url`. Stored `repositories` JSON never carries a `prUrl` key (`serializeRepositories` strips it).
+- **Both columns are server-managed**: skipped by the generic `tasks.update` SET clause, not in `ALLOWED_PATCH_FIELDS` (a PATCH naming `prs`, `baseBranch` or `prUrl` is ignored), and never bumping `updated_at`. `base_branch` is written only by `tasks.insert` and never changes; `prs` only by `tasks.appendPr(taskId, entry)`, a targeted read-modify-write with no await between the get and the UPDATE (two concurrent stamps serialize on the JS turn), deduped by URL and a no-op on a multi row. `POST /github/pull-create` is the only caller. `tasks.insert` also accepts a caller still on the older shape (a `prUrl` and no `prs`) and converts it.
+
+## Multiple repositories in one task (migration 091)
+
+Migration 091 (`091_task_repositories.sql`) adds two `tasks` columns; the feature is [multi-repo-tasks.md](multi-repo-tasks.md).
+
+- `tasks.repositories` (`TEXT NOT NULL DEFAULT '[]'`) holds the pinned repository set as `TaskRepository[]` JSON. A **single-repository row stores `'[]'`** on purpose: its scalar columns (`branch`, `worktree_path`, `base_ref`, `checkout_branch`, `pr_url`) stay its one source of truth as they update, and `toTask` derives its one-entry array through the shared `repositoriesForTask` (`src/shared/multi-repo.ts`), the same derivation the webview and CLI use. A **multi row stores its entries**: two or more at creation, at least one after repositories are removed (`DELETE /tasks/:id/repositories/:name`, [multi-repo-tasks.md](multi-repo-tasks.md)); its scalars are the workspace mirror: `workdir` is `<dataDir>/worktrees/<task-id>` from creation, `worktree_path` is null until the first start and that root afterwards, and `branch`/`base_ref`/`pr_url`/`checkout_branch` are null. `parseTaskRepositories` validates the stored JSON on read. No backfill.
+- `Task.multiRepo` is **derived, never stored**: `toTask` sets it to `true` exactly when the stored set is non-empty (only a multi row stores one), so a one-repository multi row stays multi and keeps its stored entry instead of deriving one from the scalars. It has no column, is not patchable and never bumps `updated_at`. Every multi/single decision reads it through `isMultiRepoTask` (`src/shared/multi-repo.ts`, with a count fallback for an older core's JSON), never `repositories.length`. `tasks.insert` stores the set when `isMultiRepoTask(t)` holds, so a pipeline step copying a one-repository multi parent (`multiRepo: true` on the insert) stores its one entry and stays multi.
+- `tasks.issue_repo_path` names the `repositories[].path` whose remote matches `issue_url`; only that repository's PR body gets `Closes #N`.
+- **Both columns are server-managed**: skipped by the generic `tasks.update` SET clause, not in `ALLOWED_PATCH_FIELDS`, and never bumping `updated_at`. Their writers are `tasks.insert` (create time, and a pipeline step row copying its parent's set) and four targeted UPDATEs:
+  - `tasks.setRepositories(taskId, repos)` persists the materialized paths and branches after a prepare, and the remaining set after a repository removal. On a single row a set of one stores `'[]'`. A multi row is never demoted and never regrows: only incoming entries whose workspace name the row still stores are kept (so a prepare snapshot taken before a removal can't write the removed entry back), any non-empty result is stored, one entry included, and an empty one leaves the row untouched. The caller's array is a snapshot taken before awaits, so stored `prs`, `baseBranch` and `checkoutBranch` win over the incoming ones (the incoming value is used only when nothing is stored).
+  - `tasks.appendRepositoryPr(taskId, selector, entry)` appends one `TaskPr` to one entry (matched by name, selected path or worktree path), deduped by URL; a no-op on a single row (decided by `multiRepo`). `tasks.appendPr` is its single-repository counterpart ([below](#pull-requests-and-the-base-branch-migration-092)).
+  - `tasks.setRepositoryCheckout(taskId, name, value)` records one entry's last-seen checkout, compare-then-write, and like `setCheckoutBranch` mirrors a pipeline step's write onto its parent's same-named entry in the same transaction. An empty stored set is left alone (a single row's checkout is the scalar column); a one-entry stored set is a multi row and is written.
+  - `tasks.clearIssueRepoPath(taskId, repoPath)` sets `issue_repo_path` to NULL only while it still equals `repoPath` (compare-then-write); `removeTaskRepository` calls it for the removed repository, on the task and on each pipeline step row that names it, so no remaining repository's PR claims `Closes #N`.
+- `PATCH /tasks/:id` refuses `repositories` (400, pointing at the removal route) and any change to a multi row's `workdir` (400), even before its first start: the workspace root is derived from the set, which can lose entries but never gain them.
+
+## Native run usage (migration 093)
+
+Migration 093 stores token counters in `run_usage` and snapshots profile and model metadata on `runs`. See [native token telemetry](run-usage.md) for the collection, retention and rollback contract.
