@@ -7,6 +7,7 @@ import { AgetorClient } from "./api-client.ts";
 import { cmdDaemon } from "./commands/daemon.ts";
 import { cmdRemote } from "./commands/remote.ts";
 import { cmdLs } from "./commands/ls.ts";
+import { cmdUsage } from "./commands/usage.ts";
 import { cmdShow } from "./commands/show.ts";
 import { cmdStart, cmdSend, cmdCancel, cmdRm } from "./commands/lifecycle.ts";
 import { cmdAdd } from "./commands/add.ts";
@@ -42,6 +43,7 @@ Commands:
   ls [filters]        list tasks (--column/--agent/--type/--repo/--search/--archived/--all)
   ps                  list running / blocked tasks
   show <id>           task details, runs, pending interactions
+  usage               report recorded token usage
   edit <id> [flags]   change title/prompt/agent/workdir/model/mode/effort/type/column
   move <id> <column>  move a task between columns (mark done = move <id> done)
   start <id>          run a not-yet-run task
@@ -168,6 +170,8 @@ async function main(): Promise<void> {
       return cmdRemote(args, flags);
     case "add":
       return cmdAdd(args, flags);
+    case "usage":
+      return cmdUsage(args, flags);
     case "show":
     case "inspect":
       return cmdShow(args, flags);

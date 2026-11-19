@@ -365,6 +365,7 @@ export const ROUTE_POLICY: Record<string, PolicyEntry> = {
   "/agent-discovery": { GET: cli({ pathParams: QUERY_WORKDIR }) },
 
   // Tasks, runs and worktrees.
+  "/run-usage": CLI,
   "/tasks": {
     GET: CLI,
     POST: cli({ pathParams: BODY_WORKDIR }),

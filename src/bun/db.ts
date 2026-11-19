@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import path from "node:path";
-import { AGENT_OPTIONS, PIPELINE_LIMITS, type AgentKind, type AgentProfile, type AgentProfileSnapshot, type BacklogMessage, type BranchNamingConfig, type Handoff, type Harness, type HarnessQuota, type HarnessUsage, type ImportedClaudeSession, type ImportedOpencodeSession, type OpencodeServerMode, OPENCODE_SERVER_MODES, type Pipeline, type PipelineActiveStep, type PipelineBlock, type PipelineBlockKind, type PipelineGraph, type PipelineInput, type PipelineJoinArrival, type PipelinePendingLaunch, type PipelineRunSnapshot, type PipelineRunState, type PipelineRunStatus, type PipelineStepRecord, type Project, type SavedPrompt, type SentFileEntry, type Task, type TaskDraft, type TaskFxRecovery, type TaskPlan, type TaskReference, type TaskType, type Run, type RunEventStream, type Speed, type Subagent, type SubagentStatus } from "../shared/types.ts";
+import { AGENT_OPTIONS, PIPELINE_LIMITS, type AgentKind, type AgentProfile, type AgentProfileSnapshot, type BacklogMessage, type BranchNamingConfig, type Handoff, type Harness, type HarnessQuota, type HarnessUsage, type ImportedClaudeSession, type ImportedOpencodeSession, type OpencodeServerMode, OPENCODE_SERVER_MODES, type Pipeline, type PipelineActiveStep, type PipelineBlock, type PipelineBlockKind, type PipelineGraph, type PipelineInput, type PipelineJoinArrival, type PipelinePendingLaunch, type PipelineRunSnapshot, type PipelineRunState, type PipelineRunStatus, type PipelineStepRecord, type Project, type SavedPrompt, type SentFileEntry, type Task, type TaskDraft, type TaskFxRecovery, type TaskPlan, type TaskReference, type TaskType, type Run, type RunEventStream, type Speed, type Subagent, type SubagentStatus, type RunUsage, type TaskUsageSummary, type UsageGroup, type UsageReport, type UsageQuery } from "../shared/types.ts";
 import { mergeSentFiles as mergeSentFilesShared } from "../shared/sent-files.ts";
 import { parseTaskFxRecovery } from "../shared/fx-recovery.ts";
 import { HARNESS_STACK_CONTINUATION_TAG, parseTaskHarnessState, type TaskHarnessState } from "../shared/types.ts";
@@ -925,6 +925,7 @@ export const parsePipelineRunState = (raw: string | null): PipelineRunState | nu
 interface TaskCounts {
   pending?: Map<string, number>;
   terminals?: Map<string, number>;
+  usage?: Map<string, TaskUsageSummary>;
 }
 
 const IMPORTED_CLAUDE_STATUSES = new Set(["importing", "ready", "failed"]);
@@ -1053,6 +1054,7 @@ const toTask = (r: TaskRow, counts?: TaskCounts): Task => ({
   // assistant event — the gate for "Mark as unread" (there's nothing to
   // honestly re-flag on a task that's never gotten a response).
   hasAssistantMessages: r.last_assistant_event_id != null,
+  usage: counts?.usage ? (counts.usage.get(r.id) ?? null) : runUsage.summariesForTasks([r.id]).get(r.id) ?? null,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
   archivedAt: r.archived_at,
@@ -1127,7 +1129,11 @@ export const tasks = {
       if (!stepCount) continue;
       pending.set(r.pipeline_parent_id, (pending.get(r.pipeline_parent_id) ?? 0) + stepCount);
     }
-    const counts: TaskCounts = { pending, terminals: terminalCountsByTask() };
+    const counts: TaskCounts = {
+      pending,
+      terminals: terminalCountsByTask(),
+      usage: runUsage.summariesForTasks(rows.map((r) => r.id)),
+    };
     return rows.map((r) => toTask(r, counts));
   },
   /** Primary-key existence. Import backfill uses this instead of `get`,
@@ -3274,11 +3280,17 @@ export const TOOL_RESULT_TRIM_SQL = `SELECT id, data FROM run_events
     AND substr(data, 1, 13) != '{"retention":' AND id > ?
   ORDER BY id LIMIT ?`;
 
+let onRunSettled: ((runId: string) => void) | undefined;
+
+export function setRunSettledListener(listener: (runId: string) => void): void {
+  onRunSettled = listener;
+}
+
 export const runs = {
   listForTask(taskId: string): Run[] {
     return db.query<RunRow, [string]>(
       `SELECT * FROM runs WHERE task_id = ? ORDER BY started_at DESC`,
-    ).all(taskId).map(toRun);
+    ).all(taskId).map((row) => ({ ...toRun(row), usage: runUsage.summaryForRun(row.id) }));
   },
   /** The newest run of a task (any status), or null: `listForTask(taskId)[0]`
    *  without materializing the rest. Ties on `started_at` go to the later
@@ -3313,9 +3325,15 @@ export const runs = {
    *  bun:sqlite would otherwise bind. */
   insert(r: Run): Run {
     db.run(
-      `INSERT INTO runs (id, task_id, agent, status, started_at, ended_at, exit_code, tmux_session, claude_session_id, codex_session_id, cursor_session_id, gemini_session_id, fx_session_id, antigravity_session_id, opencode_session_id, copilot_session_id, origin)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [r.id, r.taskId, r.agent, r.status, r.startedAt, r.endedAt, r.exitCode, r.tmuxSession, r.claudeSessionId, r.codexSessionId, r.cursorSessionId, r.geminiSessionId, r.fxSessionId ?? null, r.antigravitySessionId ?? null, r.opencodeSessionId ?? null, r.copilotSessionId ?? null, r.origin ?? null],
+      `INSERT INTO runs (id, task_id, agent, status, started_at, ended_at, exit_code, tmux_session, claude_session_id, codex_session_id, cursor_session_id, gemini_session_id, fx_session_id, antigravity_session_id, opencode_session_id, copilot_session_id, origin,
+        usage_kind, usage_model, usage_effort, usage_profile_id, usage_profile_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        (SELECT kind FROM harnesses WHERE id = ?),
+        (SELECT model FROM tasks WHERE id = ?),
+        (SELECT effort FROM tasks WHERE id = ?),
+        (SELECT agent_profile_id FROM tasks WHERE id = ?),
+        (SELECT json_extract(agent_profile, '$.name') FROM tasks WHERE id = ?))`,
+      [r.id, r.taskId, r.agent, r.status, r.startedAt, r.endedAt, r.exitCode, r.tmuxSession, r.claudeSessionId, r.codexSessionId, r.cursorSessionId, r.geminiSessionId, r.fxSessionId ?? null, r.antigravitySessionId ?? null, r.opencodeSessionId ?? null, r.copilotSessionId ?? null, r.origin ?? null, r.agent, r.taskId, r.taskId, r.taskId, r.taskId],
     );
     return { ...r, origin: r.origin ?? null };
   },
@@ -3373,6 +3391,7 @@ export const runs = {
       `UPDATE runs SET status=?, ended_at=?, exit_code=?, claude_session_id=?, codex_session_id=?, cursor_session_id=?, gemini_session_id=?, fx_session_id=?, antigravity_session_id=?, opencode_session_id=?, copilot_session_id=? WHERE id=?`,
       [next.status, next.endedAt, next.exitCode, next.claudeSessionId, next.codexSessionId, next.cursorSessionId, next.geminiSessionId, next.fxSessionId, next.antigravitySessionId ?? null, next.opencodeSessionId ?? null, next.copilotSessionId ?? null, id],
     );
+    if (current.status === "running" && next.status !== "running") onRunSettled?.(id);
     return next;
   },
   /** Events for a single run, in event-id order. `runId` is the same as
@@ -4703,3 +4722,132 @@ export function listOpenCursorAsks(): StoredCursorAsk[] {
   ).all();
   return rows.map(toStoredCursorAsk);
 }
+
+// Codex includes cached input in input and reasoning in output.
+const usageSums = `
+  SUM(input) AS input, SUM(cache_write) AS cacheWrite, SUM(cache_read) AS cacheRead,
+  SUM(output) AS output, SUM(reasoning) AS reasoning,
+  SUM(COALESCE(provider_total, CASE WHEN input IS NULL AND cache_write IS NULL AND cache_read IS NULL
+        AND output IS NULL AND reasoning IS NULL THEN NULL ELSE
+      COALESCE(input, 0) + COALESCE(output, 0) + COALESCE(cache_write, 0)
+      + CASE WHEN kind = 'codex' THEN 0 ELSE COALESCE(cache_read, 0) + COALESCE(reasoning, 0) END
+      END)) AS total`;
+
+const usageColumns = `ru.id, ru.run_id AS runId, ru.task_id AS taskId, ru.harness, ru.model,
+  ru.effort, ru.input, ru.cache_write AS cacheWrite, ru.cache_read AS cacheRead, ru.output,
+  ru.reasoning, ru.subagent_persona AS subagentPersona, ru.created_at AS createdAt`;
+
+export const runUsage = {
+  context(runId: string) {
+    return db.query<{ kind: string; model: string | null; effort: string | null }, [string]>(
+      `SELECT COALESCE(r.usage_kind, h.kind, r.agent) AS kind,
+         CASE WHEN r.usage_kind IS NULL THEN t.model ELSE r.usage_model END AS model,
+         CASE WHEN r.usage_kind IS NULL THEN t.effort ELSE r.usage_effort END AS effort
+       FROM runs r JOIN tasks t ON t.id = r.task_id LEFT JOIN harnesses h ON h.id = r.agent
+       WHERE r.id = ?`,
+    ).get(runId);
+  },
+
+  replace(run: Run, items: (Omit<RunUsage, "id" | "runId" | "taskId" | "harness" | "createdAt"> & { providerTotal?: number })[], now: number): RunUsage[] {
+    return db.transaction(() => {
+      db.run("DELETE FROM run_usage WHERE run_id = ?", [run.id]);
+      return items.map(({ providerTotal, ...item }) => {
+        const result = db.run(
+          `INSERT INTO run_usage (run_id, task_id, harness, model, effort, input, cache_write,
+             cache_read, output, reasoning, provider_total, subagent_persona, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [run.id, run.taskId, run.agent, item.model, item.effort, item.input, item.cacheWrite,
+            item.cacheRead, item.output, item.reasoning, providerTotal ?? null, item.subagentPersona, now],
+        );
+        return { ...item, id: Number(result.lastInsertRowid), runId: run.id, taskId: run.taskId,
+          harness: run.agent, createdAt: now };
+      });
+    })();
+  },
+
+  listForRun(runId: string): RunUsage[] {
+    return db.query<RunUsage, [string]>(
+      `SELECT ${usageColumns} FROM run_usage ru WHERE run_id = ? ORDER BY id`,
+    ).all(runId);
+  },
+
+  summaryForRun(runId: string): TaskUsageSummary | null {
+    return db.query<TaskUsageSummary, [string]>(
+      `SELECT ${usageSums} FROM (
+         SELECT ru.*, COALESCE(r.usage_kind, h.kind, ru.harness) AS kind
+         FROM run_usage ru JOIN runs r ON r.id = ru.run_id
+         LEFT JOIN harnesses h ON h.id = ru.harness WHERE ru.run_id = ?
+       ) HAVING COUNT(*) > 0`,
+    ).get(runId);
+  },
+
+  summariesForTasks(ids: string[]): Map<string, TaskUsageSummary> {
+    const result = new Map<string, TaskUsageSummary>();
+    for (let i = 0; i < ids.length; i += 200) {
+      const batch = ids.slice(i, i + 200);
+      const rows = db.query<TaskUsageSummary & { taskId: string }, [string]>(
+        `WITH requested AS (SELECT value AS id FROM json_each(?)),
+         related AS (
+           SELECT id AS taskId, id AS source FROM requested
+           UNION ALL
+           SELECT t.pipeline_parent_id, t.id FROM requested q JOIN tasks t ON t.pipeline_parent_id = q.id
+         )
+         SELECT taskId, ${usageSums} FROM (
+           SELECT rel.taskId, ru.*, COALESCE(r.usage_kind, h.kind, ru.harness) AS kind
+           FROM related rel JOIN run_usage ru ON ru.task_id = rel.source
+           JOIN runs r ON r.id = ru.run_id LEFT JOIN harnesses h ON h.id = ru.harness
+         ) GROUP BY taskId`,
+      ).all(JSON.stringify(batch));
+      for (const { taskId, ...summary } of rows) result.set(taskId, summary);
+    }
+    return result;
+  },
+
+  queryUsage(opts: UsageQuery): UsageReport {
+    const conditions: string[] = [];
+    const params: (string | number)[] = [];
+    if (opts.since !== undefined) {
+      conditions.push("created_at >= ?");
+      params.push(opts.since);
+    }
+    if (opts.pipeline) {
+      conditions.push("(pipelineId = ? OR lower(pipeline) = lower(?))");
+      params.push(opts.pipeline, opts.pipeline);
+    }
+    if (opts.profile) {
+      conditions.push("(profileId = ? OR lower(profile) = lower(?))");
+      params.push(opts.profile, opts.profile);
+    }
+    const source = `WITH attributed AS (
+      SELECT ru.*, COALESCE(r.usage_kind, h.kind, ru.harness) AS kind,
+        COALESCE(parent.pipeline_id, t.pipeline_id) AS pipelineId,
+        COALESCE(json_extract(parent.pipeline_run, '$.pipelineName'), p.name,
+          parent.pipeline_id, t.pipeline_id) AS pipeline,
+        CASE WHEN ru.subagent_persona IS NOT NULL THEN sub.id
+          ELSE COALESCE(r.usage_profile_id, CASE WHEN r.usage_kind IS NULL THEN t.agent_profile_id END)
+        END AS profileId,
+        COALESCE(ru.subagent_persona, r.usage_profile_name,
+          CASE WHEN r.usage_kind IS NULL THEN json_extract(t.agent_profile, '$.name') END) AS profile
+      FROM run_usage ru JOIN runs r ON r.id = ru.run_id JOIN tasks t ON t.id = ru.task_id
+      LEFT JOIN tasks parent ON parent.id = t.pipeline_parent_id
+      LEFT JOIN pipelines p ON p.id = COALESCE(parent.pipeline_id, t.pipeline_id)
+      LEFT JOIN harnesses h ON h.id = ru.harness
+      LEFT JOIN agent_profiles sub ON sub.name_key = lower(ru.subagent_persona)
+    ), filtered AS (SELECT * FROM attributed ${conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""})`;
+    const total = db.query<TaskUsageSummary, (string | number)[]>(
+      `${source} SELECT ${usageSums} FROM filtered`,
+    ).get(...params)!;
+    if (!opts.by) {
+      const items = db.query<RunUsage, (string | number)[]>(
+        `${source} SELECT ${usageColumns} FROM filtered ru ORDER BY ru.created_at DESC, ru.id DESC`,
+      ).all(...params);
+      return { total, items };
+    }
+    const column = { pipeline: "pipeline", profile: "profile", harness: "harness", model: "model" }[opts.by];
+    const groups = db.query<UsageGroup, (string | number)[]>(
+      `${source} SELECT ${column} AS key, COUNT(*) AS count, ${usageSums}
+       FROM filtered GROUP BY ${column} ORDER BY total DESC, key`,
+    ).all(...params);
+    return { total, groups };
+  },
+};

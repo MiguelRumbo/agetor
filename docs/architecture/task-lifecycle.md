@@ -88,3 +88,5 @@ successor settles. Delete removes copied sessions at the end of a successful
 delete (after every throwing teardown step, so a failed delete keeps the
 conversation resumable); archive keeps them for the retention sweep. See
 [harness-stacks.md](harness-stacks.md).
+
+Run settlement, blocking and pauses trigger asynchronous [native token telemetry](run-usage.md).

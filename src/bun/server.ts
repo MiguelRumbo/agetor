@@ -25,6 +25,7 @@ import {
   preferences,
   harnesses,
   harnessUsage,
+  runUsage,
   HarnessBuiltinError,
   HarnessInUseError,
   savedPrompts,
@@ -5789,6 +5790,25 @@ export function startApiServer(
         }),
       },
 
+      "/run-usage": authed((req) => {
+        const params = new URL(req.url).searchParams;
+        const since = params.get("since");
+        const by = params.get("by");
+        const time = since === null ? undefined : Date.parse(since);
+        if (since !== null && (!/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(since) || !Number.isFinite(time))) {
+          return json({ error: "since must be an ISO date or timestamp" }, { status: 400, headers: corsHeaders(req) });
+        }
+        if (by !== null && by !== "pipeline" && by !== "profile" && by !== "harness" && by !== "model") {
+          return json({ error: "by must be pipeline, profile, harness or model" }, { status: 400, headers: corsHeaders(req) });
+        }
+        return json(runUsage.queryUsage({
+          since: time,
+          pipeline: params.get("pipeline") ?? undefined,
+          profile: params.get("profile") ?? undefined,
+          by: by ?? undefined,
+        }), { headers: corsHeaders(req) });
+      }),
+
       "/tasks": {
         GET: authed((req) => {
           const counts = subagents.runningCountsByTask();
@@ -6489,7 +6509,7 @@ export function startApiServer(
           }
           const steps = tasks.stepsForParent(task.id);
           return json(
-            { task: withRunningSubagents(task), steps: steps.map(withRunningSubagents) },
+            { task: withRunningSubagents(task), steps: steps.map(withRunningSubagents), usage: task.usage ?? null },
             { headers: corsHeaders(req) },
           );
         }),

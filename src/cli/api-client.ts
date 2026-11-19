@@ -6,6 +6,9 @@ import {
 import type {
   Task,
   Run,
+  TaskUsageSummary,
+  UsageQuery,
+  UsageReport,
   RunEvent,
   Project,
   Harness,
@@ -224,6 +227,14 @@ export class AgetorClient {
   }
 
   // ── tasks ────────────────────────────────────────────────────────────────
+  getUsage(query: Omit<UsageQuery, "since"> & { since?: string }): Promise<UsageReport> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) params.set(key, value);
+    }
+    return this.req("GET", `/run-usage?${params}`);
+  }
+
   listTasks(): Promise<Task[]> {
     return this.req("GET", "/tasks");
   }
@@ -768,7 +779,7 @@ export class AgetorClient {
    *  unknown task, 400 the task isn't a pipeline task. Returns the parent
    *  task (with its live `pipelineRun`) plus every hidden step task
    *  (`pipelineParentId === id`) it has launched so far. */
-  getPipelineRun(taskId: string): Promise<{ task: Task; steps: Task[] }> {
+  getPipelineRun(taskId: string): Promise<{ task: Task; steps: Task[]; usage?: TaskUsageSummary | null }> {
     return this.req("GET", `/tasks/${encodeURIComponent(taskId)}/pipeline`);
   }
   /** `POST /tasks/:id/pipeline/retry` — retry the current blocked/cancelled

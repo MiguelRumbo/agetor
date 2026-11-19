@@ -559,6 +559,11 @@ test("step cap: A↔B cycle with maxSteps 3 blocks with step-cap after 3 executi
   expect(blocked.pipelineRun!.blocked.some((b) => b.kind === "step-cap")).toBe(true);
   expect(blocked.pipelineRun!.stepCount).toBe(3);
   expect(blocked.pipelineRun!.history.length).toBe(3);
+  const { advancePipeline } = await import("./pipeline-runner.ts");
+  expect(await advancePipeline(parentId, { nextStepIds: null })).toEqual({
+    status: 409,
+    error: `paused at step-cap; use 'agetor pipeline retry ${parentId}' to extend the cap`,
+  });
   await waitUntilIdle(parentId);
 });
 

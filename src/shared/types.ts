@@ -2265,6 +2265,11 @@ export interface Task {
    * server-managed for exactly the same reasons as `unread` above.
    */
   hasAssistantMessages?: boolean;
+  /**
+   * Native token telemetry summary for this task (total across all runs).
+   * Optional/server-derived.
+   */
+  usage?: TaskUsageSummary | null;
   createdAt: number;
   updatedAt: number;
   /**
@@ -4914,6 +4919,11 @@ export interface Run {
    * value.
    */
   origin?: "continuation" | "imported" | "auto-resume" | "agent" | "harness-swap" | null;
+  /**
+   * Native token telemetry summary for this run.
+   * Optional/server-derived.
+   */
+  usage?: TaskUsageSummary | null;
 }
 
 /** One changed file in a task's git diff (worktree vs its pinned base). */
@@ -6077,6 +6087,15 @@ export type GlobalEvent =
       pipelineParentId?: string;
       /** See the `run-status` member. */
       pipelineParentTitle?: string;
+    }
+  | {
+      /**
+       * Token usage telemetry updated for a task run.
+       */
+      kind: "usage.updated";
+      taskId: string;
+      runId: string;
+      ts: number;
     };
 
 /**
@@ -6724,4 +6743,51 @@ export function clampFontSizePercent(raw: unknown): number {
   if (!Number.isFinite(n)) return FONT_SIZE_DEFAULT;
   const rounded = Math.round(n);
   return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, rounded));
+}
+
+/* ────────────────────────────────────────────────────────────────────────── *
+ * Token Usage Telemetry
+ * ────────────────────────────────────────────────────────────────────────── */
+
+export interface RunUsage {
+  id?: number;
+  runId: string;
+  taskId: string;
+  harness: string;
+  model: string | null;
+  effort: string | null;
+  input: number | null;
+  cacheWrite: number | null;
+  cacheRead: number | null;
+  output: number | null;
+  reasoning: number | null;
+  subagentPersona: string | null;
+  createdAt: number;
+}
+
+export interface TaskUsageSummary {
+  input: number | null;
+  cacheWrite: number | null;
+  cacheRead: number | null;
+  output: number | null;
+  reasoning: number | null;
+  total: number | null;
+}
+
+export interface UsageGroup extends TaskUsageSummary {
+  key: string | null;
+  count: number;
+}
+
+export interface UsageQuery {
+  since?: number;
+  pipeline?: string;
+  profile?: string;
+  by?: "pipeline" | "profile" | "harness" | "model";
+}
+
+export interface UsageReport {
+  total: TaskUsageSummary;
+  groups?: UsageGroup[];
+  items?: RunUsage[];
 }

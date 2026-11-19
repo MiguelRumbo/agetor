@@ -1824,6 +1824,7 @@ function AppInner() {
         refetchPipelineParent(ev.taskId);
         return;
       }
+      if (ev.kind === "usage.updated") return;
       // column transitions. Patch `tasks` optimistically so the board and any
       // open run panel (via the selected-sync effect) reflect the new column
       // the instant the backend pushes it — rather than waiting up to 2s for

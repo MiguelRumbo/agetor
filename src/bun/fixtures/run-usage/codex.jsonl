@@ -1,0 +1,6 @@
+{"timestamp":"2026-01-01T00:00:01Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":200,"cached_input_tokens":100,"output_tokens":50,"reasoning_output_tokens":10}}}}
+{"timestamp":"2026-01-01T00:00:11Z","type":"turn_context","payload":{"model":"codex-example","instructions":"FIXTURE_PRIVATE_TEXT"}}
+{"timestamp":"2026-01-01T00:00:12Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":220,"cached_input_tokens":110,"output_tokens":55,"reasoning_output_tokens":11}}}}
+{"timestamp":"2026-01-01T00:00:13Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":270,"cached_input_tokens":125,"output_tokens":70,"reasoning_output_tokens":15}}}}
+{"timestamp":"2026-01-01T00:00:14Z","type":"event_msg","payload":{"type":"token_count","info":null}}
+{"timestamp":"2026-01-01T00:01:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":999,"output_tokens":999}}}}
